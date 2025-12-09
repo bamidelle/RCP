@@ -1167,22 +1167,23 @@ def page_dashboard():
                   </div>
                 </div>
             """, unsafe_allow_html=True)
+st.markdown("---")
+st.markdown("---")
+st.markdown("### 📋 All Leads (expand a card to edit / change status)")  
+st.markdown("---")
+st.markdown("### Live Technician Map")
+st.markdown("<em>Latest location for each technician (click Auto-refresh to update automatically).</em>", unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.markdown("---")
-    st.markdown("### 📋 All Leads (expand a card to edit / change status)")  
-    st.markdown("---")
-    st.markdown("### Live Technician Map")
-    st.markdown("<em>Latest location for each technician (click Auto-refresh to update automatically).</em>", unsafe_allow_html=True)
-    # small inline control
-    c1, c2 = st.columns([3,1])
-    with c1:
-        inline_show_lines = st.checkbox("Show lines to assigned lead", key="dash_map_lines", value=False)
-    with c2:
-        inline_refresh = st.checkbox("Auto-refresh inline map (meta refresh)", key="dash_map_auto", value=False)
-    if inline_refresh:
-        # default 20 sec
-        st.markdown('<meta http-equiv="refresh" content="20">', unsafe_allow_html=True)
+# small inline control
+c1, c2 = st.columns([3,1])
+with c1:
+    inline_show_lines = st.checkbox("Show lines to assigned lead", key="dash_map_lines", value=False)
+with c2:
+    inline_refresh = st.checkbox("Auto-refresh inline map (meta refresh)", key="dash_map_auto", value=False)
+
+if inline_refresh:
+    # default 20 sec
+    st.markdown('<meta http-equiv="refresh" content="20">', unsafe_allow_html=True)
 
 st.markdown("### Technician Filter")
 
@@ -1252,8 +1253,7 @@ if filter_stage != "All":
 # Empty case
 if df_view.empty:
     st.info("No leads to show.")
-return
-
+else:
     # -----------------------------  
     # LEADS LIST  
     # -----------------------------
@@ -1270,7 +1270,10 @@ return
                 st.write(f"**Created:** {lead.get('created_at')}")
 
             with right:
-                sla_sec, overdue = calculate_remaining_sla(lead.get("sla_entered_at") or lead.get("created_at"), lead.get("sla_hours"))
+                sla_sec, overdue = calculate_remaining_sla(
+                    lead.get("sla_entered_at") or lead.get("created_at"),
+                    lead.get("sla_hours")
+                )
                 if overdue:
                     st.markdown("<div style='color:#dc2626;font-weight:700;'>❗ OVERDUE</div>", unsafe_allow_html=True)
                 else:
@@ -1278,8 +1281,8 @@ return
                     mins = int((sla_sec % 3600) // 60)
                     st.markdown(f"<div class='small-muted'>⏳ {hours}h {mins}m left</div>", unsafe_allow_html=True)
 
-            # -------------------------
-            # UPDATE FORM
+            # UPDATE FORM continues here...
+
             # -------------------------
             with st.form(f"update_{lead['lead_id']}", clear_on_submit=False):
 
