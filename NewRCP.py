@@ -294,10 +294,21 @@ def get_technicians_df(active_only=True):
         q = s.query(Technician)
         if active_only:
             q = q.filter(Technician.active == True)
+
         rows = q.all()
-        return pd.DataFrame([{"username": r.username, "full_name": r.full_name, "phone": r.phone, "specialization": r.specialization, "active": r.active} for r in rows])
+        data = []
+        for r in rows:
+            data.append({
+                "username": r.username,
+                "full_name": r.full_name,
+                "phone": r.phone,
+                "specialization": r.specialization,
+                "active": r.active
+            })
+        return pd.DataFrame(data)
     finally:
         s.close()
+
 
 def create_inspection_assignment(lead_id: str, technician_username: str, notes: str = None):
     s = get_session()
