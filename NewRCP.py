@@ -1252,7 +1252,7 @@ if filter_stage != "All":
 # Empty case
 if df_view.empty:
     st.info("No leads to show.")
-    return
+return
 
     # -----------------------------  
     # LEADS LIST  
