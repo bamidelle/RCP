@@ -1208,7 +1208,7 @@ render_tech_map(
     filter_tech=None if selected_tech == "All Technicians" else selected_tech
 )
 
-    st.markdown("### 📋 All Leads (expand a card to edit / change status)")
+st.markdown("### 📋 All Leads (expand a card to edit / change status)")
 
     # Filter bar
     q1, q2, q3 = st.columns([3,2,3])
