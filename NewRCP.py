@@ -294,7 +294,7 @@ def get_technicians_df(active_only=True):
         q = s.query(Technician)
         if active_only:
             q = q.filter(Technician.active == True)
-        rows = q.order_by(Technician.created_at.desc()).all()
+        rows = q.all()
         return pd.DataFrame([{"username": r.username, "full_name": r.full_name, "phone": r.phone, "specialization": r.specialization, "active": r.active} for r in rows])
     finally:
         s.close()
