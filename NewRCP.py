@@ -110,13 +110,13 @@ from sqlalchemy import DateTime as SA_DateTime
 
 class Technician(Base):
     __tablename__ = "technicians"
-    id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False)  # ideally matches User.username
-    full_name = Column(String, default="")
-    phone = Column(String, nullable=True)
-    specialization = Column(String, nullable=True)  # e.g., 'Estimator','Adjuster','Tech'
+
+    username = Column(String, primary_key=True)
+    full_name = Column(String)
+    phone = Column(String)
+    specialization = Column(String)
     active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class InspectionAssignment(Base):
     __tablename__ = "inspection_assignments"
