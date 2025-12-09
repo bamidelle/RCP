@@ -1183,7 +1183,30 @@ def page_dashboard():
     if inline_refresh:
         # default 20 sec
         st.markdown('<meta http-equiv="refresh" content="20">', unsafe_allow_html=True)
-    render_tech_map(     zoom=11,     show_lines=inline_show_lines )
+
+st.markdown("### Technician Filter")
+
+tech_df = get_technicians_df(active_only=True)
+
+if tech_df.empty:
+    st.warning("No technicians found. Add them in Settings.")
+    selected_tech = None
+else:
+    tech_list = ["All Technicians"] + tech_df["username"].tolist()
+    selected_tech = st.selectbox(
+        "Show technician",
+        options=tech_list,
+        index=0,
+        key="map_tech_filter"
+    )
+
+# Now call the map renderer WITH technician filter
+render_tech_map(
+    show_lines=inline_show_lines,
+    height=420,
+    zoom=11,
+    filter_tech=None if selected_tech == "All Technicians" else selected_tech
+)
 
     st.markdown("### 📋 All Leads (expand a card to edit / change status)")
 
@@ -1758,13 +1781,26 @@ def page_tasks():
 
 def page_technician_mobile():
     st.markdown("<div class='header'>📱 Technician Mobile Preview</div>", unsafe_allow_html=True)
-    st.markdown("<em>Preview of the mobile shell for technicians (for admins only).</em>", unsafe_allow_html=True)
+    st.markdown("<em>Preview of the mobile app for technicians (admin-only).</em>", unsafe_allow_html=True)
 
-    uname = st.text_input("Technician username (preview)", value="")
-    if not uname:
-        st.info("Enter a technician username to preview assigned inspections.")
+    # Load technicians from database
+    tech_df = get_technicians_df(active_only=True)
+
+    if tech_df.empty:
+        st.warning("No technicians found. Please add technicians in Settings.")
         return
 
+    tech_list = tech_df["username"].tolist()
+
+    # Dropdown selector for technicians
+    uname = st.selectbox(
+        "Select Technician",
+        options=tech_list,
+        index=0,
+        key="mobile_preview_tech"
+    )
+
+    # Load inspection assignments
     try:
         rows = get_assignments_for_technician(uname, only_open=True)
     except Exception as e:
@@ -1772,8 +1808,9 @@ def page_technician_mobile():
         return
 
     if not rows:
-        st.info("No assignments for " + uname)
+        st.info(f"No open inspections for {uname}")
         return
+
 
     for it in rows:
         lead = it.get("lead") or {}
