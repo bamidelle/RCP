@@ -1172,7 +1172,7 @@ def page_dashboard():
     if inline_refresh:
         # default 20 sec
         st.markdown('<meta http-equiv="refresh" content="20">', unsafe_allow_html=True)
-    render_tech_map(show_lines=inline_show_lines, height=420, zoom=11)
+    render_tech_map(     zoom=11,     show_lines=inline_show_lines )
 
     st.markdown("### 📋 All Leads (expand a card to edit / change status)")
 
