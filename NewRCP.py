@@ -1210,37 +1210,49 @@ render_tech_map(
 
 st.markdown("### 📋 All Leads (expand a card to edit / change status)")
 
-    # Filter bar
-    q1, q2, q3 = st.columns([3,2,3])
-    with q1:
-        search_q = st.text_input("Search (lead_id, contact name, address, notes)")
-    with q2:
-        filter_src = st.selectbox("Source filter", options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"])
-    with q3:
-        filter_stage = st.selectbox("Stage filter", options=["All"] + PIPELINE_STAGES)
+# Filter bar
+q1, q2, q3 = st.columns([3, 2, 3])
 
-    df_view = df.copy()
+with q1:
+    search_q = st.text_input("Search (lead_id, contact name, address, notes)")
 
-    if search_q:
-        sq = search_q.lower()
-        df_view = df_view[df_view.apply(
-            lambda r: sq in str(r.get("lead_id","")).lower()
-            or sq in str(r.get("contact_name","")).lower()
-            or sq in str(r.get("property_address","")).lower()
-            or sq in str(r.get("notes","")).lower(),
-            axis=1
-        )]
+with q2:
+    filter_src = st.selectbox(
+        "Source filter",
+        options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"]
+    )
 
-    if filter_src != "All":
-        df_view = df_view[df_view["source"] == filter_src]
+with q3:
+    filter_stage = st.selectbox(
+        "Stage filter",
+        options=["All"] + PIPELINE_STAGES
+    )
 
-    if filter_stage != "All":
-        df_view = df_view[df_view["stage"] == filter_stage]
+df_view = df.copy()
 
-    # No leads case
-    if df_view.empty:
-        st.info("No leads to show.")
-        return
+# Search filter
+if search_q:
+    sq = search_q.lower()
+    df_view = df_view[df_view.apply(
+        lambda r: sq in str(r.get("lead_id", "")).lower()
+        or sq in str(r.get("contact_name", "")).lower()
+        or sq in str(r.get("property_address", "")).lower()
+        or sq in str(r.get("notes", "")).lower(),
+        axis=1
+    )]
+
+# Source filter
+if filter_src != "All":
+    df_view = df_view[df_view["source"] == filter_src]
+
+# Stage filter
+if filter_stage != "All":
+    df_view = df_view[df_view["stage"] == filter_stage]
+
+# Empty case
+if df_view.empty:
+    st.info("No leads to show.")
+    return
 
     # -----------------------------  
     # LEADS LIST  
