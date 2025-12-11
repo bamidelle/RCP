@@ -1756,92 +1756,96 @@ def page_seasonal_trends():
 
     st.markdown("<small>Prototype module — Replace mock functions with real NOAA / Open-Meteo / Meteostat API calls.</small>", unsafe_allow_html=True)
 
+    get_all_countries()
+    get_states(country_code)
+    get_cities(country_code, state_code)
+
+        # ============================================================
+    # Global Country → State → City Lookup (Live API)
     # ============================================================
-# Global Country → State → City Lookup (Live API)
-# ============================================================
-
-import requests
-import streamlit as st
-from functools import lru_cache
-
-# -------------- COUNTRY LIST --------------
-@lru_cache(maxsize=1)
-def get_all_countries():
-    """Return full list of countries with ISO codes using REST Countries API (free)."""
-    try:
-        url = "https://restcountries.com/v3.1/all"
-        res = requests.get(url, timeout=10)
-        data = res.json()
-
-        countries = []
-        for c in data:
-            if "cca2" in c:
-                countries.append({
-                    "name": c.get("name", {}).get("common"),
-                    "code": c.get("cca2")
-                })
-
-        # sort alphabetically
-        countries = sorted(countries, key=lambda x: x["name"])
-
-        return countries
-    except Exception as e:
-        print("get_all_countries() ERROR:", e)
-        return []
-
-
-# -------------- STATE LOOKUP --------------
-@lru_cache(maxsize=256)
-def get_states(country_code):
-    """
-    Returns list of states/provinces for a country.
-    Uses Open-Meteo geocoding which has structured admin1 regions.
-    """
-    try:
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name=&count=200&language=en&format=json&country={country_code}"
-        res = requests.get(url, timeout=10).json()
-
-        states = set()
-
-        for r in res.get("results", []):
-            admin1 = r.get("admin1")
-            if admin1:
-                states.add(admin1)
-
-        states = sorted(list(states))
-        return states
-
-    except Exception as e:
-        print("get_states() ERROR:", e)
-        return []
-
-
-# -------------- CITY LOOKUP --------------
-@lru_cache(maxsize=512)
-def get_cities(country_code, state_name):
-    """
-    Returns list of cities within a country+state.
-    """
-    try:
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name={state_name}&count=200&language=en&format=json&country={country_code}"
-        res = requests.get(url, timeout=10).json()
-
-        cities = set()
-
-        for r in res.get("results", []):
-            # Only cities (admin2 or specific locality)
-            city = r.get("name")
-            admin1 = r.get("admin1")
-
-            if admin1 and admin1.lower() == state_name.lower():
-                cities.add(city)
-
-        cities = sorted(list(cities))
-        return cities
-
-    except Exception as e:
-        print("get_cities() ERROR:", e)
-        return []
+    
+    import requests
+    import streamlit as st
+    from functools import lru_cache
+    
+    # -------------- COUNTRY LIST --------------
+    @lru_cache(maxsize=1)
+    def get_all_countries():
+        """Return full list of countries with ISO codes using REST Countries API (free)."""
+        try:
+            url = "https://restcountries.com/v3.1/all"
+            res = requests.get(url, timeout=10)
+            data = res.json()
+    
+            countries = []
+            for c in data:
+                if "cca2" in c:
+                    countries.append({
+                        "name": c.get("name", {}).get("common"),
+                        "code": c.get("cca2")
+                    })
+    
+            # sort alphabetically
+            countries = sorted(countries, key=lambda x: x["name"])
+    
+            return countries
+        except Exception as e:
+            print("get_all_countries() ERROR:", e)
+            return []
+    
+    
+    # -------------- STATE LOOKUP --------------
+    @lru_cache(maxsize=256)
+    def get_states(country_code):
+        """
+        Returns list of states/provinces for a country.
+        Uses Open-Meteo geocoding which has structured admin1 regions.
+        """
+        try:
+            url = f"https://geocoding-api.open-meteo.com/v1/search?name=&count=200&language=en&format=json&country={country_code}"
+            res = requests.get(url, timeout=10).json()
+    
+            states = set()
+    
+            for r in res.get("results", []):
+                admin1 = r.get("admin1")
+                if admin1:
+                    states.add(admin1)
+    
+            states = sorted(list(states))
+            return states
+    
+        except Exception as e:
+            print("get_states() ERROR:", e)
+            return []
+    
+    
+    # -------------- CITY LOOKUP --------------
+    @lru_cache(maxsize=512)
+    def get_cities(country_code, state_name):
+        """
+        Returns list of cities within a country+state.
+        """
+        try:
+            url = f"https://geocoding-api.open-meteo.com/v1/search?name={state_name}&count=200&language=en&format=json&country={country_code}"
+            res = requests.get(url, timeout=10).json()
+    
+            cities = set()
+    
+            for r in res.get("results", []):
+                # Only cities (admin2 or specific locality)
+                city = r.get("name")
+                admin1 = r.get("admin1")
+    
+                if admin1 and admin1.lower() == state_name.lower():
+                    cities.add(city)
+    
+            cities = sorted(list(cities))
+            return cities
+    
+        except Exception as e:
+            print("get_cities() ERROR:", e)
+            return []
 
 
 
