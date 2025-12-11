@@ -25,15 +25,12 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-
-# =============================================================
-
 import streamlit as st
-import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import requests
 from functools import lru_cache
+# =============================================================
+
 
 # ----------------------
 # CONFIG
