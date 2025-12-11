@@ -1753,9 +1753,21 @@ def page_seasonal_trends():
     st.markdown("<small>Prototype module — Replace mock functions with real NOAA / Open-Meteo / Meteostat API calls.</small>", unsafe_allow_html=True)
 
 
-# ----------------------------
-# Global Country → State → City Lookup (Live API)
-# ----------------------------
+# =============================================================
+# Seasonal_Trends.py — Seasonal Trends & Weather-Based Damage Insights
+# =============================================================
+
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import requests
+from functools import lru_cache
+import numpy as np
+
+# =============================================================
+# GLOBAL COUNTRY → STATE → CITY LOOKUP (Live API)
+# =============================================================
 
 @lru_cache(maxsize=1)
 def get_all_countries():
@@ -1773,9 +1785,7 @@ def get_all_countries():
                     "code": c.get("cca2")
                 })
 
-        # sort alphabetically
-        countries = sorted(countries, key=lambda x: x["name"])
-        return countries
+        return sorted(countries, key=lambda x: x["name"])
     except Exception as e:
         print("get_all_countries() ERROR:", e)
         return []
@@ -1819,9 +1829,41 @@ def get_cities(country_code, state_name):
         print("get_cities() ERROR:", e)
         return []
 
-# ----------------------------
+
+# =============================================================
+# MOCK FUNCTIONS (replace with real API calls in production)
+# =============================================================
+
+def _mock_available_countries():
+    return ["USA", "Canada", "UK"]
+
+def _mock_locations_for_country(country):
+    return ["CityA", "CityB", "CityC"]
+
+def _mock_fetch_historical_weather(location, months=6):
+    dates = pd.date_range(end=pd.Timestamp.today(), periods=months*4, freq='W')
+    return pd.DataFrame({
+        "date": dates,
+        "rainfall_mm": np.random.randint(10, 120, size=len(dates)),
+        "temperature_c": np.random.randint(-5, 35, size=len(dates))
+    })
+
+def _mock_compute_damage_probabilities(df):
+    df_copy = df.copy()
+    df_copy["water_damage_prob"] = np.random.rand(len(df))
+    df_copy["mold_prob"] = np.random.rand(len(df))
+    df_copy["roof_storm_prob"] = np.random.rand(len(df))
+    df_copy["freeze_burst_prob"] = np.random.rand(len(df))
+    return df_copy
+
+def _mock_forecast_from_history(df, months_ahead=3):
+    future_dates = pd.date_range(start=df["date"].max() + pd.Timedelta(days=7), periods=months_ahead*4, freq='W')
+    return pd.DataFrame({"date": future_dates})
+
+
+# =============================================================
 # MAIN PAGE FUNCTION
-# ----------------------------
+# =============================================================
 
 def page_seasonal_trends():
     st.markdown(
@@ -1833,7 +1875,9 @@ def page_seasonal_trends():
         unsafe_allow_html=True
     )
 
+    # ----------------------------
     # LOCATION INPUT
+    # ----------------------------
     st.markdown("## 🌍 Select Location for Weather & Damage Trends")
 
     countries = get_all_countries()
@@ -1863,7 +1907,9 @@ def page_seasonal_trends():
 
     st.success(f"📌 {selected_city}, {selected_state}, {selected_country} selected.")
 
-    # Additional UI (mock layer)
+    # ----------------------------
+    # ADDITIONAL UI (Mock layer)
+    # ----------------------------
     col1, col2, col3 = st.columns(3)
     with col1:
         country_option = st.selectbox("Mock Country", _mock_available_countries(), key="season_country")
@@ -1886,11 +1932,15 @@ def page_seasonal_trends():
         st.info("Click **Generate Insights** to load seasonal insights.")
         return
 
-    # Parse months
+    # ----------------------------
+    # PARSE MONTHS
+    # ----------------------------
     hist_months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
     forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
 
+    # ----------------------------
     # DATA PROCESSING
+    # ----------------------------
     with st.spinner("Fetching weather | Computing risks | Generating trends..."):
         hist_df = _mock_fetch_historical_weather(location_option, months=hist_months)
         prob_df = _mock_compute_damage_probabilities(hist_df)
@@ -1901,7 +1951,9 @@ def page_seasonal_trends():
             future_weather.rename(columns={"date": "date"}).assign(date=future_weather["date"])
         )
 
+    # ----------------------------
     # CHARTS: Historical
+    # ----------------------------
     st.markdown("### 📈 Historical Weather Metrics")
     c1, c2 = st.columns(2)
     with c1:
@@ -1927,7 +1979,9 @@ def page_seasonal_trends():
     fig_hist.update_layout(yaxis=dict(range=[0, 1]))
     st.plotly_chart(fig_hist, use_container_width=True)
 
+    # ----------------------------
     # CHARTS: Forecast
+    # ----------------------------
     st.markdown(f"### 🔮 Forecast ({forecast_months} months)")
     future_probs["type"] = "forecast"
     merged_copy = merged[
@@ -1943,12 +1997,14 @@ def page_seasonal_trends():
         ("roof_storm_prob", "Roof/Storm"),
         ("freeze_burst_prob", "Freeze/Burst")
     ]:
+        # History
         fig_future.add_trace(go.Scatter(
             x=combined[combined["type"] == "history"]["date"],
             y=combined[combined["type"] == "history"][col],
             mode="lines",
             name=f"{name} (History)"
         ))
+        # Forecast
         fig_future.add_trace(go.Scatter(
             x=combined[combined["type"] == "forecast"]["date"],
             y=combined[combined["type"] == "forecast"][col],
@@ -1959,7 +2015,9 @@ def page_seasonal_trends():
 
     st.plotly_chart(fig_future, use_container_width=True)
 
+    # ----------------------------
     # SUMMARY
+    # ----------------------------
     st.markdown("### 📝 Executive Summary")
     recs = []
     if merged["rainfall_mm"].mean() > 80:
@@ -1982,38 +2040,6 @@ def page_seasonal_trends():
         unsafe_allow_html=True
     )
 
-# ----------------------------
-# Example Mock Functions (replace with real API calls)
-# ----------------------------
-
-def _mock_available_countries():
-    return ["USA", "Canada", "UK"]
-
-def _mock_locations_for_country(country):
-    return ["CityA", "CityB", "CityC"]
-
-def _mock_fetch_historical_weather(location, months=6):
-    import numpy as np
-    dates = pd.date_range(end=pd.Timestamp.today(), periods=months*4, freq='W')
-    return pd.DataFrame({
-        "date": dates,
-        "rainfall_mm": np.random.randint(10, 120, size=len(dates)),
-        "temperature_c": np.random.randint(-5, 35, size=len(dates))
-    })
-
-def _mock_compute_damage_probabilities(df):
-    df_copy = df.copy()
-    import numpy as np
-    df_copy["water_damage_prob"] = np.random.rand(len(df))
-    df_copy["mold_prob"] = np.random.rand(len(df))
-    df_copy["roof_storm_prob"] = np.random.rand(len(df))
-    df_copy["freeze_burst_prob"] = np.random.rand(len(df))
-    return df_copy
-
-def _mock_forecast_from_history(df, months_ahead=3):
-    import numpy as np
-    future_dates = pd.date_range(start=df["date"].max() + pd.Timedelta(days=7), periods=months_ahead*4, freq='W')
-    return pd.DataFrame({"date": future_dates})
 
 
 
