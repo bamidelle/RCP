@@ -907,54 +907,41 @@ def page_dashboard():
             """, unsafe_allow_html=True)
 
 
-st.markdown("---")
-st.markdown("### 📋 All Leads (expand a card to edit / change status)")
-st.markdown("<em>Expand a lead to edit details, change status, assign owner, and create estimates.</em>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### 📋 All Leads (expand a card to edit / change status)")
+    st.markdown("<em>Expand a lead to edit details, change status, assign owner, and create estimates.</em>", unsafe_allow_html=True)
 
-# ---- SAFELY PREPARE "stages" ----
-if not df.empty and "stage" in df.columns:
-    stages = sorted(df["stage"].dropna().unique().tolist())
-else:
-    stages = []
-# ---------------------------------
+        # ---- SAFELY PREPARE "stages" ----
+    if not df.empty and "stage" in df.columns:
+        stages = sorted(df["stage"].dropna().unique().tolist())
+    else:
+        stages = []
+    # ---------------------------------
+    # Quick filters
+    q1, q2, q3 = st.columns([3,2,3])
+    with q1:
+        search_q = st.text_input("Search (lead_id, contact name, address, notes)", key="dashboard_search")
+    with q2:
+        filter_src = st.selectbox("Source filter", options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"], key="dashboard_filter_src")
+    with q3:
+        filter_stage = st.selectbox("Stage filter", options=["All"] + stages, key="dashboard_filter_stage")
 
-# Quick filters
-q1, q2, q3 = st.columns([3,2,3])
-with q1:
-    search_q = st.text_input("Search (lead_id, contact name, address, notes)", key="dashboard_search")
-with q2:
-    filter_src = st.selectbox(
-        "Source filter",
-        options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"],
-        key="dashboard_filter_src"
-    )
-with q3:
-    filter_stage = st.selectbox(
-        "Stage filter",
-        options=["All"] + stages,
-        key="dashboard_filter_stage"
-    )
 
-df_view = df.copy()
-if search_q:
-    sq = search_q.lower()
-    df_view = df_view[df_view.apply(
-        lambda r: sq in str(r.get("lead_id","")).lower()
-        or sq in str(r.get("contact_name","")).lower()
-        or sq in str(r.get("property_address","")).lower()
-        or sq in str(r.get("notes","")).lower(),
-        axis=1
-    )]
+    df_view = df.copy()
+    if search_q:
+        sq = search_q.lower()
+        df_view = df_view[df_view.apply(lambda r: sq in str(r.get("lead_id","")).lower() or sq in str(r.get("contact_name","")).lower() or sq in str(r.get("property_address","")).lower() or sq in str(r.get("notes","")).lower(), axis=1)]
+    if filter_src and filter_src != "All":
+        df_view = df_view[df_view["source"] == filter_src]
+    if filter_stage and filter_stage != "All":
+        df_view = df_view[df_view["stage"] == filter_stage]
 
-if filter_src and filter_src != "All":
-    df_view = df_view[df_view["source"] == filter_src]
 
-if filter_stage and filter_stage != "All":
-    df_view = df_view[df_view["stage"] == filter_stage]
-
-if df_view.empty:
-    st.info("No leads to show.")
+    if df_view.empty:
+        st.info("No leads to show.")
         return
+
+
 
 # iterate leads (most recent first)
 
