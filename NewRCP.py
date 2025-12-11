@@ -25,7 +25,9 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-
+import requests
+from functools import lru_cache
+import plotly.graph_objects as go
 # =============================================================
 
 
@@ -1524,13 +1526,228 @@ except Exception:
 # =============================================================
 # MAIN PAGE — Seasonal Trends
 # =============================================================
+def _mock_available_countries():
+    return ["United States", "Canada", "United Kingdom", "Australia"]
 
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import requests
-from functools import lru_cache
+def _mock_locations_for_country(country):
+    if country == "United States":
+        return ["All US", "Fort Wayne, IN", "New York, NY", "Miami, FL", "Seattle, WA"]
+    if country == "Canada":
+        return ["All Canada", "Toronto, ON", "Vancouver, BC"]
+    if country == "United Kingdom":
+        return ["All UK", "London", "Manchester"]
+    if country == "Australia":
+        return ["All Australia", "Sydney", "Melbourne"]
+    return ["All Locations"]
+
+def _mock_fetch_historical_weather(location: str, months: int = 6):
+    end = pd.Timestamp.utcnow().normalize()
+    start = end - pd.DateOffset(months=months)
+    dates = pd.date_range(start=start, end=end, freq="7D")
+    n = len(dates)
+    rng = np.random.default_rng(abs(hash(location)) % (2**31))
+
+    rainfall = np.abs(rng.normal(loc=80, scale=40, size=n)).cumsum() / np.arange(1, n+1)
+    humidity = np.clip(50 + 20*np.sin(np.linspace(0, 6.28, n)) + rng.normal(0,5,n), 10, 100)
+    temp = 10 + 12*np.sin(np.linspace(0, 6.28, n)+rng.random()) + rng.normal(0,3,n)
+    storms = (rng.random(n) < 0.12).astype(int)
+
+    return pd.DataFrame({
+        "date": dates,
+        "rainfall_mm": rainfall,
+        "humidity_pct": humidity,
+        "temperature_c": temp,
+        "storm_flag": storms
+    }).reset_index(drop=True)
+
+def _mock_compute_damage_probabilities(weather_df: pd.DataFrame):
+    df = weather_df.copy()
+    df["water_damage_prob"] = np.clip(
+        (df["rainfall_mm"]/ (df["rainfall_mm"].max()+1))*0.7 +
+        (df["humidity_pct"]/100)*0.3, 0, 1
+    )
+    df["mold_prob"] = np.clip(
+        (df["humidity_pct"]/100)*0.8 +
+        (df["temperature_c"]/40)*0.2, 0, 1
+    )
+    df["roof_storm_prob"] = np.clip(
+        df["storm_flag"]*0.9 +
+        (df["rainfall_mm"]/ (df["rainfall_mm"].max()+1))*0.2, 0, 1
+    )
+    df["freeze_burst_prob"] = np.clip(
+        np.where(df["temperature_c"] < 1, 0.6, 0.05) +
+        (np.abs(df["temperature_c"].diff().fillna(0)) > 8).astype(int)*0.2, 0, 1
+    )
+
+    return df[["date","water_damage_prob","mold_prob","roof_storm_prob","freeze_burst_prob"]]
+
+def _mock_forecast_from_history(weather_df: pd.DataFrame, months_ahead: int = 3):
+    last = weather_df.copy().reset_index(drop=True)
+    end = last["date"].max()
+    future_dates = pd.date_range(start=end+pd.Timedelta(days=7), periods=int(4*months_ahead), freq="7D")
+
+    rng = np.random.default_rng(1234)
+    sample = last.tail(len(future_dates)).reset_index(drop=True)
+
+    future = pd.DataFrame({"date": future_dates})
+    for col in ["rainfall_mm","humidity_pct","temperature_c","storm_flag"]:
+        vals = sample[col].values
+        if len(vals) < len(future):
+            vals = np.tile(vals, int(np.ceil(len(future)/len(vals))))[:len(future)]
+        noise = rng.normal(0, 0.05*np.nanmax(np.abs(vals)+1), size=len(future))
+        future[col] = np.maximum(0, vals + noise)
+
+    return future
+
+
+# ------------------------------------------------------------
+# MAIN PAGE — Seasonal Trends
+# ------------------------------------------------------------
+
+def page_seasonal_trends():
+    st.markdown("<div class='header'>🌦️ Seasonal Trends & Weather-Based Damage Insights</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<em>Explore past weather trends and predicted damage risk for a chosen location.</em>",
+        unsafe_allow_html=True
+    )
+
+    # LOCATION INPUT SECTION
+    st.markdown("## 🌍 Select Location for Weather & Damage Trends")
+
+    countries = get_all_countries()
+    if not countries:
+        st.error("Failed to load country list.")
+        return
+
+    country_names = [c["name"] for c in countries]
+    selected_country = st.selectbox("Country", country_names, key="loc_country")
+    country_code = next((c["code"] for c in countries if c["name"] == selected_country), None)
+
+    # STATE
+    if country_code:
+        states = get_states(country_code)
+        selected_state = st.selectbox("State / Province", states, key="loc_state") if states else None
+    else:
+        selected_state = None
+
+    # CITY
+    if selected_state:
+        cities = get_cities(country_code, selected_state)
+        selected_city = st.selectbox("City", cities, key="loc_city") if cities else None
+    else:
+        selected_city = None
+
+    # Must have all three selected
+    if not (selected_country and selected_state and selected_city):
+        st.info("Select country, state, and city to continue.")
+        return
+
+    st.success(f"📌 {selected_city}, {selected_state}, {selected_country} selected.")
+
+    # Additional UI (mock layer)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        country_option = st.selectbox("Mock Country", _mock_available_countries(), key="season_country")
+    with col2:
+        location_option = st.selectbox("Mock Location", _mock_locations_for_country(country_option), key="season_location")
+    with col3:
+        hist_range = st.selectbox("History window", ["3 months","6 months","12 months"], index=1)
+
+    fc1, fc2 = st.columns([3,1])
+    with fc1:
+        forecast_range = st.selectbox("Forecast horizon", ["3 months","6 months","12 months"])
+    with fc2:
+        generate = st.button("Generate Insights")
+
+    if not generate:
+        st.info("Click **Generate Insights** to load seasonal insights.")
+        return
+
+    # Parse months
+    hist_months = {"3 months":3,"6 months":6,"12 months":12}[hist_range]
+    forecast_months = {"3 months":3,"6 months":6,"12 months":12}[forecast_range]
+
+    # DATA PROCESSING
+    with st.spinner("Fetching weather | Computing risks | Generating trends..."):
+        hist_df = _mock_fetch_historical_weather(location_option, months=hist_months)
+        prob_df = _mock_compute_damage_probabilities(hist_df)
+        merged = pd.merge(hist_df, prob_df, on="date")
+
+        future_weather = _mock_forecast_from_history(hist_df, months_ahead=forecast_months)
+        future_probs = _mock_compute_damage_probabilities(
+            future_weather.rename(columns={"date": "date"}).assign(date=future_weather["date"])
+        )
+
+    # CHARTS: Historical
+    st.markdown("### 📈 Historical Weather Metrics")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(px.line(merged, x="date", y="rainfall_mm", title="Rainfall (mm)"), use_container_width=True)
+    with c2:
+        st.plotly_chart(px.line(merged, x="date", y="temperature_c", title="Temperature (°C)"), use_container_width=True)
+
+    st.markdown("### 📊 Damage Probability (Historical)")
+    fig_hist = go.Figure()
+    for col, name in [
+        ("water_damage_prob","Water Damage"),
+        ("mold_prob","Mold Risk"),
+        ("roof_storm_prob","Roof/Storm"),
+        ("freeze_burst_prob","Freeze/Burst")
+    ]:
+        fig_hist.add_trace(go.Scatter(x=merged["date"], y=merged[col], mode="lines", name=name))
+    fig_hist.update_layout(yaxis=dict(range=[0,1]))
+    st.plotly_chart(fig_hist, use_container_width=True)
+
+    # CHARTS: Forecast
+    st.markdown(f"### 🔮 Forecast ({forecast_months} months)")
+    future_probs["type"] = "forecast"
+    merged_copy = merged[["date","water_damage_prob","mold_prob","roof_storm_prob","freeze_burst_prob"]].copy()
+    merged_copy["type"] = "history"
+    combined = pd.concat([merged_copy, future_probs], ignore_index=True).sort_values("date")
+
+    fig_future = go.Figure()
+    for col,name in [
+        ("water_damage_prob","Water Damage"),
+        ("mold_prob","Mold Risk"),
+        ("roof_storm_prob","Roof/Storm"),
+        ("freeze_burst_prob","Freeze/Burst")
+    ]:
+        fig_future.add_trace(go.Scatter(
+            x=combined[combined["type"]=="history"]["date"],
+            y=combined[combined["type"]=="history"][col],
+            mode="lines",
+            name=f"{name} (History)"
+        ))
+        fig_future.add_trace(go.Scatter(
+            x=combined[combined["type"]=="forecast"]["date"],
+            y=combined[combined["type"]=="forecast"][col],
+            mode="lines",
+            name=f"{name} (Forecast)",
+            line=dict(dash="dash")
+        ))
+
+    st.plotly_chart(fig_future, use_container_width=True)
+
+    # SUMMARY
+    st.markdown("### 📝 Executive Summary")
+    recs = []
+    if merged["rainfall_mm"].mean() > 80:
+        recs.append("High rainfall — prepare for water/mold jobs.")
+    if merged["mold_prob"].mean() > 0.4:
+        recs.append("Elevated mold probability — push mold services.")
+    if merged["roof_storm_prob"].mean() > 0.3:
+        recs.append("Storm activity likely — prepare roofing teams.")
+    if merged["freeze_burst_prob"].mean() > 0.2:
+        recs.append("Freeze risk detected — prepare for pipe burst calls.")
+
+    if not recs:
+        recs.append("Stable weather expected — normal operations recommended.")
+
+    for r in recs:
+        st.info(r)
+
+    st.markdown("<small>Prototype module — Replace mock functions with real NOAA / Open-Meteo / Meteostat API calls.</small>", unsafe_allow_html=True)
+
 
 # ----------------------------
 # Global Country → State → City Lookup (Live API)
