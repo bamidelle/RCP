@@ -1426,26 +1426,31 @@ def _mock_forecast_from_history(weather_df: pd.DataFrame, months_ahead: int = 3)
 
 def page_seasonal_trends():
     st.markdown("<div class='header'>🌦️ Seasonal Trends & Weather-Based Damage Insights</div>", unsafe_allow_html=True)
-    st.markdown("<em>Explore past weather trends and predicted damage risk for a chosen location. Use this to plan staffing, marketing, and equipment.</em>", unsafe_allow_html=True)
+    st.markdown(
+        "<em>Explore past weather trends and predicted damage risk for a chosen location. "
+        "Use this to plan staffing, marketing, and equipment.</em>",
+        unsafe_allow_html=True
+    )
+
     # -------------------------------------------------------
-# LOCATION SELECTION UI
-# -------------------------------------------------------
+    # LOCATION SELECTION UI
+    # -------------------------------------------------------
+    st.markdown("## 🌍 Select Location for Seasonal Weather & Damage Trends")
 
-st.markdown("## 🌍 Select Location for Seasonal Weather & Damage Trends")
+    # 1️⃣ COUNTRY
+    countries = get_all_countries()
 
-# 1️⃣ COUNTRY
-countries = get_all_countries()
+    if not countries:
+        st.error("Failed to load country list.")
+        return
 
-if not countries:
-    st.error("Failed to load country list.")
-else:
     country_names = [c["name"] for c in countries]
     selected_country = st.selectbox("Select a Country", country_names, key="loc_country")
 
     # get country code
     country_code = next((c["code"] for c in countries if c["name"] == selected_country), None)
 
-    # 2️⃣ STATE
+    # 2️⃣ STATE / PROVINCE
     if country_code:
         states = get_states(country_code)
         if not states:
@@ -1467,40 +1472,72 @@ else:
     else:
         selected_city = None
 
-# When all 3 chosen
-if selected_country and selected_state and selected_city:
-    st.success(f"📌 Location Selected: **{selected_city}, {selected_state}, {selected_country}**")
-    st.session_state.selected_location = {
-        "country": selected_country,
-        "country_code": country_code,
-        "state": selected_state,
-        "city": selected_city
-    }
+    # -------------------------------------------------------
+    # When all 3 pieces of location info are selected
+    # -------------------------------------------------------
+    if selected_country and selected_state and selected_city:
+        st.success(
+            f"📌 Location Selected: **{selected_city}, {selected_state}, {selected_country}**"
+        )
 
-    # ---- Controls ----
-    c1, c2, c3 = st.columns([2,2,2])
-    with c1:
-        country = st.selectbox("Country", options=_mock_available_countries(), index=0, key="season_country")
-    with c2:
-        location = st.selectbox("Location / City", options=_mock_locations_for_country(country), index=0, key="season_location")
-    with c3:
-        # timeframe selector for historical view
-        hist_range = st.selectbox("Historical window", options=["3 months", "6 months", "12 months"], index=1, key="season_hist_range")
-    # forecast range
-    f1, f2 = st.columns([2,1])
-    with f1:
-        forecast_range = st.selectbox("Forecast horizon", options=["3 months", "6 months", "12 months"], index=0, key="season_forecast_range")
-    with f2:
-        action = st.button("Generate Insights", key="season_generate_btn")
+        st.session_state.selected_location = {
+            "country": selected_country,
+            "country_code": country_code,
+            "state": selected_state,
+            "city": selected_city
+        }
 
-    # parse ranges
-    hist_months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+        # ---- Additional Controls (Historical & Forecast Ranges) ----
+        c1, c2, c3 = st.columns([2, 2, 2])
+        with c1:
+            country_option = st.selectbox(
+                "Country (mock list)", 
+                options=_mock_available_countries(),
+                index=0,
+                key="season_country"
+            )
+        with c2:
+            location_option = st.selectbox(
+                "Location / City (mock)", 
+                options=_mock_locations_for_country(country_option),
+                index=0,
+                key="season_location"
+            )
+        with c3:
+            hist_range = st.selectbox(
+                "Historical window",
+                ["3 months", "6 months", "12 months"],
+                index=1,
+                key="season_hist_range"
+            )
 
-    # ---- Data fetch / compute ----
-    if not action:
-        st.info("Select options above and click 'Generate Insights' to load data and predictions.")
-        return
+        # Forecast section
+        f1, f2 = st.columns([2, 1])
+        with f1:
+            forecast_range = st.selectbox(
+                "Forecast horizon",
+                ["3 months", "6 months", "12 months"],
+                index=0,
+                key="season_forecast_range"
+            )
+        with f2:
+            action = st.button("Generate Insights", key="season_generate_btn")
+
+        # Convert text ranges → numeric months
+        hist_months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
+        forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+
+        # ---- WAITING FOR USER TO CLICK ----
+        if not action:
+            st.info("Select options above and click **Generate Insights** to load data and predictions.")
+            return
+
+        # If action clicked → continue into graphs (next section)
+        st.success("Loading charts and predictions… (mock data for now)")
+
+        # FROM HERE → your charts, climate graphs, predictions, AI text insights, etc.
+        # I’ll help you build this part next.
+
 
     with st.spinner("Loading historical weather and computing insights..."):
         # fetch historical weather data (replace stub with real API)
