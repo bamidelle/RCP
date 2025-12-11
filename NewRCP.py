@@ -8,6 +8,7 @@ TITAN Backend - Single-file Streamlit app
 - Pipeline dashboard, Analytics, CPA/ROI, Exports/Imports, Alerts, SLA, Priority scoring, Audit trail
 """
 
+
 import os
 from datetime import datetime, timedelta, date
 import io, base64, traceback
@@ -39,8 +40,10 @@ PIPELINE_STAGES = [
 DEFAULT_SLA_HOURS = 72
 COMFORTAA_IMPORT = "https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;700&display=swap"
 
+
 # KPI colors (numbers)
 KPI_COLORS = ["#2563eb", "#0ea5a4", "#a855f7", "#f97316", "#ef4444", "#6d28d9", "#22c55e"]
+
 
 # ----------------------
 # DB SETUP
@@ -48,10 +51,12 @@ KPI_COLORS = ["#2563eb", "#0ea5a4", "#a855f7", "#f97316", "#ef4444", "#6d28d9", 
 DB_PATH = os.path.join(os.getcwd(), DB_FILE)
 ENGINE_URL = f"sqlite:///{DB_PATH}"
 
+
 # SQLAlchemy engine and session factory
 engine = create_engine(ENGINE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 Base = declarative_base()
+
 
 # ----------------------
 # MODELS
@@ -63,6 +68,7 @@ class User(Base):
     full_name = Column(String, default="")
     role = Column(String, default="Admin")  # Admin by default for backend
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 class Lead(Base):
     __tablename__ = "leads"
@@ -96,6 +102,7 @@ class Lead(Base):
     converted = Column(Boolean, default=False)
     score = Column(Float, nullable=True)  # ML probability
 
+
 class LeadHistory(Base):
     __tablename__ = "lead_history"
     id = Column(Integer, primary_key=True)
@@ -108,14 +115,16 @@ class LeadHistory(Base):
     # ---------- BEGIN BLOCK A: NEW MODELS (Technician, InspectionAssignment, LocationPing) ----------
 from sqlalchemy import DateTime as SA_DateTime
 
+
 class Technician(Base):
     __tablename__ = "technicians"
-
-    username = Column(String, primary_key=True)
-    full_name = Column(String)
-    phone = Column(String)
-    specialization = Column(String)
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False)  # ideally matches User.username
+    full_name = Column(String, default="")
+    phone = Column(String, nullable=True)
+    specialization = Column(String, nullable=True)  # e.g., 'Estimator','Adjuster','Tech'
     active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class InspectionAssignment(Base):
@@ -127,6 +136,7 @@ class InspectionAssignment(Base):
     status = Column(String, default="assigned")      # assigned, enroute, onsite, completed, cancelled
     notes = Column(Text, nullable=True)
 
+
 class LocationPing(Base):
     __tablename__ = "location_pings"
     id = Column(Integer, primary_key=True)
@@ -136,37 +146,28 @@ class LocationPing(Base):
     longitude = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     accuracy = Column(Float, nullable=True)          # optional accuracy (meters)
-
-# ---------- BEGIN BLOCK TASKS: DB MODEL ----------
-class Task(Base):
-    __tablename__ = "tasks"
-    id = Column(Integer, primary_key=True)
-    task_type = Column(String, nullable=False)          # e.g., "Follow-up", "Assign Technician", "SLA Alert"
-    lead_id = Column(String, nullable=True)             # optional link to lead.lead_id
-    description = Column(Text, nullable=False)
-    priority = Column(String, default="Medium")        # Low/Medium/High/Urgent
-    status = Column(String, default="open")            # open, assigned, in_progress, completed, cancelled
-    assigned_to = Column(String, nullable=True)        # username of assignee (technician or user)
-    created_by = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-# ---------- END BLOCK TASKS ----------
-
 # ---------- END BLOCK A ----------
+
+
 
 
 # Create tables if missing
 from sqlalchemy import inspect
 
+
 def safe_create_tables():
     inspector = inspect(engine)
     existing_tables = inspector.get_table_names()
+
 
     for table in Base.metadata.sorted_tables:
         if table.name not in existing_tables:
             table.create(bind=engine)
 
+
 safe_create_tables()
+
+
 
 
 # Safe migration attempt (best-effort add missing columns)
@@ -193,6 +194,7 @@ def safe_migrate():
     except Exception:
         pass
 
+
 safe_migrate()
 # ---------- BEGIN BLOCK B: SAFE MIGRATION / CREATE NEW TABLES ----------
 def safe_migrate_new_tables():
@@ -203,15 +205,18 @@ def safe_migrate_new_tables():
     except Exception:
         pass
 
+
 # Run it once on startup (safe)
 safe_migrate_new_tables()
 # ---------- END BLOCK B ----------
+
 
 # ----------------------
 # HELPERS: DB ops
 # ----------------------
 def get_session():
     return SessionLocal()
+
 
 def leads_to_df(start_date=None, end_date=None):
     """Load leads into a DataFrame. Filter by optional start_date/end_date (date objects)"""
@@ -288,24 +293,15 @@ def add_technician(username: str, full_name: str = "", phone: str = "", speciali
     finally:
         s.close()
 
+
 def get_technicians_df(active_only=True):
     s = get_session()
     try:
         q = s.query(Technician)
         if active_only:
             q = q.filter(Technician.active == True)
-
-        rows = q.all()
-        data = []
-        for r in rows:
-            data.append({
-                "username": r.username,
-                "full_name": r.full_name,
-                "phone": r.phone,
-                "specialization": r.specialization,
-                "active": r.active
-            })
-        return pd.DataFrame(data)
+        rows = q.order_by(Technician.created_at.desc()).all()
+        return pd.DataFrame([{"username": r.username, "full_name": r.full_name, "phone": r.phone, "specialization": r.specialization, "active": r.active} for r in rows])
     finally:
         s.close()
 
@@ -329,6 +325,7 @@ def create_inspection_assignment(lead_id: str, technician_username: str, notes: 
     finally:
         s.close()
 
+
 def get_assignments_for_lead(lead_id: str):
     s = get_session()
     try:
@@ -337,243 +334,6 @@ def get_assignments_for_lead(lead_id: str):
     finally:
         s.close()
 
-
-# ======================================================================
-# 🔵 TECHNICIAN LOCATION & MAP SYSTEM (COMPLETE + CORRECT)
-# ======================================================================
-
-import pydeck as pdk
-from datetime import datetime
-
-# ======================================================================
-# 1) GET LATEST LOCATION PING PER TECHNICIAN
-# ======================================================================
-def get_latest_tech_locations():
-    """
-    Returns: list of {tech_username, latitude, longitude, timestamp, accuracy, lead_id}
-    """
-    s = get_session()
-    try:
-        rows = (
-            s.query(LocationPing)
-            .order_by(LocationPing.tech_username, LocationPing.timestamp.desc())
-            .all()
-        )
-
-        latest = {}
-
-        for r in rows:
-            uname = getattr(r, "tech_username", None)
-            if not uname:
-                continue
-
-            # first seen per tech = latest ping because of ordering
-            if uname not in latest:
-                latest[uname] = {
-                    "tech_username": uname,
-                    "latitude": float(r.latitude),
-                    "longitude": float(r.longitude),
-                    "timestamp": r.timestamp,
-                    "accuracy": float(r.accuracy) if r.accuracy else None,
-                    "lead_id": getattr(r, "lead_id", None),
-                }
-
-        return list(latest.values())
-
-    finally:
-        s.close()
-
-
-# ======================================================================
-# 2) RENDER INTERACTIVE MAP (TECH LOCATIONS + ARC LINES)
-# ======================================================================
-def render_tech_map(zoom=11, show_lines=False):
-    tech_locs = get_latest_tech_locations()
-
-    if not tech_locs:
-        st.info("No technician location data yet.")
-        return
-
-    df = pd.DataFrame(tech_locs)
-
-    # Compute center (average lat/lon)
-    center = (df["latitude"].mean(), df["longitude"].mean())
-
-    # Base layer: technician markers
-    scatter = pdk.Layer(
-        "ScatterplotLayer",
-        df,
-        get_position=["longitude", "latitude"],
-        get_radius=80,
-        get_color=[255, 0, 0],
-        pickable=True,
-    )
-
-    tooltip = {
-        "html": (
-            "<b>Technician:</b> {tech_username}<br/>"
-            "<b>Time:</b> {timestamp}<br/>"
-            "<b>Lead:</b> {lead_id}<br/>"
-            "<b>Accuracy:</b> {accuracy}"
-        ),
-        "style": {"color": "white"},
-    }
-
-    layers = [scatter]
-
-    # OPTIONAL LINES (tech → lead)
-    if show_lines:
-        s = get_session()
-        try:
-            arcs = []
-            for r in tech_locs:
-                lid = r.get("lead_id")
-                if not lid:
-                    continue
-
-                # latest ping for that lead
-                latest_lead_ping = (
-                    s.query(LocationPing)
-                    .filter(LocationPing.lead_id == lid)
-                    .order_by(LocationPing.timestamp.desc())
-                    .first()
-                )
-
-                if latest_lead_ping:
-                    arcs.append({
-                        "source_lon": float(r["longitude"]),
-                        "source_lat": float(r["latitude"]),
-                        "target_lon": float(latest_lead_ping.longitude),
-                        "target_lat": float(latest_lead_ping.latitude),
-                    })
-
-            if arcs:
-                arc_df = pd.DataFrame(arcs)
-                arc_layer = pdk.Layer(
-                    "ArcLayer",
-                    arc_df,
-                    get_source_position=["source_lon", "source_lat"],
-                    get_target_position=["target_lon", "target_lat"],
-                    get_width=4,
-                    get_tilt=15,
-                    pickable=False,
-                    get_source_color=[0, 128, 200],
-                    get_target_color=[200, 0, 80],
-                )
-                layers.append(arc_layer)
-
-        finally:
-            s.close()
-
-    # VIEW STATE
-    view_state = pdk.ViewState(
-        latitude=float(center[0]),
-        longitude=float(center[1]),
-        zoom=zoom,
-        pitch=0,
-    )
-
-    deck = pdk.Deck(
-        layers=layers,
-        tooltip=tooltip,
-        initial_view_state=view_state,
-        map_style="mapbox://styles/mapbox/light-v9",
-    )
-
-    st.pydeck_chart(deck, use_container_width=True)
-
-
-# ======================================================================
-# 3) TECHNICIAN MAP PAGE (UI PAGE)
-# ======================================================================
-def page_technician_map():
-    st.markdown("<div class='header'>🗺️ Technician Map Tracking</div>", unsafe_allow_html=True)
-    st.markdown("<em>Live technician GPS locations.</em>", unsafe_allow_html=True)
-
-    # auto refresh option
-    auto = st.checkbox("Enable auto-refresh", value=False)
-    if auto:
-        interval = st.number_input("Refresh interval (sec)", min_value=5, max_value=300, value=20)
-        st.markdown(
-            f'<meta http-equiv="refresh" content="{interval}">', 
-            unsafe_allow_html=True
-        )
-
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        show_lines = st.checkbox("Show tech → lead lines", value=False)
-    with col2:
-        zoom = st.slider("Zoom", min_value=3, max_value=18, value=11)
-
-    # Render map
-    render_tech_map(zoom=zoom, show_lines=show_lines)
-
-# ---------- END BLOCK MAP HELPERS ----------
-
-# ---------- BEGIN BLOCK C.1: TECH / ASSIGNMENT HELPERS ----------
-def get_assignments_for_technician(technician_username: str, only_open: bool = True):
-    """
-    Returns list of assignments with related lead fields for a technician.
-    Each item: { id, lead_id, assigned_at, status, notes, lead: {contact_name, property_address, stage, estimated_value} }
-    """
-    s = get_session()
-    try:
-        q = s.query(InspectionAssignment).filter(InspectionAssignment.technician_username == technician_username)
-        if only_open:
-            q = q.filter(InspectionAssignment.status != "completed")
-        rows = q.order_by(InspectionAssignment.assigned_at.desc()).all()
-        results = []
-        for r in rows:
-            lead = s.query(Lead).filter(Lead.lead_id == r.lead_id).first() if getattr(r, "lead_id", None) else None
-            results.append({
-                "id": r.id,
-                "lead_id": r.lead_id,
-                "assigned_at": r.assigned_at.isoformat() if r.assigned_at else None,
-                "status": r.status,
-                "notes": r.notes,
-                "lead": {
-                    "contact_name": getattr(lead, "contact_name", None) if lead else None,
-                    "property_address": getattr(lead, "property_address", None) if lead else None,
-                    "stage": getattr(lead, "stage", None) if lead else None,
-                    "estimated_value": float(getattr(lead, "estimated_value", 0) or 0) if lead else 0
-                }
-            })
-        return results
-    finally:
-        s.close()
-
-def update_assignment_status(assignment_id: int, status: str = None, note: str = None, mark_lead_inspection_completed: bool = False):
-    """
-    Update assignment status and optional note. Optionally also update the associated lead (inspection_completed).
-    Returns True/False.
-    """
-    s = get_session()
-    try:
-        ia = s.query(InspectionAssignment).filter(InspectionAssignment.id == int(assignment_id)).first()
-        if not ia:
-            return False
-        if status:
-            ia.status = status
-        if note is not None:
-            # append note to existing notes
-            existing = ia.notes or ""
-            ts = datetime.utcnow().isoformat()
-            ia.notes = existing + ("\n" if existing else "") + f"{ts} - {note}"
-        s.add(ia)
-        # update lead if requested
-        if mark_lead_inspection_completed and ia.lead_id:
-            lead = s.query(Lead).filter(Lead.lead_id == ia.lead_id).first()
-            if lead:
-                lead.inspection_completed = True
-                s.add(lead)
-        s.commit()
-        return True
-    except Exception:
-        s.rollback()
-        raise
-    finally:
-        s.close()
-# ---------- END BLOCK C.1 ----------
 
 def persist_location_ping(tech_username: str, latitude: float, longitude: float, lead_id: str = None, accuracy: float = None, timestamp: datetime = None):
     s = get_session()
@@ -587,76 +347,9 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
         raise
     finally:
         s.close()
-
-# ---------- BEGIN BLOCK TASK HELPERS ----------
-def create_task(task_type: str, description: str, lead_id: str = None, priority: str = "Medium",
-                assigned_to: str = None, created_by: str = "system"):
-    s = get_session()
-    try:
-        t = Task(task_type=task_type, description=description, lead_id=lead_id,
-                 priority=priority, assigned_to=assigned_to, created_by=created_by)
-        s.add(t)
-        s.commit()
-        return t.id
-    except Exception:
-        s.rollback()
-        raise
-    finally:
-        s.close()
-
-def get_tasks_df(status_filter: list = None):
-    s = get_session()
-    try:
-        q = s.query(Task).order_by(Task.created_at.desc())
-        if status_filter:
-            q = q.filter(Task.status.in_(status_filter))
-        rows = q.all()
-        data = []
-        for r in rows:
-            data.append({
-                "id": r.id,
-                "task_type": r.task_type,
-                "lead_id": r.lead_id,
-                "description": r.description,
-                "priority": r.priority,
-                "status": r.status,
-                "assigned_to": r.assigned_to,
-                "created_by": r.created_by,
-                "created_at": r.created_at,
-                "updated_at": r.updated_at
-            })
-        return pd.DataFrame(data)
-    finally:
-        s.close()
-
-def update_task_status(task_id: int, status: str, assigned_to: str = None):
-    s = get_session()
-    try:
-        t = s.query(Task).filter(Task.id == int(task_id)).first()
-        if not t:
-            return False
-        t.status = status
-        if assigned_to is not None:
-            t.assigned_to = assigned_to
-        s.add(t); s.commit()
-        return True
-    except Exception:
-        s.rollback()
-        raise
-    finally:
-        s.close()
-# ---------- END BLOCK TASK HELPERS ----------
-# ---------- BEGIN BLOCK TASK CREATOR ----------
-def create_task_from_suggestion(suggestion_text: str, lead_id: str = None, priority: str = "High", assign_to: str = None, created_by: str = "ai"):
-    # Creates a Task and returns ID
-    try:
-        tid = create_task(task_type="AI Suggestion", description=suggestion_text, lead_id=lead_id, priority=priority, assigned_to=assign_to, created_by=created_by)
-        return tid
-    except Exception as e:
-        raise
-# ---------- END BLOCK TASK CREATOR ----------
-
 # ---------- END BLOCK C ----------
+
+
 
 
 def upsert_lead_record(payload: dict, actor="admin"):
@@ -731,42 +424,7 @@ def upsert_lead_record(payload: dict, actor="admin"):
         raise
     finally:
         s.close()
-# ----------------------------------------
-# STEP 4: STREAMLIT API ENDPOINT FOR GPS
-# ----------------------------------------
 
-def streamlit_api_handler():
-    params = st.query_params
-
-    if "api" not in params:
-        return  # not an API request
-
-    if params["api"] == "ping_location":
-        try:
-            tech = params.get("tech")
-            lat = params.get("lat")
-            lon = params.get("lon")
-            lead_id = params.get("lead_id", None)
-            acc = params.get("acc", None)
-
-            if not tech or not lat or not lon:
-                st.json({"error": "Missing fields"})
-                st.stop()
-
-            pid = persist_location_ping(
-                tech_username=str(tech),
-                latitude=float(lat),
-                longitude=float(lon),
-                lead_id=lead_id,
-                accuracy=float(acc) if acc else None
-            )
-
-            st.json({"ok": True, "ping_id": pid})
-            st.stop()
-
-        except Exception as e:
-            st.json({"error": str(e)})
-            st.stop()
 
 def delete_lead_record(lead_id: str, actor="admin"):
     s = get_session()
@@ -784,6 +442,7 @@ def delete_lead_record(lead_id: str, actor="admin"):
     finally:
         s.close()
 
+
 def get_users_df():
     s = get_session()
     try:
@@ -792,6 +451,7 @@ def get_users_df():
         return pd.DataFrame(data)
     finally:
         s.close()
+
 
 def add_user(username: str, full_name: str = "", role: str = "Admin"):
     s = get_session()
@@ -810,6 +470,7 @@ def add_user(username: str, full_name: str = "", role: str = "Admin"):
         raise
     finally:
         s.close()
+
 
 # ----------------------
 # ML - internal only
@@ -834,6 +495,7 @@ def train_internal_model():
     joblib.dump({"model": model, "columns": X.columns.tolist()}, MODEL_FILE)
     return acc, "trained"
 
+
 def load_internal_model():
     if not os.path.exists(MODEL_FILE):
         return None, None
@@ -842,6 +504,7 @@ def load_internal_model():
         return obj.get("model"), obj.get("columns")
     except Exception:
         return None, None
+
 
 def score_dataframe(df, model, cols):
     if model is None or df.empty:
@@ -863,6 +526,7 @@ def score_dataframe(df, model, cols):
         df["score"] = model.predict(X)
     return df
 
+
 # ----------------------
 # Priority & SLA utilities
 # ----------------------
@@ -877,6 +541,7 @@ def calculate_remaining_sla(sla_entered_at, sla_hours):
         return max(remain.total_seconds(), 0.0), (remain.total_seconds() <= 0)
     except Exception:
         return float("inf"), False
+
 
 def compute_priority_for_row(row, weights=None):
     # row: Series/dict
@@ -905,11 +570,13 @@ def compute_priority_for_row(row, weights=None):
     total = s*weights["score_w"] + vnorm*weights["value_w"] + sla_score*weights["sla_w"]
     return max(0.0, min(1.0, total))
 
+
 # ----------------------
 # UI CSS and layout
 # ----------------------
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 st.markdown(f"<link href='{COMFORTAA_IMPORT}' rel='stylesheet'>", unsafe_allow_html=True)
+
 
 APP_CSS = """
 <style>
@@ -924,10 +591,12 @@ body, .stApp { background: #ffffff; color: #0b1220; font-family: 'Comfortaa', sa
     min-width:220px;
     box-shadow:0 8px 22px rgba(16,24,40,0.06);
 
+
     /* ✅ add spacing */
     margin-top: 12px;
     margin-bottom: 12px;
 }
+
 
 .kpi-title { font-size:12px; opacity:0.95; margin-bottom:6px; }
 .kpi-number { font-size:22px; font-weight:900; margin-bottom:8px; }
@@ -942,6 +611,7 @@ body, .stApp { background: #ffffff; color: #0b1220; font-family: 'Comfortaa', sa
     margin-bottom:8px;
 }
 
+
 .priority-time { color:#dc2626; font-weight:700; }
 .priority-money { color:#22c55e; font-weight:800; }
 .alert-bubble { background:#111; color:white; padding:10px; border-radius:10px; }
@@ -950,31 +620,28 @@ body, .stApp { background: #ffffff; color: #0b1220; font-family: 'Comfortaa', sa
 """
 st.markdown(APP_CSS, unsafe_allow_html=True)
 
-streamlit_api_handler()
+
+# ----------------------
+# Sidebar controls (Admin backend - no front login)
 # ----------------------
 with st.sidebar:
-    st.header("ReCapture Pro (Admin)")
+    st.header("TITAN Backend (Admin)")
     st.markdown("You are using the backend admin interface. User accounts and roles are managed in Settings.")
-
     page = st.radio(
-        "Menu",
-        [
+    "Navigate", 
+    [
         "Dashboard",
         "Lead Capture",
         "Pipeline Board",
         "Analytics",
         "CPA & ROI",
-        "AI Recommendations",
         "ML (internal)",
-        "Technician Mobile",
-        "Technician Map Tracking",   # << add this
-        "Tasks",
+        "AI Recommendations",   # ← ADD THIS
         "Settings",
         "Exports"
-        ],
-        index=0
-    )
-
+    ], 
+    index=0
+)
 
 
     st.markdown("---")
@@ -1000,6 +667,7 @@ with st.sidebar:
         st.session_state.start_date = sd
         st.session_state.end_date = ed
 
+
     st.markdown("---")
     st.markdown("Internal ML runs silently. Use ML page to train/score.")
     if st.button("Refresh data"):
@@ -1009,9 +677,11 @@ with st.sidebar:
         except Exception:
             pass
 
+
 # Utility: date filters
 start_dt = st.session_state.get("start_date", None)
 end_dt = st.session_state.get("end_date", None)
+
 
 # Load leads
 try:
@@ -1019,6 +689,7 @@ try:
 except OperationalError as exc:
     st.error("Database error — ensure file is writable and accessible.")
     st.stop()
+
 
 # Load model (if exists)
 model, model_cols = load_internal_model()
@@ -1028,6 +699,7 @@ if model is not None and not leads_df.empty:
     except Exception:
         # if scoring fails, continue without scores
         pass
+
 
 # ----------------------
 # Alerts bell (top-right)
@@ -1042,8 +714,10 @@ def alerts_ui():
         if overdue_flag and r.get("stage") not in ("Won", "Lost"):
             overdue.append(r)
 
+
     if overdue:
         col1, col2 = st.columns([1, 10])
+
 
         # BELL BUTTON (needs unique key)
         with col1:
@@ -1052,12 +726,15 @@ def alerts_ui():
                     "show_alerts", False
                 )
 
+
         with col2:
             st.markdown("")
+
 
         # EXPANDED ALERTS POPUP
         if st.session_state.get("show_alerts", False):
             with st.expander("SLA Alerts (click to close)", expanded=True):
+
 
                 # list overdue leads
                 for r in overdue:
@@ -1068,22 +745,48 @@ def alerts_ui():
                         unsafe_allow_html=True
                     )
 
+
                 # CLOSE BUTTON (needs unique key)
                 if st.button("Close Alerts", key="alerts_close_button"):
                     st.session_state.show_alerts = False
+
 
     else:
         st.markdown("")
 
 
+
+
 def page_dashboard():
+    import plotly.express as px
     st.markdown("<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>", unsafe_allow_html=True)
     st.markdown("<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>", unsafe_allow_html=True)
-    alerts_ui()
 
-    df = leads_df.copy()
 
-    # KPI calculations
+    # Call alerts_ui() like your design; support both signatures
+    try:
+        alerts_ui()
+    except TypeError:
+        try:
+            alerts_ui(leads_df if 'leads_df' in globals() else leads_to_df())
+        except Exception:
+            pass
+
+
+    # Prefer leads_df if present, otherwise fall back to leads_to_df()
+    try:
+        if 'leads_df' in globals() and isinstance(leads_df, pd.DataFrame):
+            df = leads_df.copy()
+        else:
+            df = leads_to_df()
+    except Exception:
+        df = leads_to_df()
+
+
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame()
+
+
     total_leads = len(df)
     qualified_leads = int(df[df["qualified"] == True].shape[0]) if not df.empty else 0
     sla_success_count = int(df[df["contacted"] == True].shape[0]) if not df.empty else 0
@@ -1099,6 +802,13 @@ def page_dashboard():
     sla_success_pct = (sla_success_count / total_leads * 100) if total_leads else 0.0
     qualification_pct = (qualified_leads / total_leads * 100) if total_leads else 0.0
 
+
+    try:
+        KPI_COLORS
+    except Exception:
+        KPI_COLORS = ["#0ea5e9","#34d399","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#10b981"]
+
+
     KPI_ITEMS = [
         ("Active Leads", f"{active_leads}", KPI_COLORS[0], "Leads currently in pipeline"),
         ("SLA Success", f"{sla_success_pct:.1f}%", KPI_COLORS[1], "Leads contacted within SLA"),
@@ -1109,13 +819,13 @@ def page_dashboard():
         ("Pipeline Job Value", f"${pipeline_job_value:,.0f}", KPI_COLORS[6], "Total pipeline job value")
     ]
 
-    # KPI Cards (7 animated)
+
+    # render 2 rows: first 4 then next 3
     r1 = st.columns(4)
     r2 = st.columns(3)
     cols = r1 + r2
-
     for col, (title, value, color, note) in zip(cols, KPI_ITEMS):
-        pct = min(100, max(10, (hash(title) % 80) + 20))
+        pct = min(100, max(10, (abs(hash(title)) % 80) + 20))
         col.markdown(f"""
             <div class='kpi-card'>
               <div class='kpi-title'>{title}</div>
@@ -1125,29 +835,57 @@ def page_dashboard():
             </div>
         """, unsafe_allow_html=True)
 
+
     st.markdown("---")
     st.markdown("### Lead Pipeline Stages")
     st.markdown("<em>Distribution of leads across pipeline stages.</em>", unsafe_allow_html=True)
 
+
     if df.empty:
         st.info("No leads yet. Create one in Lead Capture.")
     else:
-        stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
+        try:
+            stages = PIPELINE_STAGES
+        except Exception:
+            stages = ["New","Contacted","Inspection Scheduled","Inspection","Estimate Sent","Won","Lost"]
+        stage_counts = df["stage"].value_counts().reindex(stages, fill_value=0)
         pie_df = pd.DataFrame({"status": stage_counts.index, "count": stage_counts.values})
-        fig = px.pie(pie_df, names="status", values="count", hole=0.45)
-        fig.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig, use_container_width=True)
+        try:
+            fig = px.pie(pie_df, names="status", values="count", hole=0.45, color="status")
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception:
+            st.bar_chart(stage_counts)
 
+
+        st.markdown("---")
+
+
+    # TOP 5 PRIORITY LEADS
     st.markdown("---")
     st.markdown("### TOP 5 PRIORITY LEADS")
     st.markdown("<em>Highest urgency leads by priority score (0–1). Address these first.</em>", unsafe_allow_html=True)
-
     if df.empty:
         st.info("No priority leads to display.")
     else:
-        df["priority_score"] = df.apply(lambda r: compute_priority_for_row(r), axis=1)
-        pr_df = df.sort_values("priority_score", ascending=False).head(5)
+        if 'compute_priority_for_row' in globals():
+            scorer = compute_priority_for_row
+        else:
+            def scorer(r):
+                rem_s, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
+                score = 0.0
+                if overdue:
+                    score += 0.6
+                try:
+                    score += min(0.4, float(r.get("estimated_value") or 0.0) / max(1.0, pipeline_job_value))
+                except Exception:
+                    pass
+                return min(1.0, score)
 
+
+        df = df.copy()
+        df["priority_score"] = df.apply(lambda r: scorer(r), axis=1)
+        pr_df = df.sort_values("priority_score", ascending=False).head(5)
         for _, r in pr_df.iterrows():
             sla_sec, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
             hleft = int(sla_sec / 3600) if sla_sec not in (None, float("inf")) else 9999
@@ -1167,100 +905,42 @@ def page_dashboard():
                   </div>
                 </div>
             """, unsafe_allow_html=True)
-st.markdown("---")
-st.markdown("---")
-st.markdown("### 📋 All Leads (expand a card to edit / change status)")  
-st.markdown("---")
-st.markdown("### Live Technician Map")
-st.markdown("<em>Latest location for each technician (click Auto-refresh to update automatically).</em>", unsafe_allow_html=True)
 
-# small inline control
-c1, c2 = st.columns([3,1])
-with c1:
-    inline_show_lines = st.checkbox("Show lines to assigned lead", key="dash_map_lines", value=False)
-with c2:
-    inline_refresh = st.checkbox("Auto-refresh inline map (meta refresh)", key="dash_map_auto", value=False)
 
-if inline_refresh:
-    # default 20 sec
-    st.markdown('<meta http-equiv="refresh" content="20">', unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### 📋 All Leads (expand a card to edit / change status)")
+    st.markdown("<em>Expand a lead to edit details, change status, assign owner, and create estimates.</em>", unsafe_allow_html=True)
 
-st.markdown("### Technician Filter")
 
-tech_df = get_technicians_df(active_only=True)
+    # Quick filters
+    q1, q2, q3 = st.columns([3,2,3])
+    with q1:
+        search_q = st.text_input("Search (lead_id, contact name, address, notes)", key="dashboard_search")
+    with q2:
+        filter_src = st.selectbox("Source filter", options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"], key="dashboard_filter_src")
+    with q3:
+        filter_stage = st.selectbox("Stage filter", options=["All"] + stages, key="dashboard_filter_stage")
 
-if tech_df.empty:
-    st.warning("No technicians found. Add them in Settings.")
-    selected_tech = None
-else:
-    tech_list = ["All Technicians"] + tech_df["username"].tolist()
-    selected_tech = st.selectbox(
-        "Show technician",
-        options=tech_list,
-        index=0,
-        key="map_tech_filter"
-    )
 
-# Now call the map renderer WITH technician filter
-render_tech_map(
-    show_lines=inline_show_lines,
-    height=420,
-    zoom=11,
-    filter_tech=None if selected_tech == "All Technicians" else selected_tech
-)
+    df_view = df.copy()
+    if search_q:
+        sq = search_q.lower()
+        df_view = df_view[df_view.apply(lambda r: sq in str(r.get("lead_id","")).lower() or sq in str(r.get("contact_name","")).lower() or sq in str(r.get("property_address","")).lower() or sq in str(r.get("notes","")).lower(), axis=1)]
+    if filter_src and filter_src != "All":
+        df_view = df_view[df_view["source"] == filter_src]
+    if filter_stage and filter_stage != "All":
+        df_view = df_view[df_view["stage"] == filter_stage]
 
-st.markdown("### 📋 All Leads (expand a card to edit / change status)")
 
-# Filter bar
-q1, q2, q3 = st.columns([3, 2, 3])
+    if df_view.empty:
+        st.info("No leads to show.")
+        return
 
-with q1:
-    search_q = st.text_input("Search (lead_id, contact name, address, notes)")
 
-with q2:
-    filter_src = st.selectbox(
-        "Source filter",
-        options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"]
-    )
-
-with q3:
-    filter_stage = st.selectbox(
-        "Stage filter",
-        options=["All"] + PIPELINE_STAGES
-    )
-
-df_view = df.copy()
-
-# Search filter
-if search_q:
-    sq = search_q.lower()
-    df_view = df_view[df_view.apply(
-        lambda r: sq in str(r.get("lead_id", "")).lower()
-        or sq in str(r.get("contact_name", "")).lower()
-        or sq in str(r.get("property_address", "")).lower()
-        or sq in str(r.get("notes", "")).lower(),
-        axis=1
-    )]
-
-# Source filter
-if filter_src != "All":
-    df_view = df_view[df_view["source"] == filter_src]
-
-# Stage filter
-if filter_stage != "All":
-    df_view = df_view[df_view["stage"] == filter_stage]
-
-# Empty case
-if df_view.empty:
-    st.info("No leads to show.")
-else:
-    # -----------------------------  
-    # LEADS LIST  
-    # -----------------------------
+    # iterate leads (most recent first)
     for _, lead in df_view.sort_values("created_at", ascending=False).head(200).iterrows():
-
+        exp_key = f"exp_{lead['lead_id']}"
         with st.expander(f"#{lead['lead_id']} — {lead.get('contact_name') or 'No name'} — {lead.get('stage')}", expanded=False):
-
             left, right = st.columns([3,1])
             with left:
                 st.write(f"**Source:** {lead.get('source') or ''}  |  **Assigned:** {lead.get('assigned_to') or ''}")
@@ -1268,33 +948,26 @@ else:
                 st.write(f"**Contact:** {lead.get('contact_name') or ''} / {lead.get('contact_phone') or ''} / {lead.get('contact_email') or ''}")
                 st.write(f"**Notes:** {lead.get('notes') or ''}")
                 st.write(f"**Created:** {lead.get('created_at')}")
-
             with right:
-                sla_sec, overdue = calculate_remaining_sla(
-                    lead.get("sla_entered_at") or lead.get("created_at"),
-                    lead.get("sla_hours")
-                )
+                sla_sec, overdue = calculate_remaining_sla(lead.get("sla_entered_at") or lead.get("created_at"), lead.get("sla_hours"))
                 if overdue:
                     st.markdown("<div style='color:#dc2626;font-weight:700;'>❗ OVERDUE</div>", unsafe_allow_html=True)
                 else:
-                    hours = int(sla_sec // 3600)
-                    mins = int((sla_sec % 3600) // 60)
+                    try:
+                        hours = int(sla_sec // 3600) if sla_sec is not None else 0
+                        mins = int((sla_sec % 3600) // 60) if sla_sec is not None else 0
+                    except Exception:
+                        hours, mins = 0, 0
                     st.markdown(f"<div class='small-muted'>⏳ {hours}h {mins}m left</div>", unsafe_allow_html=True)
-
-            # UPDATE FORM continues here...
-
-            # -------------------------
+            # update form
+            c1, c2 = st.columns(2)
             with st.form(f"update_{lead['lead_id']}", clear_on_submit=False):
-
-                new_stage = st.selectbox("Status", PIPELINE_STAGES,
-                                         index=PIPELINE_STAGES.index(lead.get("stage")) if lead.get("stage") in PIPELINE_STAGES else 0)
-
-                new_assigned = st.text_input("Assigned to (username)", value=lead.get("assigned_to") or "")
-                new_est = st.number_input("Estimated value (USD)", value=float(lead.get("estimated_value") or 0.0), min_value=0.0, step=100.0)
-                new_cost = st.number_input("Cost to acquire lead (USD)", value=float(lead.get("ad_cost") or 0.0), min_value=0.0, step=1.0)
-                new_notes = st.text_area("Notes", value=lead.get("notes") or "")
-
-                submitted = st.form_submit_button("Save changes")
+                new_stage = st.selectbox("Status", PIPELINE_STAGES, index=PIPELINE_STAGES.index(lead.get("stage")) if lead.get("stage") in PIPELINE_STAGES else 0, key=f"stage_{lead['lead_id']}")
+                new_assigned = st.text_input("Assigned to (username)", value=lead.get("assigned_to") or "", key=f"assigned_{lead['lead_id']}")
+                new_est = st.number_input("Estimated value (USD)", value=float(lead.get("estimated_value") or 0.0), min_value=0.0, step=100.0, key=f"estval_{lead['lead_id']}")
+                new_cost = st.number_input("Cost to acquire lead (USD)", value=float(lead.get("ad_cost") or 0.0), min_value=0.0, step=1.0, key=f"cost_{lead['lead_id']}")
+                new_notes = st.text_area("Notes", value=lead.get("notes") or "", key=f"notes_{lead['lead_id']}")
+                submitted = st.form_submit_button("Save changes", key=f"save_changes_{lead['lead_id']}")
                 if submitted:
                     try:
                         upsert_lead_record({
@@ -1305,57 +978,37 @@ else:
                             "ad_cost": new_cost,
                             "notes": new_notes
                         }, actor="admin")
-
                         st.success("Lead updated")
                         st.rerun()
-
                     except Exception as e:
                         st.error("Failed to update lead: " + str(e))
                         st.write(traceback.format_exc())
-
-            # -------------------------
-            # TECHNICIAN ASSIGNMENT (BLOCK E)
-            # -------------------------
+            # Technician assignment (outside form)
             st.markdown("### Technician Assignment")
-
             techs_df = get_technicians_df(active_only=True)
             tech_options = [""] + (techs_df["username"].tolist() if not techs_df.empty else [])
-
-            selected_tech = st.selectbox(
-                "Assign Technician (active)",
-                options=tech_options,
-                index=0,
-                key=f"tech_select_{lead['lead_id']}"
-            )
-
-            assign_notes = st.text_area(
-                "Assignment notes (optional)",
-                value="",
-                key=f"tech_notes_{lead['lead_id']}"
-            )
-
+            selected_tech = st.selectbox("Assign Technician (active)", options=tech_options, index=0, key=f"tech_select_{lead['lead_id']}")
+            assign_notes = st.text_area("Assignment notes (optional)", value="", key=f"tech_notes_{lead['lead_id']}")
             if st.button(f"Assign Technician to {lead['lead_id']}", key=f"assign_btn_{lead['lead_id']}"):
                 if not selected_tech:
                     st.error("Select a technician")
                 else:
                     try:
-                        create_inspection_assignment(
-                            lead_id=lead["lead_id"],
-                            technician_username=selected_tech,
-                            notes=assign_notes
-                        )
-
+                        create_inspection_assignment(lead_id=lead["lead_id"], technician_username=selected_tech, notes=assign_notes)
                         upsert_lead_record({
                             "lead_id": lead["lead_id"],
                             "inspection_scheduled": True,
                             "stage": "Inspection Scheduled"
                         }, actor="admin")
-
                         st.success(f"Assigned {selected_tech} to lead {lead['lead_id']}")
                         st.rerun()
-
                     except Exception as e:
                         st.error("Failed to assign: " + str(e))
+    # end for
+
+
+
+
 
 
 
@@ -1363,6 +1016,7 @@ else:
 # ------------------------------------------------------------
 # NEXT PAGE STARTS HERE
 # ------------------------------------------------------------
+
 
 def page_lead_capture():
     st.markdown("<div class='header'>📇 Lead Capture</div>", unsafe_allow_html=True)
@@ -1407,6 +1061,7 @@ def page_lead_capture():
                 st.error("Failed to save lead: " + str(e))
                 st.write(traceback.format_exc())
 
+
     st.markdown("---")
     st.subheader("Recent leads")
     df = leads_to_df(None, None)
@@ -1415,11 +1070,14 @@ def page_lead_capture():
     else:
         st.dataframe(df.sort_values("created_at", ascending=False).head(50))
 
+
 # Pipeline Board (mostly similar to Dashboard but with card layout)
 def page_pipeline_board():
     st.markdown("<div class='header'>PIPELINE BOARD — TOTAL LEAD PIPELINE</div>", unsafe_allow_html=True)
     st.markdown("<em>High-level pipeline board with KPI cards and priority list.</em>", unsafe_allow_html=True)
     alerts_ui()
+
+
 
 
 # Analytics page (donut + SLA line + overdue table)
@@ -1466,6 +1124,7 @@ def page_analytics():
     else:
         st.info("No overdue leads currently.")
 
+
 # CPA & ROI page
 def page_cpa_roi():
     st.markdown("<div class='header'>💰 CPA & ROI</div>", unsafe_allow_html=True)
@@ -1492,6 +1151,7 @@ def page_cpa_roi():
     if not agg.empty:
         fig = px.bar(agg, x="source", y=["total_spend","conversions"], barmode="group", title="Total Spend vs Conversions by Source")
         st.plotly_chart(fig, use_container_width=True)
+
 
 # ML internal page
 def page_ml_internal():
@@ -1533,349 +1193,153 @@ def page_ml_internal():
             scored = score_dataframe(df.copy(), model, cols).sort_values("score", ascending=False).head(20)
             st.dataframe(scored[["lead_id","source","stage","estimated_value","ad_cost","score"]])
 
+
 # ---------- BEGIN BLOCK G: AI RECOMMENDATIONS PAGE ----------
 def page_ai_recommendations():
-    """
-    Advanced AI Recommendations page (Option B).
-    - Safe: validates data & prevents duplicate-column crashes
-    - Uses internal model if available: load_internal_model(), score_dataframe()
-    - Uses DB for technician workload: InspectionAssignment
-    """
+    """AI Recommendations — cleaned, safe, and optimized."""
     import plotly.express as px
     from sqlalchemy import func
-    from datetime import datetime
 
-    st.markdown("<div class='header'>🤖 AI Recommendations — Advanced</div>", unsafe_allow_html=True)
-    st.markdown("<em>Predictive insights, pipeline bottlenecks, technician workload, and recommended actions.</em>", unsafe_allow_html=True)
 
-    # 0) Load and validate data
+    st.markdown("<div class='header'>🤖 AI Recommendations</div>", unsafe_allow_html=True)
+    st.markdown("<em>Heuristic recommendations and quick diagnostics for the pipeline.</em>", unsafe_allow_html=True)
+
+
+    # Load leads defensively
     try:
         df = leads_to_df()
     except Exception as e:
-        st.error("Failed to load leads: " + str(e))
+        st.error(f"Failed to load leads: {e}")
+        df = pd.DataFrame()
+
+
+    if df.empty:
+        st.info("No leads to analyze.")
         return
 
-    if df is None or df.empty:
-        st.info("No lead data available. Add leads first or check DB.")
-        return
 
-    # Ensure required columns exist (provide helpful error if missing)
-    required = ["lead_id", "stage", "estimated_value", "created_at"]
-    for col in required:
-        if col not in df.columns:
-            st.error(f"Missing required column for AI analysis: {col}")
-            return
-
-    # Normalize types lightly
-    df = df.copy()
-    try:
-        df["estimated_value"] = pd.to_numeric(df["estimated_value"].fillna(0))
-    except Exception:
-        pass
-
-    # ---------- 1) Top Overdue Leads ----------
+    # 1) Top overdue leads
     st.subheader("Top Overdue Leads")
-    overdue_rows = []
+    overdue_list = []
     for _, r in df.iterrows():
         rem_s, overdue_flag = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
         if overdue_flag and r.get("stage") not in ("Won", "Lost"):
-            overdue_rows.append({
+            overdue_list.append({
                 "lead_id": r["lead_id"],
                 "stage": r.get("stage"),
-                "assigned_to": r.get("assigned_to") or "",
-                "estimated_value": float(r.get("estimated_value") or 0.0),
-                "overdue_seconds": rem_s or 0
+                "assigned_to": r.get("assigned_to"),
+                "value": r.get("estimated_value") or 0.0,
+                "overdue_seconds": rem_s
             })
-    if overdue_rows:
-        over_df = pd.DataFrame(overdue_rows).sort_values(["estimated_value","overdue_seconds"], ascending=[False,True])
-        # keep safe columns and unique names
-        over_df = over_df.rename(columns={"lead_id":"Lead ID","stage":"Stage","assigned_to":"Assigned To","estimated_value":"Est. Value","overdue_seconds":"Overdue Seconds"})
-        st.table(over_df[["Lead ID","Stage","Assigned To","Est. Value"]].head(20))
-        csv = over_df.to_csv(index=False)
-        st.download_button("Download overdue leads (CSV)", data=csv, file_name="overdue_leads.csv", mime="text/csv")
+    if overdue_list:
+        over_df = pd.DataFrame(overdue_list).sort_values("value", ascending=False)
+        # keep columns unique and friendly
+        over_df = over_df.rename(columns={"lead_id": "Lead ID", "stage": "Stage", "assigned_to": "Assigned To", "value": "Est. Value", "overdue_seconds": "Overdue Seconds"})
+        st.table(over_df[["Lead ID", "Stage", "Assigned To", "Est. Value"]].head(10))
     else:
-        st.info("No overdue leads detected.")
+        st.info("No overdue leads.")
+
 
     st.markdown("---")
 
-    # ---------- 2) Pipeline Bottlenecks ----------
+
+    # 2) Pipeline Bottlenecks (stage counts)
     st.subheader("Pipeline Bottlenecks")
     try:
         stages = PIPELINE_STAGES
     except Exception:
-        stages = df["stage"].unique().tolist()
+        stages = ["New", "Contacted", "Inspection Scheduled", "Inspection", "Estimate Sent", "Won", "Lost"]
 
-    # Use value_counts -> reset_index -> unique names (prevents pyarrow error)
+
     stage_counts = df["stage"].value_counts().reindex(stages, fill_value=0)
     stage_df = stage_counts.reset_index()
-    stage_df.columns = ["Stage","Count"]
-    st.table(stage_df.head(20))
+    stage_df.columns = ["Stage", "Count"]        # ensure unique column names
+    st.table(stage_df.head(10))
 
-    # horizontal bar chart
+
+    # Small horizontal bar chart (plotly)
     try:
-        fig = px.bar(stage_df, x="Count", y="Stage", orientation="h", height=320, title="Leads by Stage")
-        fig.update_layout(margin=dict(l=10,r=10,t=30,b=10))
+        fig = px.bar(stage_df, x="Count", y="Stage", orientation="h", title="Leads by Stage", height=300)
+        fig.update_layout(margin=dict(l=0, r=0, t=30, b=0))
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
-        st.write(stage_df)
+        pass
+
 
     st.markdown("---")
 
-    # ---------- 3) Technician Workload (from InspectionAssignment) ----------
+
+    # 3) Technician workload (from assignments)
     st.subheader("Technician Workload (Assigned Inspections)")
     try:
         s = get_session()
         try:
-            # count assignments per tech
             rows = s.query(InspectionAssignment.technician_username, func.count(InspectionAssignment.id)).group_by(InspectionAssignment.technician_username).all()
             if rows:
-                tw = pd.DataFrame(rows, columns=["Technician","Assigned Inspections"]).sort_values("Assigned Inspections", ascending=False)
+                tw = pd.DataFrame(rows, columns=["Technician", "Assigned Inspections"])
+                tw = tw.sort_values("Assigned Inspections", ascending=False).reset_index(drop=True)
                 st.table(tw)
             else:
-                st.info("No inspection assignments found.")
+                st.info("No assignments yet.")
         finally:
             s.close()
     except Exception as e:
         st.error("Failed to load assignments: " + str(e))
 
-    st.markdown("---")
-
-    # ---------- 4) Internal ML model scoring (optional) ----------
-    st.subheader("Model Scoring & Predictions")
-    model = None
-    model_cols = None
-    try:
-        # try to load internal model if you have one
-        model, model_cols = load_internal_model()
-    except Exception:
-        model = None
-        model_cols = None
-
-    if model:
-        st.success("Internal model loaded — scoring leads.")
-        try:
-            df_score_input = df.copy()
-            # Score only required cols if available; score_dataframe should handle missing cols defensively
-            scored = score_dataframe(df_score_input, model, model_cols)
-            # ensure unique column names
-            if "score" in scored.columns:
-                scored = scored.rename(columns={c:c if scored.columns.tolist().count(c)==1 else f"{c}_{i}" for i,c in enumerate(scored.columns)})
-                top_wins = scored.sort_values("score", ascending=False).head(10)
-                top_risk = scored.sort_values("score", ascending=True).head(10)
-                st.markdown("**Top predicted wins**")
-                st.table(top_wins[["lead_id","stage","estimated_value","score"]].head(10))
-                st.markdown("**Top at-risk leads**")
-                st.table(top_risk[["lead_id","stage","estimated_value","score"]].head(10))
-                # export
-                st.download_button("Download scored leads (CSV)", data=scored.to_csv(index=False), file_name="scored_leads.csv", mime="text/csv")
-            else:
-                st.info("Model did not return 'score' column.")
-        except Exception as e:
-            st.error("Model scoring failed: " + str(e))
-    else:
-        st.info("No internal model available. You can train one from ML internal page.")
 
     st.markdown("---")
 
+
+    # 4) Suggestions (simple heuristics)
+    st.subheader("Suggested Actions")
     suggestions = []
-    suggestion_rows = []  # keep structured suggestions: dicts
 
-    # generate suggestions as before (you already had this)
-    if not df.empty:
-        # overdue leads
-        for _, r in df.iterrows():
-            rem_s, overdue_flag = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
-            if overdue_flag and r.get("stage") not in ("Won","Lost"):
-                suggestions.append(f"Lead {r['lead_id']} is OVERDUE in stage {r.get('stage')}. Contact owner or reassign.")
-                suggestion_rows.append({"lead_id": r["lead_id"], "text": f"Lead {r['lead_id']} is OVERDUE in stage {r.get('stage')}. Contact owner or reassign.", "priority": "High"})
-        # scheduled but unassigned
-        scheduled = df[(df.get("inspection_scheduled") == True)]
-        scheduled_unassigned = scheduled[(scheduled["assigned_to"].isnull()) | (scheduled["assigned_to"] == "")]
-        for _, r in scheduled_unassigned.iterrows():
-            txt = f"Lead {r['lead_id']} scheduled for inspection but unassigned — assign a technician."
-            suggestions.append(txt)
-            suggestion_rows.append({"lead_id": r["lead_id"], "text": txt, "priority": "High"})
-        # high-value not contacted
-        high_uncontacted = df[(df["estimated_value"] >= 5000) & (df.get("contacted") != True)]
-        for _, r in high_uncontacted.iterrows():
-            txt = f"High-value lead {r['lead_id']} (${int(r['estimated_value']):,}) not contacted — prioritize within SLA."
-            suggestions.append(txt)
-            suggestion_rows.append({"lead_id": r["lead_id"], "text": txt, "priority": "High"})
-        # bottleneck suggestion
-        bottleneck = stage_df.sort_values("Count", ascending=False).iloc[0] if not stage_df.empty else None
-        if bottleneck is not None and bottleneck["Count"] > max(5, len(df) * 0.2):
-            txt = f"Stage '{bottleneck['Stage']}' is a bottleneck with {int(bottleneck['Count'])} leads — review process at this stage."
-            suggestions.append(txt)
-            suggestion_rows.append({"lead_id": None, "text": txt, "priority": "Medium"})
 
-        
+    # Scheduled but unassigned
+    scheduled = df[(df["inspection_scheduled"] == True)]
+    scheduled_unassigned = scheduled[(scheduled["assigned_to"].isnull()) | (scheduled["assigned_to"] == "")]
+    for _, r in scheduled_unassigned.iterrows():
+        suggestions.append(f"Lead {r['lead_id']} is scheduled for inspection but has no assigned technician — assign ASAP.")
 
-    if not suggestion_rows:
-        st.markdown("No immediate suggestions — pipeline looks healthy.")
+
+    # High-value not contacted
+    high_uncontacted = df[(df["estimated_value"] >= 5000) & (df["contacted"] == False)]
+    for _, r in high_uncontacted.iterrows():
+        suggestions.append(f"High-value lead {r['lead_id']} (${int(r['estimated_value']):,}) not contacted — prioritize contact within SLA.")
+
+
+    # Many leads stuck in same stage
+    bottleneck = stage_df.sort_values("Count", ascending=False).iloc[0] if not stage_df.empty else None
+    if bottleneck is not None and bottleneck["Count"] > max(5, len(df) * 0.2):
+        suggestions.append(f"Stage '{bottleneck['Stage']}' has {int(bottleneck['Count'])} leads — check for process blockers in this stage.")
+
+
+    # Show suggestions
+    if suggestions:
+        for sgt in suggestions[:15]:
+            st.markdown(f"- {sgt}")
     else:
-        # render each suggestion with a Create Task button and optional assign-to
-        techs_df = get_technicians_df(active_only=True)
-        tech_options = [""] + (techs_df["username"].tolist() if not techs_df.empty else [])
-        for i, srow in enumerate(suggestion_rows):
-            st.markdown(f"- {srow['text']}")
-            cols = st.columns([2,1,1])
-            with cols[0]:
-                # small input to override priority
-                p = st.selectbox(f"Priority (suggestion {i})", options=["Low","Medium","High","Urgent"], index=["Low","Medium","High","Urgent"].index(srow.get("priority","Medium")), key=f"sugg_priority_{i}")
-            with cols[1]:
-                assignee = st.selectbox(f"Assign to (optional) (suggestion {i})", options=tech_options, index=0, key=f"sugg_assign_{i}")
-            with cols[2]:
-                if st.button("Create Task", key=f"sugg_create_{i}"):
-                    try:
-                        tid = create_task_from_suggestion(suggestion_text=srow["text"], lead_id=srow.get("lead_id"), priority=p, assign_to=assignee, created_by="ai")
-                        st.success(f"Task {tid} created")
-                    except Exception as e:
-                        st.error("Failed to create task: " + str(e))
+        st.markdown("No immediate suggestions. Pipeline looks healthy.")
 
 
+    st.markdown("---")
 
-    # ---------- 6) Quick exports for ops ----------
-    st.subheader("Exports")
+
+    # 5) Quick export of problematic leads (CSV)
+    st.subheader("Export: Problem Leads")
     try:
-        if 'over_df' in locals() and not over_df.empty:
-            st.download_button("Download overdue leads (CSV)", data=over_df.to_csv(index=False), file_name="overdue_leads.csv", mime="text/csv")
-        # full leads export
-        st.download_button("Download full leads CSV", data=df.to_csv(index=False), file_name="all_leads.csv", mime="text/csv")
+        problem_df = over_df if (len(over_df) > 0) else pd.DataFrame()
+        if not problem_df.empty:
+            csv = problem_df.to_csv(index=False)
+            st.download_button("Download overdue leads (CSV)", data=csv, file_name="overdue_leads.csv", mime="text/csv")
+        else:
+            st.info("No overdue leads to export.")
     except Exception:
         pass
 
-    st.markdown("---")
-    # End of page
-
 
     # End of page
-def page_tasks():
-    st.markdown("<div class='header'>🗂️ Tasks</div>", unsafe_allow_html=True)
-    st.markdown("<em>Operational task queue (auto-created by AI or manual).</em>", unsafe_allow_html=True)
 
-    # Filters
-    f1, f2 = st.columns([2,1])
-    with f1:
-        status_filter = st.selectbox("Status", options=["All","open","assigned","in_progress","completed","cancelled"], index=0)
-    with f2:
-        priority_filter = st.selectbox("Priority", options=["All","Urgent","High","Medium","Low"], index=0)
-
-    statuses = None if status_filter == "All" else [status_filter]
-    tasks_df = get_tasks_df(status_filter=statuses)
-    if tasks_df is None or tasks_df.empty:
-        st.info("No tasks found.")
-        return
-
-    # apply priority filter
-    if priority_filter != "All":
-        tasks_df = tasks_df[tasks_df["priority"] == priority_filter]
-
-    # show table
-    st.dataframe(tasks_df[["id","task_type","lead_id","priority","status","assigned_to","created_at"]].sort_values("created_at", ascending=False))
-
-    # Action: select a task to update
-    st.markdown("### Update task")
-    sel = st.number_input("Task ID", min_value=0, value=0, step=1, key="task_sel_id")
-    if sel:
-        row = tasks_df[tasks_df["id"] == int(sel)]
-        if row.empty:
-            st.warning("Task not found.")
-        else:
-            row = row.iloc[0]
-            st.write("**Description**")
-            st.write(row["description"])
-            new_status = st.selectbox("New status", options=["open","assigned","in_progress","completed","cancelled"], index=["open","assigned","in_progress","completed","cancelled"].index(row["status"]))
-            new_assignee = st.text_input("Assign to (username)", value=row["assigned_to"] or "")
-            if st.button("Save task update", key=f"save_task_{sel}"):
-                try:
-                    update_task_status(task_id=sel, status=new_status, assigned_to=new_assignee or None)
-                    st.success("Task updated")
-                    st.rerun()
-                except Exception as e:
-                    st.error("Failed to update task: " + str(e))
-
-def page_technician_mobile():
-    st.markdown("<div class='header'>📱 Technician Mobile Preview</div>", unsafe_allow_html=True)
-    st.markdown("<em>Preview of the mobile app for technicians (admin-only).</em>", unsafe_allow_html=True)
-
-    # Load technicians from database
-    tech_df = get_technicians_df(active_only=True)
-
-    if tech_df.empty:
-        st.warning("No technicians found. Please add technicians in Settings.")
-        return
-
-    tech_list = tech_df["username"].tolist()
-
-    # Dropdown selector for technicians
-    uname = st.selectbox(
-        "Select Technician",
-        options=tech_list,
-        index=0,
-        key="mobile_preview_tech"
-    )
-
-    # Load inspection assignments
-    try:
-        rows = get_assignments_for_technician(uname, only_open=True)
-    except Exception as e:
-        st.error("Failed to load assignments: " + str(e))
-        return
-
-    if not rows:
-        st.info(f"No open inspections for {uname}")
-        return
-
-
-    for it in rows:
-        lead = it.get("lead") or {}
-
-        with st.container():
-            st.markdown(f"**Lead:** {it.get('lead_id') or ''} • {lead.get('contact_name') or ''}")
-            st.markdown(f"{lead.get('property_address') or ''}")
-            st.markdown(f"Stage: **{lead.get('stage') or ''}** • Value: ${int(lead.get('estimated_value') or 0):,}")
-            st.markdown(f"Status: **{it.get('status')}**")
-
-            new_status = st.selectbox(
-                "Set status",
-                ["","enroute","onsite","completed"],
-                key=f"mstat_{it['id']}"
-            )
-
-            note = st.text_area("Note (optional)", key=f"mnote_{it['id']}")
-
-            if st.button("Save", key=f"msave_{it['id']}"):
-                try:
-                    ok = update_assignment_status(
-                        assignment_id=it['id'],
-                        status=new_status or None,
-                        note=note or None,
-                        mark_lead_inspection_completed=(new_status == "completed")
-                    )
-                    if ok:
-                        st.success("Updated")
-                        st.rerun()
-                    else:
-                        st.error("Update failed")
-                except Exception as e:
-                    st.error("Failed to update: " + str(e))
-
-        # ---- GPS BUTTON (correct indentation) ----
-        if st.button("Send GPS Ping", key=f"gps_{it['id']}"):
-            st.markdown(f"""
-            <script>
-            navigator.geolocation.getCurrentPosition(function(pos) {{
-                const lat = pos.coords.latitude;
-                const lon = pos.coords.longitude;
-                const url = window.location.origin +
-                    "?api=ping_location&tech={uname}&lat=" + lat + "&lon=" + lon;
-
-                fetch(url).then(r => r.json()).then(data => {{
-                    alert("GPS Updated: " + JSON.stringify(data));
-                }});
-            }});
-            </script>
-            """, unsafe_allow_html=True)
 
 
 
@@ -1916,7 +1380,7 @@ def page_settings():
                 try:
                     add_technician(t_uname.strip(), full_name=t_name.strip(), phone=t_phone.strip(), specialization=t_role_sel, active=t_active)
                     st.success("Technician saved")
-                    st.rerun()
+                    st.experimental_rerun()
                 except Exception as e:
                     st.error("Failed to save technician: " + str(e))
     if tech_df is not None and not tech_df.empty:
@@ -1924,6 +1388,7 @@ def page_settings():
     else:
         st.info("No technicians yet.")
 # ---------- END BLOCK D ----------
+
 
     st.subheader("Priority weight tuning (internal)")
     wscore = st.slider("Model score weight", 0.0, 1.0, 0.6, 0.05)
@@ -1933,6 +1398,7 @@ def page_settings():
     if st.button("Save weights"):
         st.session_state.weights = {"score_w": wscore, "value_w": wvalue, "sla_w": wsla, "value_baseline": baseline}
         st.success("Weights updated (in session)")
+
 
     st.markdown("---")
     st.subheader("Audit Trail")
@@ -1946,6 +1412,7 @@ def page_settings():
             st.info("No audit entries yet.")
     finally:
         s.close()
+
 
 # Exports page
 def page_exports():
@@ -2002,6 +1469,7 @@ try:
     import threading
     flask_app = Flask("recapture_pro_api")
 
+
     @flask_app.route("/api/ping_location", methods=["POST"])
     def api_ping_location():
         try:
@@ -2024,157 +1492,6 @@ try:
             return jsonify({"ok": True, "ping_id": pid}), 200
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-                # -------------------------------
-    # Technician mobile endpoints
-    # -------------------------------
-    @flask_app.route("/tech/assignments", methods=["GET"])
-    def api_tech_assignments():
-        """
-        Query params:
-        - username: technician username (required)
-        - open_only: "1" or "0" (optional, default 1)
-        """
-        try:
-            username = request.args.get("username")
-            open_only = request.args.get("open_only", "1") != "0"
-            if not username:
-                return jsonify({"error":"username required"}), 400
-            rows = get_assignments_for_technician(username, only_open=open_only)
-            return jsonify({"ok": True, "assignments": rows}), 200
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @flask_app.route("/tech/update_assignment", methods=["POST"])
-    def api_update_assignment():
-        """
-        POST JSON:
-        {
-          "assignment_id": 123,
-          "status": "enroute" | "onsite" | "completed",
-          "note": "optional",
-          "mark_lead_completed": true|false
-        }
-        """
-        try:
-            payload = request.get_json(force=True)
-            aid = payload.get("assignment_id")
-            if not aid:
-                return jsonify({"error":"assignment_id required"}), 400
-            status = payload.get("status")
-            note = payload.get("note")
-            mark_lead = bool(payload.get("mark_lead_completed", False))
-            ok = update_assignment_status(assignment_id=aid, status=status, note=note, mark_lead_inspection_completed=mark_lead)
-            return jsonify({"ok": bool(ok)}), 200 if ok else 400
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    # Minimal mobile HTML shell (calls /tech/assignments and /tech/update_assignment)
-    
-    @flask_app.route("/tech/mobile", methods=["GET"])
-    def tech_mobile_shell():
-        html = """
-<!doctype html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Tech Mobile - ReCapture Pro</title>
-  <style>
-    body{font-family:Arial,Helvetica,sans-serif;padding:12px;background:#f7f7f9;}
-    .card{background:#fff;padding:12px;margin-bottom:12px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.06)}
-    .btn{display:inline-block;padding:8px 10px;border-radius:6px;border:none;margin:4px 2px;font-size:14px}
-    .btn-primary{background:#0ea5e9;color:#fff}
-    .btn-ghost{background:#eef2ff;color:#111}
-    input,select,textarea{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #ddd}
-    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
-  </style>
-</head>
-<body>
-<header>
-  <h3>ReCapture Pro — Tech</h3>
-  <div>
-    <input id="username" placeholder="Technician username" />
-    <button onclick="loadAssignments()" class="btn btn-primary">Load</button>
-  </div>
-</header>
-<div id="assignments"></div>
-
-<script>
-async function loadAssignments(){
-  const u = document.getElementById('username').value;
-  if(!u){ alert('enter username'); return; }
-  document.getElementById('assignments').innerHTML = '<div class="card">Loading...</div>';
-  try{
-    const res = await fetch('/tech/assignments?username=' + encodeURIComponent(u));
-    const j = await res.json();
-    if(!j.ok){ document.getElementById('assignments').innerHTML = '<div class="card">Error loading</div>'; return; }
-    renderAssignments(j.assignments, u);
-  }catch(e){
-    document.getElementById('assignments').innerHTML = '<div class="card">Network error</div>';
-  }
-}
-
-function renderAssignments(items, username){
-  if(!items || items.length===0){
-    document.getElementById('assignments').innerHTML = '<div class="card">No assignments</div>';
-    return;
-  }
-  const container = document.getElementById('assignments');
-  container.innerHTML = '';
-  items.forEach(it => {
-    const lead = it.lead || {};
-    const html = document.createElement('div');
-    html.className = 'card';
-    html.innerHTML = `
-      <div><strong>Lead: ${it.lead_id || '—'}</strong> • <small>${lead.contact_name || ''}</small></div>
-      <div style="margin-top:6px">${lead.property_address || ''}</div>
-      <div style="margin-top:6px">Stage: <strong>${lead.stage || ''}</strong> — Value: $${(lead.estimated_value||0).toLocaleString()}</div>
-      <div style="margin-top:8px">Status: <em id="status_${it.id}">${it.status}</em></div>
-      <div style="margin-top:8px">
-        <select id="select_${it.id}">
-          <option value="">-- set status --</option>
-          <option value="enroute">Enroute</option>
-          <option value="onsite">Onsite</option>
-          <option value="completed">Completed</option>
-        </select>
-      </div>
-      <div style="margin-top:8px">
-        <textarea id="note_${it.id}" placeholder="Add a note (optional)"></textarea>
-      </div>
-      <div style="margin-top:8px">
-        <button class="btn btn-primary" onclick="updateAssignment(${it.id}, '${username}')">Save</button>
-      </div>
-    `;
-    container.appendChild(html);
-  });
-}
-
-async function updateAssignment(aid, username){
-  const sel = document.getElementById('select_' + aid);
-  const note = document.getElementById('note_' + aid).value;
-  const status = sel ? sel.value : '';
-  if(!status){ alert('select a status'); return; }
-  try{
-    const res = await fetch('/tech/update_assignment', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ assignment_id: aid, status: status, note: note, mark_lead_completed: status === 'completed' })
-    });
-    const j = await res.json();
-    if(j.ok){
-      document.getElementById('status_' + aid).innerText = status;
-      alert('Updated');
-    } else {
-      alert('Failed: ' + (j.error || 'unknown'));
-    }
-  }catch(e){
-    alert('Network error');
-  }
-}
-</script>
-</body>
-</html>
-"""
-        return html, 200, {"Content-Type": "text/html"}
 
 
     def run_flask():
@@ -2184,6 +1501,7 @@ async function updateAssignment(aid, username){
         except Exception:
             pass
 
+
     # start flask in background daemon thread (only if not already started)
     t = threading.Thread(target=run_flask, daemon=True)
     t.start()
@@ -2191,6 +1509,8 @@ except Exception:
     # if Flask isn't available (not installed) the API simply won't start — harmless
     pass
 # ---------- END BLOCK F ----------
+
+
 
 
 # ----------------------
@@ -2210,12 +1530,6 @@ elif page == "AI Recommendations":
     page_ai_recommendations()
 elif page == "ML (internal)":
     page_ml_internal()
-elif page == "Tasks":
-    page_tasks()       # ✅ newly added
-elif page == "Technician Mobile":
-    page_technician_mobile()
-elif page == "Technician Map Tracking":
-    page_technician_map()
 elif page == "Settings":
     page_settings()
 elif page == "Exports":
@@ -2227,7 +1541,3 @@ else:
 # Footer
 st.markdown("---")
 st.markdown("<div class='small-muted'>ReCapture Pro. SQLite persistence. Integrated Field Tracking (upgrade) enabled.</div>", unsafe_allow_html=True)
-
-
-
-
