@@ -1608,6 +1608,180 @@ def _mock_forecast_from_history(weather_df: pd.DataFrame, months_ahead: int = 3)
     return future
 
 
+# ============================================================
+# Global Country → State → City Lookup (Live API)
+# ============================================================
+
+import requests
+import streamlit as st
+from functools import lru_cache
+
+# -------------- COUNTRY LIST --------------
+@lru_cache(maxsize=1)
+def get_all_countries():
+    """Return full list of countries with ISO codes using REST Countries API (free)."""
+    try:
+        url = "https://restcountries.com/v3.1/all"
+        res = requests.get(url, timeout=10)
+        data = res.json()
+
+        countries = []
+        for c in data:
+            if "cca2" in c:
+                countries.append({
+                    "name": c.get("name", {}).get("common"),
+                    "code": c.get("cca2")
+                })
+
+        # sort alphabetically
+        countries = sorted(countries, key=lambda x: x["name"])
+
+        return countries
+    except Exception as e:
+        print("get_all_countries() ERROR:", e)
+        return []
+
+
+# -------------- STATE LOOKUP --------------
+@lru_cache(maxsize=256)
+def get_states(country_code):
+    """
+    Returns list of states/provinces for a country.
+    Uses Open-Meteo geocoding which has structured admin1 regions.
+    """
+    try:
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name=&count=200&language=en&format=json&country={country_code}"
+        res = requests.get(url, timeout=10).json()
+
+        states = set()
+
+        for r in res.get("results", []):
+            admin1 = r.get("admin1")
+            if admin1:
+                states.add(admin1)
+
+        states = sorted(list(states))
+        return states
+
+    except Exception as e:
+        print("get_states() ERROR:", e)
+        return []
+
+
+# -------------- CITY LOOKUP --------------
+@lru_cache(maxsize=512)
+def get_cities(country_code, state_name):
+    """
+    Returns list of cities within a country+state.
+    """
+    try:
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={state_name}&count=200&language=en&format=json&country={country_code}"
+        res = requests.get(url, timeout=10).json()
+
+        cities = set()
+
+        for r in res.get("results", []):
+            # Only cities (admin2 or specific locality)
+            city = r.get("name")
+            admin1 = r.get("admin1")
+
+            if admin1 and admin1.lower() == state_name.lower():
+                cities.add(city)
+
+        cities = sorted(list(cities))
+        return cities
+
+    except Exception as e:
+        print("get_cities() ERROR:", e)
+        return []
+# ============================================================
+# Seasonal Trends & Weather-Based Damage Insights (FULL MODULE)
+# ============================================================
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+
+
+# ------------------------------------------------------------
+# MOCK HELPERS (PLACEHOLDERS UNTIL API INTEGRATION)
+# ------------------------------------------------------------
+
+def _mock_available_countries():
+    return ["United States", "Canada", "United Kingdom", "Australia"]
+
+def _mock_locations_for_country(country):
+    if country == "United States":
+        return ["All US", "Fort Wayne, IN", "New York, NY", "Miami, FL", "Seattle, WA"]
+    if country == "Canada":
+        return ["All Canada", "Toronto, ON", "Vancouver, BC"]
+    if country == "United Kingdom":
+        return ["All UK", "London", "Manchester"]
+    if country == "Australia":
+        return ["All Australia", "Sydney", "Melbourne"]
+    return ["All Locations"]
+
+def _mock_fetch_historical_weather(location: str, months: int = 6):
+    end = pd.Timestamp.utcnow().normalize()
+    start = end - pd.DateOffset(months=months)
+    dates = pd.date_range(start=start, end=end, freq="7D")
+    n = len(dates)
+    rng = np.random.default_rng(abs(hash(location)) % (2**31))
+
+    rainfall = np.abs(rng.normal(loc=80, scale=40, size=n)).cumsum() / np.arange(1, n+1)
+    humidity = np.clip(50 + 20*np.sin(np.linspace(0, 6.28, n)) + rng.normal(0,5,n), 10, 100)
+    temp = 10 + 12*np.sin(np.linspace(0, 6.28, n)+rng.random()) + rng.normal(0,3,n)
+    storms = (rng.random(n) < 0.12).astype(int)
+
+    return pd.DataFrame({
+        "date": dates,
+        "rainfall_mm": rainfall,
+        "humidity_pct": humidity,
+        "temperature_c": temp,
+        "storm_flag": storms
+    }).reset_index(drop=True)
+
+def _mock_compute_damage_probabilities(weather_df: pd.DataFrame):
+    df = weather_df.copy()
+    df["water_damage_prob"] = np.clip(
+        (df["rainfall_mm"]/ (df["rainfall_mm"].max()+1))*0.7 +
+        (df["humidity_pct"]/100)*0.3, 0, 1
+    )
+    df["mold_prob"] = np.clip(
+        (df["humidity_pct"]/100)*0.8 +
+        (df["temperature_c"]/40)*0.2, 0, 1
+    )
+    df["roof_storm_prob"] = np.clip(
+        df["storm_flag"]*0.9 +
+        (df["rainfall_mm"]/ (df["rainfall_mm"].max()+1))*0.2, 0, 1
+    )
+    df["freeze_burst_prob"] = np.clip(
+        np.where(df["temperature_c"] < 1, 0.6, 0.05) +
+        (np.abs(df["temperature_c"].diff().fillna(0)) > 8).astype(int)*0.2, 0, 1
+    )
+
+    return df[["date","water_damage_prob","mold_prob","roof_storm_prob","freeze_burst_prob"]]
+
+def _mock_forecast_from_history(weather_df: pd.DataFrame, months_ahead: int = 3):
+    last = weather_df.copy().reset_index(drop=True)
+    end = last["date"].max()
+    future_dates = pd.date_range(start=end+pd.Timedelta(days=7), periods=int(4*months_ahead), freq="7D")
+
+    rng = np.random.default_rng(1234)
+    sample = last.tail(len(future_dates)).reset_index(drop=True)
+
+    future = pd.DataFrame({"date": future_dates})
+    for col in ["rainfall_mm","humidity_pct","temperature_c","storm_flag"]:
+        vals = sample[col].values
+        if len(vals) < len(future):
+            vals = np.tile(vals, int(np.ceil(len(future)/len(vals))))[:len(future)]
+        noise = rng.normal(0, 0.05*np.nanmax(np.abs(vals)+1), size=len(future))
+        future[col] = np.maximum(0, vals + noise)
+
+    return future
+
+
 # ------------------------------------------------------------
 # MAIN PAGE — Seasonal Trends
 # ------------------------------------------------------------
@@ -1756,96 +1930,10 @@ def page_seasonal_trends():
 
     st.markdown("<small>Prototype module — Replace mock functions with real NOAA / Open-Meteo / Meteostat API calls.</small>", unsafe_allow_html=True)
 
-    get_all_countries()
-    get_states(country_code)
-    get_cities(country_code, state_code)
+get_all_countries()
+get_states(country_code)
+get_cities(country_code, state_code)
 
-        # ============================================================
-    # Global Country → State → City Lookup (Live API)
-    # ============================================================
-    
-    import requests
-    import streamlit as st
-    from functools import lru_cache
-    
-    # -------------- COUNTRY LIST --------------
-    @lru_cache(maxsize=1)
-    def get_all_countries():
-        """Return full list of countries with ISO codes using REST Countries API (free)."""
-        try:
-            url = "https://restcountries.com/v3.1/all"
-            res = requests.get(url, timeout=10)
-            data = res.json()
-    
-            countries = []
-            for c in data:
-                if "cca2" in c:
-                    countries.append({
-                        "name": c.get("name", {}).get("common"),
-                        "code": c.get("cca2")
-                    })
-    
-            # sort alphabetically
-            countries = sorted(countries, key=lambda x: x["name"])
-    
-            return countries
-        except Exception as e:
-            print("get_all_countries() ERROR:", e)
-            return []
-    
-    
-    # -------------- STATE LOOKUP --------------
-    @lru_cache(maxsize=256)
-    def get_states(country_code):
-        """
-        Returns list of states/provinces for a country.
-        Uses Open-Meteo geocoding which has structured admin1 regions.
-        """
-        try:
-            url = f"https://geocoding-api.open-meteo.com/v1/search?name=&count=200&language=en&format=json&country={country_code}"
-            res = requests.get(url, timeout=10).json()
-    
-            states = set()
-    
-            for r in res.get("results", []):
-                admin1 = r.get("admin1")
-                if admin1:
-                    states.add(admin1)
-    
-            states = sorted(list(states))
-            return states
-    
-        except Exception as e:
-            print("get_states() ERROR:", e)
-            return []
-    
-    
-    # -------------- CITY LOOKUP --------------
-    @lru_cache(maxsize=512)
-    def get_cities(country_code, state_name):
-        """
-        Returns list of cities within a country+state.
-        """
-        try:
-            url = f"https://geocoding-api.open-meteo.com/v1/search?name={state_name}&count=200&language=en&format=json&country={country_code}"
-            res = requests.get(url, timeout=10).json()
-    
-            cities = set()
-    
-            for r in res.get("results", []):
-                # Only cities (admin2 or specific locality)
-                city = r.get("name")
-                admin1 = r.get("admin1")
-    
-                if admin1 and admin1.lower() == state_name.lower():
-                    cities.add(city)
-    
-            cities = sorted(list(cities))
-            return cities
-    
-        except Exception as e:
-            print("get_cities() ERROR:", e)
-            return []
 
 
 
