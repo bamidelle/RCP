@@ -25,64 +25,49 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+# ---------- Country list helper (robust) ----------
 import requests
-import streamlit as st
 from functools import lru_cache
 
-# -------------------------------------------------------
-# GLOBAL LOCATION DATA HELPERS
-# -------------------------------------------------------
-
-@lru_cache(maxsize=200)
+@lru_cache(maxsize=1)
 def get_all_countries():
-    """Returns list of {name, code} for all countries."""
+    """
+    Robust fetch of all countries. Uses restcountries.com.
+    Returns list of dicts: [{ 'name': 'United States', 'code': 'US' }, ...]
+    Falls back to a small built-in list if the request fails.
+    """
+    FALLBACK = [
+        {"name":"United States","code":"US"},
+        {"name":"Canada","code":"CA"},
+        {"name":"United Kingdom","code":"GB"},
+        {"name":"Australia","code":"AU"}
+    ]
+    url = "https://restcountries.com/v3.1/all"
     try:
-        url = "https://restcountries.com/v3.1/all"
-        data = requests.get(url, timeout=10).json()
-        countries = sorted(
-            [{"name": c["name"]["common"], "code": c["cca2"]} 
-             for c in data if "cca2" in c],
-            key=lambda x: x["name"]
-        )
-        return countries
-    except Exception:
-        return []
+        r = requests.get(url, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        out = []
+        for c in data:
+            # ensure structure exists
+            name = c.get("name", {}).get("common")
+            code = c.get("cca2") or c.get("cca3") or None
+            if name and code:
+                out.append({"name": name, "code": code})
+        if not out:
+            # unexpected schema
+            print("get_all_countries: empty result, using fallback")
+            return FALLBACK
+        # sort by name
+        out = sorted(out, key=lambda x: x["name"])
+        return out
+    except Exception as e:
+        # print to stdout so Streamlit logs show it
+        print("get_all_countries() ERROR:", repr(e))
+        # return fallback so UI still works
+        return FALLBACK
+# ---------- end helper ----------
 
-
-@lru_cache(maxsize=500)
-def get_states(country_code):
-    """Returns all states/provinces for a country via GeoDB."""
-    try:
-        url = f"https://geodb-free-service.wirefreethought.com/v1/geo/countries/{country_code}/regions?limit=100"
-        data = requests.get(url, timeout=10).json()
-        regions = data.get("data", [])
-        return sorted([r["name"] for r in regions])
-    except Exception:
-        return []
-
-
-@lru_cache(maxsize=500)
-def get_cities(country_code, state_name):
-    """Returns cities for selected state via GeoDB."""
-    try:
-        # find state code first
-        r_url = f"https://geodb-free-service.wirefreethought.com/v1/geo/countries/{country_code}/regions?limit=200"
-        regions = requests.get(r_url, timeout=10).json().get("data", [])
-        region_id = None
-        for r in regions:
-            if r["name"].lower() == state_name.lower():
-                region_id = r["code"]  # region code required for city query
-                break
-
-        if not region_id:
-            return []
-
-        c_url = f"https://geodb-free-service.wirefreethought.com/v1/geo/countries/{country_code}/regions/{region_id}/cities?limit=200"
-        data = requests.get(c_url, timeout=10).json()
-        cities = data.get("data", [])
-        return sorted([c["name"] for c in cities])
-    except Exception:
-        return []
 
 
 # =============================================================
