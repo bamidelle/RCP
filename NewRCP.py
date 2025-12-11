@@ -1930,9 +1930,9 @@ def page_seasonal_trends():
 
     st.markdown("<small>Prototype module — Replace mock functions with real NOAA / Open-Meteo / Meteostat API calls.</small>", unsafe_allow_html=True)
 
-get_all_countries()
-get_states(country_code)
-get_cities(country_code, state_code)
+    get_all_countries()
+    get_states(country_code)
+    get_cities(country_code, state_code)
 
 
 
