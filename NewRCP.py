@@ -26,6 +26,64 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 
+import requests
+import streamlit as st
+from functools import lru_cache
+
+# -------------------------------------------------------
+# GLOBAL LOCATION DATA HELPERS
+# -------------------------------------------------------
+
+@lru_cache(maxsize=200)
+def get_all_countries():
+    """Returns list of {name, code} for all countries."""
+    try:
+        url = "https://restcountries.com/v3.1/all"
+        data = requests.get(url, timeout=10).json()
+        countries = sorted(
+            [{"name": c["name"]["common"], "code": c["cca2"]} 
+             for c in data if "cca2" in c],
+            key=lambda x: x["name"]
+        )
+        return countries
+    except Exception:
+        return []
+
+
+@lru_cache(maxsize=500)
+def get_states(country_code):
+    """Returns all states/provinces for a country via GeoDB."""
+    try:
+        url = f"https://geodb-free-service.wirefreethought.com/v1/geo/countries/{country_code}/regions?limit=100"
+        data = requests.get(url, timeout=10).json()
+        regions = data.get("data", [])
+        return sorted([r["name"] for r in regions])
+    except Exception:
+        return []
+
+
+@lru_cache(maxsize=500)
+def get_cities(country_code, state_name):
+    """Returns cities for selected state via GeoDB."""
+    try:
+        # find state code first
+        r_url = f"https://geodb-free-service.wirefreethought.com/v1/geo/countries/{country_code}/regions?limit=200"
+        regions = requests.get(r_url, timeout=10).json().get("data", [])
+        region_id = None
+        for r in regions:
+            if r["name"].lower() == state_name.lower():
+                region_id = r["code"]  # region code required for city query
+                break
+
+        if not region_id:
+            return []
+
+        c_url = f"https://geodb-free-service.wirefreethought.com/v1/geo/countries/{country_code}/regions/{region_id}/cities?limit=200"
+        data = requests.get(c_url, timeout=10).json()
+        cities = data.get("data", [])
+        return sorted([c["name"] for c in cities])
+    except Exception:
+        return []
 
 # ----------------------
 # CONFIG
@@ -1369,6 +1427,55 @@ def _mock_forecast_from_history(weather_df: pd.DataFrame, months_ahead: int = 3)
 def page_seasonal_trends():
     st.markdown("<div class='header'>🌦️ Seasonal Trends & Weather-Based Damage Insights</div>", unsafe_allow_html=True)
     st.markdown("<em>Explore past weather trends and predicted damage risk for a chosen location. Use this to plan staffing, marketing, and equipment.</em>", unsafe_allow_html=True)
+    # -------------------------------------------------------
+# LOCATION SELECTION UI
+# -------------------------------------------------------
+
+st.markdown("## 🌍 Select Location for Seasonal Weather & Damage Trends")
+
+# 1️⃣ COUNTRY
+countries = get_all_countries()
+
+if not countries:
+    st.error("Failed to load country list.")
+else:
+    country_names = [c["name"] for c in countries]
+    selected_country = st.selectbox("Select a Country", country_names, key="loc_country")
+
+    # get country code
+    country_code = next((c["code"] for c in countries if c["name"] == selected_country), None)
+
+    # 2️⃣ STATE
+    if country_code:
+        states = get_states(country_code)
+        if not states:
+            st.warning("This country has no state/province data.")
+            selected_state = None
+        else:
+            selected_state = st.selectbox("Select a State / Province", states, key="loc_state")
+    else:
+        selected_state = None
+
+    # 3️⃣ CITY
+    if selected_state:
+        cities = get_cities(country_code, selected_state)
+        if not cities:
+            st.warning("No cities found for this state.")
+            selected_city = None
+        else:
+            selected_city = st.selectbox("Select a City", cities, key="loc_city")
+    else:
+        selected_city = None
+
+# When all 3 chosen
+if selected_country and selected_state and selected_city:
+    st.success(f"📌 Location Selected: **{selected_city}, {selected_state}, {selected_country}**")
+    st.session_state.selected_location = {
+        "country": selected_country,
+        "country_code": country_code,
+        "state": selected_state,
+        "city": selected_city
+    }
 
     # ---- Controls ----
     c1, c2, c3 = st.columns([2,2,2])
