@@ -954,7 +954,7 @@ if filter_stage and filter_stage != "All":
 
 if df_view.empty:
     st.info("No leads to show.")
-    return
+        return
 
 # iterate leads (most recent first)
 
