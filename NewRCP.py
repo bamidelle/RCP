@@ -25,9 +25,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-import requests
-from functools import lru_cache
-import plotly.graph_objects as go
+
 # =============================================================
 
 
