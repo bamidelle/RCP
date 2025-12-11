@@ -636,7 +636,8 @@ with st.sidebar:
         "Analytics",
         "CPA & ROI",
         "ML (internal)",
-        "AI Recommendations",   # ← ADD THIS
+        "AI Recommendations",
+        "Seasonal Trends",
         "Settings",
         "Exports"
     ], 
