@@ -1725,14 +1725,14 @@ def page_seasonal_trends():
     with st.spinner("Generating insights..."):
         df = fetch_weather(chosen["lat"], chosen["lon"], months)
     
-# ---------- DERIVED FLAGS ----------
-df["storm_flag"] = (df["rainfall_mm"] >= 20).astype(int)
-
-# ---------- DAMAGE PROBABILITIES ----------
-df["water_damage_prob"] = np.clip(df["rainfall_mm"] / 120, 0, 1)
-df["mold_prob"] = np.clip(df["humidity_pct"] / 100, 0, 1)
-df["roof_storm_prob"] = np.clip(df["storm_flag"], 0, 1)
-df["freeze_burst_prob"] = np.clip((df["temperature_c"] < 1).astype(int), 0, 1)
+    # ---------- DERIVED FLAGS ----------
+    df["storm_flag"] = (df["rainfall_mm"] >= 20).astype(int)
+    
+    # ---------- DAMAGE PROBABILITIES ----------
+    df["water_damage_prob"] = np.clip(df["rainfall_mm"] / 120, 0, 1)
+    df["mold_prob"] = np.clip(df["humidity_pct"] / 100, 0, 1)
+    df["roof_storm_prob"] = np.clip(df["storm_flag"], 0, 1)
+    df["freeze_burst_prob"] = np.clip((df["temperature_c"] < 1).astype(int), 0, 1)
 
 
     
