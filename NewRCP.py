@@ -1766,22 +1766,14 @@ def page_seasonal_trends():
         ["3 months", "6 months", "12 months"]
     )
     
-    forecast_months = {
-        "3 months": 3,
-        "6 months": 6,
-        "12 months": 12
-    }[forecast_range]
-    
-    months = {
-        "3 months": 3,
-        "6 months": 6,
-        "12 months": 12
-    }[hist_range]
+    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+    months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
     
     if not st.button("Generate Insights"):
         return
     
-    # ---------- DATA FETCH ----------
+    
+    # ---------- DATA FETCH (THIS DEFINES hist_df) ----------
     with st.spinner("Generating insights..."):
         hist_df = fetch_weather(
             chosen["lat"],
@@ -1796,15 +1788,14 @@ def page_seasonal_trends():
             forecast_days
         )
     
-    # ---------- SAFETY CHECK ----------
+    # ---------- SAFETY ----------
     if hist_df.empty:
-        st.error("Historical weather data unavailable.")
+        st.error("No historical data available.")
         return
     
     if forecast_df.empty:
-        st.warning(
-            "⚠️ Forecast data limited. Using historical trends only."
-        )
+        st.warning("Forecast data limited — using historical trends only.")
+
         # ---------- DERIVED FLAGS ----------
     for df_ in [hist_df, forecast_df]:
         df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
