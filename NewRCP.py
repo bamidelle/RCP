@@ -1718,6 +1718,16 @@ def page_seasonal_trends():
     with st.spinner("Generating insights..."):
         df = fetch_weather(chosen["lat"], chosen["lon"], months)
 
+    @st.cache_resource
+def load_models():
+    return {
+        "water": joblib.load("models/water_damage.pkl"),
+        "mold": joblib.load("models/mold.pkl"),
+        "storm": joblib.load("models/storm.pkl"),
+        "freeze": joblib.load("models/freeze.pkl"),
+    }
+
+
     # ---------- DAMAGE PROBABILITIES (Heuristic ML Replacement) ----------
         models = load_models()
     
