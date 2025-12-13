@@ -1762,6 +1762,76 @@ def page_seasonal_trends():
         "<small>Prototype module — replace mock weather with Open-Meteo or NOAA for production.</small>",
         unsafe_allow_html=True
     )
+        # ---------------------------------------------------------
+    # BUSINESS INTELLIGENCE LAYER (JOB DEMAND + SEASONALITY)
+    # ---------------------------------------------------------
+
+    st.markdown("### 📊 Expected Job Demand Breakdown")
+
+    demand = {
+        "Water Damage": df["water_damage_prob"].mean(),
+        "Mold Remediation": df["mold_prob"].mean(),
+        "Storm / Roof": df["roof_storm_prob"].mean(),
+        "Freeze / Pipe Burst": df["freeze_burst_prob"].mean(),
+    }
+
+    demand_df = (
+        pd.DataFrame.from_dict(demand, orient="index", columns=["Probability"])
+        .reset_index()
+        .rename(columns={"index": "Job Type"})
+    )
+
+    st.plotly_chart(
+        px.bar(
+            demand_df,
+            x="Job Type",
+            y="Probability",
+            title="Expected Job Type Demand (Next Period)",
+            range_y=[0, 1]
+        ),
+        use_container_width=True
+    )
+
+    # ---------------------------------------------------------
+    # SEASONAL INTENSITY SCORE
+    # ---------------------------------------------------------
+    season_score = np.mean(list(demand.values()))
+
+    if season_score > 0.6:
+        season_label = "🔥 Peak Season"
+        season_color = "red"
+    elif season_score > 0.4:
+        season_label = "⚠️ Elevated Activity"
+        season_color = "orange"
+    else:
+        season_label = "🟢 Normal / Low Activity"
+        season_color = "green"
+
+    st.markdown(
+        f"<h3 style='color:{season_color};'>Seasonal Status: {season_label}</h3>",
+        unsafe_allow_html=True
+    )
+
+    # ---------------------------------------------------------
+    # ACTIONABLE RECOMMENDATIONS
+    # ---------------------------------------------------------
+    st.markdown("### 🧠 Operational Recommendations")
+
+    if demand["Water Damage"] > 0.5:
+        st.info("Increase drying equipment readiness and emergency response staffing.")
+
+    if demand["Mold Remediation"] > 0.4:
+        st.info("Promote mold inspection services and ensure remediation supplies are stocked.")
+
+    if demand["Storm / Roof"] > 0.4:
+        st.info("Prepare roofing crews and storm response materials.")
+
+    if demand["Freeze / Pipe Burst"] > 0.3:
+        st.info("Prepare winterization campaigns and pipe burst response teams.")
+
+    if season_score < 0.3:
+        st.success("Low activity period detected — ideal time for marketing, training, and maintenance.")
+
 
 # ----------------------
 # Router (main)
