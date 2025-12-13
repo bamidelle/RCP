@@ -1762,6 +1762,30 @@ def page_seasonal_trends():
         "<small>Prototype module — replace mock weather with Open-Meteo or NOAA for production.</small>",
         unsafe_allow_html=True
     )
+    # -------------------------------------------------
+# BASE SEASON SCORE (shared across all intelligence blocks)
+# -------------------------------------------------
+
+# Default safety value (prevents UnboundLocalError)
+season_score = 0.5  
+
+if "selected_location" in st.session_state:
+    avg_rain = merged["rainfall_mm"].mean()
+    avg_temp = merged["temperature_c"].mean()
+    avg_mold = merged["mold_prob"].mean()
+    avg_freeze = merged["freeze_burst_prob"].mean()
+
+    # Core seasonal intensity logic
+    season_score = (
+        min(avg_rain / 120, 1.0) * 0.35 +
+        min(avg_mold, 1.0) * 0.25 +
+        min(avg_freeze, 1.0) * 0.20 +
+        min(abs(avg_temp - 18) / 18, 1.0) * 0.20
+    )
+
+# Clamp (extra safety)
+season_score = round(max(0.0, min(season_score, 1.0)), 2)
+
         # ---------------------------------------------------------
     # A️⃣ LEAD VOLUME PREDICTION (ESTIMATED)
     # ---------------------------------------------------------
