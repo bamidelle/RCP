@@ -1781,7 +1781,6 @@ def page_seasonal_trends():
     if not st.button("Generate Insights"):
         return
     
-    
     # ---------- DATA FETCH ----------
     with st.spinner("Generating insights..."):
         hist_df = fetch_weather(
@@ -1797,7 +1796,28 @@ def page_seasonal_trends():
             forecast_days
         )
     
+    # ---------- SAFETY CHECK ----------
+    if hist_df.empty:
+        st.error("Historical weather data unavailable.")
+        return
     
+    if forecast_df.empty:
+        st.warning(
+            "⚠️ Forecast data limited. Using historical trends only."
+        )
+        # ---------- DERIVED FLAGS ----------
+    for df_ in [hist_df, forecast_df]:
+        df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
+        df_["storm_flag"] = (df_["rainfall_mm"] >= 20).astype(int)
+    
+        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
+        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
+        df_["roof_storm_prob"] = np.clip(df_["storm_flag"], 0, 1)
+        df_["freeze_burst_prob"] = np.clip(
+            (df_["temperature_c"] < 1).astype(int), 0, 1
+        )
+
+
     # ---------- FORECAST LIMIT WARNING ----------
     if forecast_df.empty:
         st.warning(
