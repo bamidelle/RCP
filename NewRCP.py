@@ -67,6 +67,45 @@ def get_all_countries():
         # return fallback so UI still works
         return FALLBACK
 # ---------- end helper ----------
+# ---------- City search helper (GLOBAL) ----------
+def search_cities(country_code, city_name, limit=10):
+    """
+    Uses Open-Meteo geocoding to search cities globally by country.
+    Returns: [{name, admin1, lat, lon}, ...]
+    """
+    if not city_name:
+        return []
+
+    try:
+        r = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": city_name,
+                "count": limit,
+                "language": "en",
+                "format": "json",
+                "country": country_code,
+            },
+            timeout=8,
+        )
+        r.raise_for_status()
+
+        results = r.json().get("results", [])
+        return [
+            {
+                "name": x.get("name"),
+                "admin1": x.get("admin1"),
+                "lat": x.get("latitude"),
+                "lon": x.get("longitude"),
+            }
+            for x in results
+            if x.get("latitude") and x.get("longitude")
+        ]
+    except Exception as e:
+        print("search_cities ERROR:", repr(e))
+        return []
+# ---------- end helper ----------
+
 
 
 
