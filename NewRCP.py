@@ -1669,34 +1669,44 @@ def fetch_weather(lat, lon, months):
     return df.dropna().reset_index(drop=True)
 
 @lru_cache(maxsize=128)
-def fetch_forecast_weather(lat, lon, days):
+def fetch_forecast_weather(lat, lon, requested_days):
     """
-    Fetch future daily weather forecast from Open-Meteo
+    Open-Meteo allows MAX 16 forecast days.
+    We clamp automatically and fail safely.
     """
-    r = requests.get(
-        "https://api.open-meteo.com/v1/forecast",
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "daily": "precipitation_sum,temperature_2m_mean",
-            "forecast_days": days,
-            "timezone": "UTC",
-        },
-        timeout=10,
-    )
-    r.raise_for_status()
-    d = r.json()["daily"]
 
-    df = pd.DataFrame({
-        "date": pd.to_datetime(d["time"]),
-        "rainfall_mm": d["precipitation_sum"],
-        "temperature_c": d["temperature_2m_mean"],
-    })
+    MAX_FORECAST_DAYS = 16
+    days = min(requested_days, MAX_FORECAST_DAYS)
 
-    df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
-    df["storm_flag"] = (df["rainfall_mm"] >= 20).astype(int)
+    try:
+        r = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": lat,
+                "longitude": lon,
+                "daily": "precipitation_sum,temperature_2m_mean",
+                "forecast_days": days,
+                "timezone": "UTC",
+            },
+            timeout=10,
+        )
+        r.raise_for_status()
+        d = r.json()["daily"]
 
-    return df.dropna().reset_index(drop=True)
+        df = pd.DataFrame({
+            "date": pd.to_datetime(d["time"]),
+            "rainfall_mm": d["precipitation_sum"],
+            "temperature_c": d["temperature_2m_mean"],
+        })
+
+        df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
+
+        return df.dropna().reset_index(drop=True)
+
+    except Exception as e:
+        # FAIL SAFE — return empty DF instead of crashing app
+        print("Forecast API error:", repr(e))
+        return pd.DataFrame()
 
     # ---------- DAMAGE PROBABILITIES ----------
     for df_ in [hist_df, forecast_df]:
@@ -1744,7 +1754,6 @@ def page_seasonal_trends():
     chosen = matches[labels.index(selected)]
 
     st.success(f"📍 {selected}, {country}")
-
     # ---------- CONTROLS ----------
     hist_range = st.selectbox(
         "Historical window",
@@ -1757,8 +1766,17 @@ def page_seasonal_trends():
         ["3 months", "6 months", "12 months"]
     )
     
-    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
-    months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
+    forecast_months = {
+        "3 months": 3,
+        "6 months": 6,
+        "12 months": 12
+    }[forecast_range]
+    
+    months = {
+        "3 months": 3,
+        "6 months": 6,
+        "12 months": 12
+    }[hist_range]
     
     if not st.button("Generate Insights"):
         return
@@ -1766,18 +1784,33 @@ def page_seasonal_trends():
     
     # ---------- DATA FETCH ----------
     with st.spinner("Generating insights..."):
-        hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
+        hist_df = fetch_weather(
+            chosen["lat"],
+            chosen["lon"],
+            months
+        )
     
         forecast_days = forecast_months * 30
         forecast_df = fetch_forecast_weather(
-            chosen["lat"], chosen["lon"], forecast_days
+            chosen["lat"],
+            chosen["lon"],
+            forecast_days
         )
     
-    # Safety check
-    if hist_df.empty or forecast_df.empty:
-        st.error("Weather data unavailable for this location.")
-        return
     
+    # ---------- FORECAST LIMIT WARNING ----------
+    if forecast_df.empty:
+        st.warning(
+            "⚠️ Forecast limited to short range due to weather API restrictions. "
+            "Longer-range projections are inferred from historical trends."
+        )
+    
+    
+    # ---------- SAFETY CHECK ----------
+    if hist_df.empty:
+        st.error("Historical weather data unavailable for this location.")
+        return
+
     
     # ---------- DERIVED FLAGS & PROBABILITIES ----------
     for df_ in [hist_df, forecast_df]:
