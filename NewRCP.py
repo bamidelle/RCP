@@ -783,9 +783,11 @@ with st.sidebar:
         "Analytics",
         "CPA & ROI",
         "ML (internal)",
+        "Technician Mobile",
+        "Technician Map Tracking",   # << added this 
+        "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
-        "Tasks",
         "Settings",
         "Exports"
     ], 
@@ -2060,6 +2062,8 @@ elif page == "AI Recommendations":
     page_ai_recommendations()
 elif page == "ML (internal)":
     page_ml_internal()
+elif page == "Technician Map Tracking":
+    page_technician_map()
 elif page == "Tasks":
     page_tasks()
 elif page == "Settings":
