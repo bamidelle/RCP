@@ -1718,11 +1718,21 @@ def page_seasonal_trends():
     with st.spinner("Generating insights..."):
         df = fetch_weather(chosen["lat"], chosen["lon"], months)
 
-    # ---------- DAMAGE PROBABILITIES (CRITICAL FIX) ----------
-    df["water_damage_prob"] = df["rainfall_mm"] / max(df["rainfall_mm"].max(), 1)
-    df["mold_prob"] = df["humidity_pct"] / 100
-    df["roof_storm_prob"] = np.clip(df["rainfall_mm"] / 40, 0, 1)
-    df["freeze_burst_prob"] = (df["temperature_c"] < 1).astype(float)
+    # ---------- DAMAGE PROBABILITIES (Heuristic ML Replacement) ----------
+    models = load_models()
+    
+    X = df[[
+        "rainfall_mm",
+        "temperature_c",
+        "humidity_pct",
+        "storm_flag"
+    ]]
+    
+    df["water_damage_prob"] = models["water"].predict(X).clip(0, 1)
+    df["mold_prob"] = models["mold"].predict(X).clip(0, 1)
+    df["roof_storm_prob"] = models["storm"].predict(X).clip(0, 1)
+    df["freeze_burst_prob"] = models["freeze"].predict(X).clip(0, 1)
+
 
     # ---------- CHARTS ----------
     st.markdown("### 📈 Weather Trends")
