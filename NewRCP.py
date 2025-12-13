@@ -1668,6 +1668,47 @@ def fetch_weather(lat, lon, months):
 
     return df.dropna().reset_index(drop=True)
 
+@lru_cache(maxsize=128)
+def fetch_forecast_weather(lat, lon, days):
+    """
+    Fetch future daily weather forecast from Open-Meteo
+    """
+    r = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "precipitation_sum,temperature_2m_mean",
+            "forecast_days": days,
+            "timezone": "UTC",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    d = r.json()["daily"]
+
+    df = pd.DataFrame({
+        "date": pd.to_datetime(d["time"]),
+        "rainfall_mm": d["precipitation_sum"],
+        "temperature_c": d["temperature_2m_mean"],
+    })
+
+    df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
+    df["storm_flag"] = (df["rainfall_mm"] >= 20).astype(int)
+
+    return df.dropna().reset_index(drop=True)
+
+    # ---------- DAMAGE PROBABILITIES ----------
+for df_ in [hist_df, forecast_df]:
+    df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
+    df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
+    df_["roof_storm_prob"] = np.clip(df_["storm_flag"], 0, 1)
+    df_["freeze_burst_prob"] = np.clip(
+        (df_["temperature_c"] < 1).astype(int), 0, 1
+    )
+
+
+
 # -------------------------------------------------------------
 # MAIN PAGE
 # -------------------------------------------------------------
@@ -1723,7 +1764,12 @@ def page_seasonal_trends():
     
     # ---------- DATA ----------
     with st.spinner("Generating insights..."):
-        df = fetch_weather(chosen["lat"], chosen["lon"], months)
+    hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
+    forecast_days = forecast_months * 30
+    forecast_df = fetch_forecast_weather(
+        chosen["lat"], chosen["lon"], forecast_days
+    )
+
     
     # ---------- DERIVED FLAGS ----------
     df["storm_flag"] = (df["rainfall_mm"] >= 20).astype(int)
@@ -1742,33 +1788,61 @@ def page_seasonal_trends():
     c1.plotly_chart(px.line(df, x="date", y="rainfall_mm"), use_container_width=True)
     c2.plotly_chart(px.line(df, x="date", y="temperature_c"), use_container_width=True)
     
-    st.markdown("### 📊 Damage Risk Indicators")
-    fig = go.Figure()
-    for col, name in [
-        ("water_damage_prob", "Water Damage"),
-        ("mold_prob", "Mold"),
-        ("roof_storm_prob", "Storm / Roof"),
-        ("freeze_burst_prob", "Freeze / Burst"),
-    ]:
-        fig.add_trace(go.Scatter(x=df["date"], y=df[col], name=name))
-    fig.update_layout(yaxis=dict(range=[0, 1]))
-    st.plotly_chart(fig, use_container_width=True)
+st.markdown("### 📊 Damage Risk — Historical vs Forecast")
+
+fig = go.Figure()
+
+for col, label in [
+    ("water_damage_prob", "Water Damage"),
+    ("mold_prob", "Mold"),
+    ("roof_storm_prob", "Storm / Roof"),
+    ("freeze_burst_prob", "Freeze / Burst"),
+]:
+    fig.add_trace(go.Scatter(
+        x=hist_df["date"],
+        y=hist_df[col],
+        name=f"{label} (History)",
+        mode="lines"
+    ))
+    fig.add_trace(go.Scatter(
+        x=forecast_df["date"],
+        y=forecast_df[col],
+        name=f"{label} (Forecast)",
+        mode="lines",
+        line=dict(dash="dash")
+    ))
+
+fig.update_layout(yaxis=dict(range=[0, 1]))
+st.plotly_chart(fig, use_container_width=True)
+
 
 
     # ---------- BUSINESS INTELLIGENCE ----------
     demand = {
-        "Water Damage": df["water_damage_prob"].mean(),
-        "Mold Remediation": df["mold_prob"].mean(),
-        "Storm / Roof": df["roof_storm_prob"].mean(),
-        "Freeze / Pipe Burst": df["freeze_burst_prob"].mean(),
-    }
+    "Water Damage": forecast_df["water_damage_prob"].mean(),
+    "Mold Remediation": forecast_df["mold_prob"].mean(),
+    "Storm / Roof": forecast_df["roof_storm_prob"].mean(),
+    "Freeze / Pipe Burst": forecast_df["freeze_burst_prob"].mean(),
+}
 
-    season_score = round(np.mean(list(demand.values())), 2)
-    st.caption(f"DEBUG → Season Score: {season_score}")
+season_score = round(np.mean(list(demand.values())), 2)
+st.caption(f"DEBUG → Season Score: {season_score}")
+    if season_score >= 0.6:
+    season_label = "🔥 PEAK SEASON"
+    season_color = "red"
+elif season_score >= 0.4:
+    season_label = "⚠️ ELEVATED ACTIVITY"
+    season_color = "orange"
+else:
+    season_label = "🟢 LOW / NORMAL SEASON"
+    season_color = "green"
 
-    BASE_MONTHLY_LEADS = 40
-    intensity = 0.6 + (season_score * 0.8)
-    expected_total_leads = int(BASE_MONTHLY_LEADS * intensity * forecast_months)
+st.markdown(
+    f"<h3 style='color:{season_color};'>Season Outlook: {season_label}</h3>",
+    unsafe_allow_html=True
+)
+
+
 
     st.markdown("## 🔢 Expected Lead Volume")
     st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
