@@ -1692,11 +1692,44 @@ def get_all_countries():
 
 
 @lru_cache(maxsize=256)
-
+def get_states(country_code):
+    """
+    Returns admin1 names (states/provinces) for a country using open-meteo geocoding.
+    """
+    try:
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name=&count=200&language=en&format=json&country={country_code}"
+        res = requests.get(url, timeout=8).json()
+        states = set()
+        for r in res.get("results", []):
+            admin1 = r.get("admin1")
+            if admin1:
+                states.add(admin1)
+        states = sorted(list(states))
+        return states
+    except Exception as e:
+        print("get_states ERROR:", repr(e))
+        return []
 
 
 @lru_cache(maxsize=512)
-
+def get_cities(country_code, state_name):
+    """
+    Returns cities for a given country_code and state_name using open-meteo geocoding.
+    """
+    try:
+        url = f"https://geocoding-api.open-meteo.com/v1/search?name={state_name}&count=500&language=en&format=json&country={country_code}"
+        res = requests.get(url, timeout=8).json()
+        cities = set()
+        for r in res.get("results", []):
+            # only include items where admin1 matches the state_name
+            admin1 = r.get("admin1")
+            city = r.get("name")
+            if admin1 and city and admin1.lower() == state_name.lower():
+                cities.add(city)
+        return sorted(list(cities))
+    except Exception as e:
+        print("get_cities ERROR:", repr(e))
+        return []
 
 # ----------------------------
 # Lightweight mock weather & heuristics (keeps UI functional)
