@@ -1763,6 +1763,111 @@ def page_seasonal_trends():
         unsafe_allow_html=True
     )
         # ---------------------------------------------------------
+    # A️⃣ LEAD VOLUME PREDICTION (ESTIMATED)
+    # ---------------------------------------------------------
+    st.markdown("## 🔢 Expected Lead Volume Forecast")
+
+    # Base monthly leads (heuristic baseline)
+    BASE_MONTHLY_LEADS = 40  
+
+    # Scale by seasonal intensity
+    intensity_multiplier = 0.6 + (season_score * 0.8)
+
+    months_factor = forecast_months
+    expected_total_leads = int(BASE_MONTHLY_LEADS * intensity_multiplier * months_factor)
+
+    lead_breakdown = {
+        "Water Damage": int(expected_total_leads * demand["Water Damage"]),
+        "Mold Remediation": int(expected_total_leads * demand["Mold Remediation"]),
+        "Storm / Roof": int(expected_total_leads * demand["Storm / Roof"]),
+        "Freeze / Pipe Burst": int(expected_total_leads * demand["Freeze / Pipe Burst"]),
+    }
+
+    lead_df = pd.DataFrame(
+        [{"Job Type": k, "Expected Leads": v} for k, v in lead_breakdown.items()]
+    )
+
+    st.plotly_chart(
+        px.bar(
+            lead_df,
+            x="Job Type",
+            y="Expected Leads",
+            title=f"Estimated Leads Over Next {forecast_months} Months"
+        ),
+        use_container_width=True
+    )
+
+    st.success(f"📈 Estimated Total Leads: **~{expected_total_leads} jobs**")
+        # ---------------------------------------------------------
+    # B️⃣ MARKETING CAMPAIGN RECOMMENDATIONS
+    # ---------------------------------------------------------
+    st.markdown("## 📣 Recommended Marketing Campaigns")
+
+    if demand["Water Damage"] > 0.45:
+        st.warning(
+            "💧 **Water Damage Campaign**\n"
+            "- Run Google Search Ads for *Emergency Water Removal*\n"
+            "- Increase local service ads (LSA)\n"
+            "- Target insurance-related keywords"
+        )
+
+    if demand["Mold Remediation"] > 0.4:
+        st.warning(
+            "🦠 **Mold Remediation Campaign**\n"
+            "- Facebook & Instagram awareness ads\n"
+            "- Promote free mold inspections\n"
+            "- Retarget property managers"
+        )
+
+    if demand["Storm / Roof"] > 0.35:
+        st.warning(
+            "🌪️ **Storm Damage Campaign**\n"
+            "- Door hangers in storm-prone neighborhoods\n"
+            "- Google Ads: *Storm Damage Repair Near Me*"
+        )
+
+    if demand["Freeze / Pipe Burst"] > 0.25:
+        st.warning(
+            "❄️ **Freeze Protection Campaign**\n"
+            "- Email winterization reminders\n"
+            "- Run emergency plumbing ads during cold snaps"
+        )
+
+    if season_score < 0.3:
+        st.info(
+            "📉 **Low Season Strategy**\n"
+            "- Focus on brand awareness\n"
+            "- Train staff\n"
+            "- Optimize Google Business Profile"
+        )
+        # ---------------------------------------------------------
+    # C️⃣ TECHNICIAN SCHEDULING INTELLIGENCE
+    # ---------------------------------------------------------
+    st.markdown("## 👷 Technician Staffing Forecast")
+
+    AVG_JOBS_PER_TECH_PER_MONTH = 18
+
+    required_techs = max(
+        1,
+        int(np.ceil(expected_total_leads / (AVG_JOBS_PER_TECH_PER_MONTH * months_factor)))
+    )
+
+    st.metric(
+        label="Recommended Active Technicians",
+        value=f"{required_techs} tech(s)",
+        delta=f"{expected_total_leads} projected jobs"
+    )
+
+    if required_techs > 5:
+        st.error("⚠️ High staffing demand — consider temp crews or overtime planning.")
+    elif required_techs <= 2:
+        st.success("🟢 Light workload — good time for training or PTO approvals.")
+    else:
+        st.info("🟡 Moderate workload — maintain standard scheduling.")
+
+
+
+        # ---------------------------------------------------------
     # BUSINESS INTELLIGENCE LAYER (JOB DEMAND + SEASONALITY)
     # ---------------------------------------------------------
 
