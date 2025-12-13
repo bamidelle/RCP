@@ -684,6 +684,7 @@ with st.sidebar:
         "ML (internal)",
         "AI Recommendations",
         "Seasonal Trends",
+        "Tasks",
         "Settings",
         "Exports"
     ], 
@@ -2070,6 +2071,8 @@ elif page == "AI Recommendations":
     page_ai_recommendations()
 elif page == "ML (internal)":
     page_ml_internal()
+elif page == "Tasks":
+    page_tasks()
 elif page == "Settings":
     page_settings()
 elif page == "Exports":
