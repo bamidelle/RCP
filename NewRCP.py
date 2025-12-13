@@ -1692,44 +1692,11 @@ def get_all_countries():
 
 
 @lru_cache(maxsize=256)
-def get_states(country_code):
-    """
-    Returns admin1 names (states/provinces) for a country using open-meteo geocoding.
-    """
-    try:
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name=&count=200&language=en&format=json&country={country_code}"
-        res = requests.get(url, timeout=8).json()
-        states = set()
-        for r in res.get("results", []):
-            admin1 = r.get("admin1")
-            if admin1:
-                states.add(admin1)
-        states = sorted(list(states))
-        return states
-    except Exception as e:
-        print("get_states ERROR:", repr(e))
-        return []
+
 
 
 @lru_cache(maxsize=512)
-def get_cities(country_code, state_name):
-    """
-    Returns cities for a given country_code and state_name using open-meteo geocoding.
-    """
-    try:
-        url = f"https://geocoding-api.open-meteo.com/v1/search?name={state_name}&count=500&language=en&format=json&country={country_code}"
-        res = requests.get(url, timeout=8).json()
-        cities = set()
-        for r in res.get("results", []):
-            # only include items where admin1 matches the state_name
-            admin1 = r.get("admin1")
-            city = r.get("name")
-            if admin1 and city and admin1.lower() == state_name.lower():
-                cities.add(city)
-        return sorted(list(cities))
-    except Exception as e:
-        print("get_cities ERROR:", repr(e))
-        return []
+
 
 # ----------------------------
 # Lightweight mock weather & heuristics (keeps UI functional)
@@ -1786,44 +1753,53 @@ def page_seasonal_trends():
     st.markdown("<div class='header'>🌦️ Seasonal Trends & Weather-Based Damage Insights</div>", unsafe_allow_html=True)
     st.markdown("<em>Explore past weather trends and predicted damage risk for a chosen location.</em>", unsafe_allow_html=True)
 
-    # DEBUG: show whether countries load (temporary — remove once working)
+st.markdown("## 🌍 Select Location")
+
+countries = get_all_countries()
+country_names = [c["name"] for c in countries]
+
+selected_country = st.selectbox("Select Country", country_names)
+country_code = next(c["code"] for c in countries if c["name"] == selected_country)
+
+city_query = st.text_input("Enter City Name (e.g. Miami, London, Toronto)")
+
+def search_city(country_code, city_name):
+    if not city_name:
+        return []
+    url = (
+        f"https://geocoding-api.open-meteo.com/v1/search"
+        f"?name={city_name}&count=10&language=en&format=json&country={country_code}"
+    )
     try:
-        countries = get_all_countries()
-        st.write("DEBUG: countries fetched:", len(countries))
-    except Exception as e:
-        st.write("DEBUG: get_all_countries() raised:", e)
-        countries = []
+        res = requests.get(url, timeout=8).json()
+        return res.get("results", [])
+    except:
+        return []
 
-    if not countries:
-        st.error("Failed to load country list. See logs for get_all_countries() ERROR.")
-        return
+cities = search_city(country_code, city_query)
 
-    country_names = [c["name"] for c in countries]
-    selected_country = st.selectbox("Select a Country", country_names, key="loc_country")
-    country_code = next((c["code"] for c in countries if c["name"] == selected_country), None)
+if cities:
+    city_labels = [
+        f"{c['name']}, {c.get('admin1','')}".strip(", ")
+        for c in cities
+    ]
+    selected_city = st.selectbox("Select City", city_labels)
+    chosen = cities[city_labels.index(selected_city)]
 
-    # states
-    states = get_states(country_code) if country_code else []
-    if states:
-        selected_state = st.selectbox("Select State / Province", states, key="loc_state")
-    else:
-        selected_state = None
-        st.info("No state/province data available for this country.")
+    st.success(
+        f"📌 Selected: {chosen['name']}, {chosen.get('admin1','')}, {selected_country}"
+    )
 
-    # cities
-    cities = get_cities(country_code, selected_state) if (country_code and selected_state) else []
-    if cities:
-        selected_city = st.selectbox("Select City", cities, key="loc_city")
-    else:
-        selected_city = None
-        if selected_state:
-            st.info("No cities found for this state.")
+    st.session_state.selected_location = {
+        "country": selected_country,
+        "country_code": country_code,
+        "city": chosen["name"],
+        "lat": chosen["latitude"],
+        "lon": chosen["longitude"]
+    }
+else:
+    st.info("Type a city name to search")
 
-    # require selections
-    if not (selected_country and selected_state and selected_city):
-        return
-
-    st.success(f"Selected: {selected_city}, {selected_state}, {selected_country}")
 
     # controls for history/forecast
     c1, c2, c3 = st.columns([2,2,2])
