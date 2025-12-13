@@ -1684,6 +1684,26 @@ def page_seasonal_trends():
     chosen = matches[labels.index(selected_label)]
 
     st.success(f"📍 {selected_label}, {selected_country}")
+        # -------------------------------------------------
+    # Forecast window default (prevents NameError)
+    # -------------------------------------------------
+        forecast_months = 3
+        forecast_range = st.selectbox(
+        "Forecast horizon",
+        ["3 months", "6 months", "12 months"],
+        index=0,
+        key="season_forecast_range"
+    )
+    
+    forecast_months = {
+        "3 months": 3,
+        "6 months": 6,
+        "12 months": 12
+    }[forecast_range]
+    st.caption(f"DEBUG → Forecast Months: {forecast_months}")
+
+
+
 
     # CONTROLS
     c1, c2 = st.columns(2)
