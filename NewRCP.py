@@ -1733,7 +1733,7 @@ def page_seasonal_trends():
     
     # ---------- DATA ----------
     with st.spinner("Generating insights..."):
-        df = fetch_mock_weather(chosen["lat"], chosen["lon"], months)
+        df = fetch_weather(chosen["lat"], chosen["lon"], months)
     
     # ---------- DAMAGE PROBABILITIES ----------
     models = load_models()
