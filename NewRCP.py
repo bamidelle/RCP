@@ -1633,23 +1633,74 @@ def search_cities(country_code: str, city_name: str, limit: int = 10):
 # -------------------------------------------------------------
 # MOCK WEATHER DATA (SAFE PLACEHOLDER)
 # -------------------------------------------------------------
+
+@lru_cache(maxsize=128)
 def fetch_mock_weather(lat, lon, months=6):
-    dates = pd.date_range(end=pd.Timestamp.today(), periods=months * 4, freq="W")
-    rng = np.random.default_rng(int(abs(lat * lon)))
+    """
+    Fetches REAL historical daily weather from Open-Meteo
+    """
+    end_date = pd.Timestamp.utcnow().date()
+    start_date = (pd.Timestamp.utcnow() - pd.DateOffset(months=months)).date()
+
+    url = (
+        "https://archive-api.open-meteo.com/v1/archive"
+        f"?latitude={lat}"
+        f"&longitude={lon}"
+        f"&start_date={start_date}"
+        f"&end_date={end_date}"
+        "&daily=precipitation_sum,temperature_2m_mean"
+        "&timezone=UTC"
+    )
+
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    data = r.json()["daily"]
 
     df = pd.DataFrame({
-        "date": dates,
-        "rainfall_mm": rng.integers(20, 120, len(dates)),
-        "temperature_c": rng.integers(-5, 35, len(dates)),
-        "humidity_pct": rng.integers(40, 90, len(dates)),
+        "date": pd.to_datetime(data["time"]),
+        "rainfall_mm": data["precipitation_sum"],
+        "temperature_c": data["temperature_2m_mean"],
     })
 
-    df["water_damage_prob"] = df["rainfall_mm"] / 120
-    df["mold_prob"] = df["humidity_pct"] / 100
-    df["roof_storm_prob"] = rng.random(len(df))
-    df["freeze_burst_prob"] = (df["temperature_c"] < 1).astype(float)
+    # derived metrics
+    df["humidity_pct"] = np.clip(
+        60 + (df["rainfall_mm"] * 0.3), 30, 100
+    )
 
-    return df
+    df["storm_flag"] = (df["rainfall_mm"] > 20).astype(int)
+
+    return df.dropna().reset_index(drop=True)
+@lru_cache(maxsize=128)
+def fetch_forecast_weather(lat, lon, days=90):
+    """
+    Fetches REAL forecast weather from Open-Meteo
+    """
+    url = (
+        "https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}"
+        f"&longitude={lon}"
+        f"&daily=precipitation_sum,temperature_2m_mean"
+        f"&forecast_days={days}"
+        "&timezone=UTC"
+    )
+
+    r = requests.get(url, timeout=10)
+    r.raise_for_status()
+    data = r.json()["daily"]
+
+    df = pd.DataFrame({
+        "date": pd.to_datetime(data["time"]),
+        "rainfall_mm": data["precipitation_sum"],
+        "temperature_c": data["temperature_2m_mean"],
+    })
+
+    df["humidity_pct"] = np.clip(
+        60 + (df["rainfall_mm"] * 0.3), 30, 100
+    )
+
+    df["storm_flag"] = (df["rainfall_mm"] > 20).astype(int)
+
+    return df.dropna().reset_index(drop=True)
 
 # -------------------------------------------------------------
 # MAIN PAGE — SEASONAL TRENDS
