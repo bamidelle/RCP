@@ -1824,19 +1824,117 @@ def page_seasonal_trends():
         )
     
     
-    # ---------- WEATHER CHARTS ----------
-    st.markdown("### 📈 Weather Trends")
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(
-        px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
-        use_container_width=True
+# ---------- WEATHER CHARTS ----------
+st.markdown("### 📈 Weather Trends")
+
+c1, c2 = st.columns(2)
+c1.plotly_chart(
+    px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
+    use_container_width=True
+)
+c2.plotly_chart(
+    px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
+    use_container_width=True
+)
+
+# ---------- SUMMARY METRICS ----------
+summary = {
+    "avg_rain_hist": hist_df["rainfall_mm"].mean(),
+    "avg_rain_forecast": forecast_df["rainfall_mm"].mean(),
+    "avg_temp_hist": hist_df["temperature_c"].mean(),
+    "avg_temp_forecast": forecast_df["temperature_c"].mean(),
+    "avg_water_risk": forecast_df["water_damage_prob"].mean(),
+    "avg_mold_risk": forecast_df["mold_prob"].mean(),
+    "avg_storm_risk": forecast_df["roof_storm_prob"].mean(),
+    "avg_freeze_risk": forecast_df["freeze_burst_prob"].mean(),
+}
+
+# ---------- GRAPH INTERPRETATION ----------
+st.markdown("## 📝 Seasonal Trend Analysis")
+
+notes = []
+
+# Rainfall analysis
+if summary["avg_rain_forecast"] > summary["avg_rain_hist"] * 1.15:
+    notes.append(
+        "🌧️ **Rainfall is trending upward** compared to historical levels, "
+        "increasing flood and water intrusion risk."
     )
-    c2.plotly_chart(
-        px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
-        use_container_width=True
+elif summary["avg_rain_forecast"] < summary["avg_rain_hist"] * 0.85:
+    notes.append(
+        "🌤️ **Rainfall is declining**, reducing large-scale water damage likelihood."
     )
-    
-    
+else:
+    notes.append(
+        "🌦️ **Rainfall levels are stable**, aligning with historical seasonal norms."
+    )
+
+# Temperature analysis
+if summary["avg_temp_forecast"] > summary["avg_temp_hist"] + 2:
+    notes.append(
+        "🔥 **Above-normal temperatures** may elevate humidity and mold growth risk."
+    )
+elif summary["avg_temp_forecast"] < summary["avg_temp_hist"] - 2:
+    notes.append(
+        "❄️ **Colder-than-normal temperatures** increase freeze and pipe burst risk."
+    )
+else:
+    notes.append(
+        "🌡️ **Temperatures remain seasonally consistent**."
+    )
+
+for n in notes:
+    st.info(n)
+
+# ---------- DAMAGE RISK OUTLOOK ----------
+st.markdown("## 🧠 Damage Risk Outlook")
+
+risk_notes = []
+
+if summary["avg_water_risk"] > 0.55:
+    risk_notes.append("💧 **High Water Damage Risk** — Expect increased emergency calls.")
+
+if summary["avg_mold_risk"] > 0.45:
+    risk_notes.append("🦠 **Elevated Mold Risk** — Sustained moisture conditions detected.")
+
+if summary["avg_storm_risk"] > 0.4:
+    risk_notes.append("🌪️ **Storm Damage Risk** — Roof and exterior failures more likely.")
+
+if summary["avg_freeze_risk"] > 0.3:
+    risk_notes.append("❄️ **Freeze / Pipe Burst Risk** — Cold exposure may damage plumbing.")
+
+if not risk_notes:
+    risk_notes.append("🟢 **Low overall weather-driven damage risk detected.**")
+
+for r in risk_notes:
+    st.warning(r)
+
+# ---------- EXECUTIVE RECOMMENDATIONS ----------
+st.markdown("## 🎯 Strategic Recommendations")
+
+if season_score >= 0.6:
+    st.error(
+        "🔥 **Peak Season Strategy**\n"
+        "- Increase technician availability\n"
+        "- Pre-stage drying and extraction equipment\n"
+        "- Increase emergency PPC & LSA spend\n"
+        "- Prepare for high lead volume"
+    )
+elif season_score >= 0.4:
+    st.warning(
+        "⚠️ **Elevated Activity Strategy**\n"
+        "- Maintain flexible scheduling\n"
+        "- Run targeted storm & water campaigns\n"
+        "- Monitor lead volume daily"
+    )
+else:
+    st.success(
+        "🟢 **Low / Normal Season Strategy**\n"
+        "- Focus on SEO & brand awareness\n"
+        "- Schedule training & maintenance\n"
+        "- Optimize operations"
+    )
+  
     # ---------- DAMAGE RISK: HISTORY VS FORECAST ----------
     st.markdown("### 📊 Damage Risk — Historical vs Forecast")
     
