@@ -1642,16 +1642,6 @@ def fetch_weather(lat, lon, months):
     end = pd.Timestamp.utcnow().date()
     start = (pd.Timestamp.utcnow() - pd.DateOffset(months=months)).date()
 
-@st.cache_resource
-def load_models():
-    return {
-        "water": joblib.load("models/water_damage.pkl"),
-        "mold": joblib.load("models/mold.pkl"),
-        "storm": joblib.load("models/storm.pkl"),
-        "freeze": joblib.load("models/freeze.pkl"),
-    }
-
-
     r = requests.get(
         "https://archive-api.open-meteo.com/v1/archive",
         params={
@@ -1736,21 +1726,11 @@ def page_seasonal_trends():
         df = fetch_weather(chosen["lat"], chosen["lon"], months)
     
     # ---------- DAMAGE PROBABILITIES ----------
-    models = load_models()
-    
-    X = df[
-        [
-            "rainfall_mm",
-            "temperature_c",
-            "humidity_pct",
-            "storm_flag"
-        ]
-    ]
-    
-    df["water_damage_prob"] = models["water"].predict(X).clip(0, 1)
-    df["mold_prob"] = models["mold"].predict(X).clip(0, 1)
-    df["roof_storm_prob"] = models["storm"].predict(X).clip(0, 1)
-    df["freeze_burst_prob"] = models["freeze"].predict(X).clip(0, 1)
+df["water_damage_prob"] = np.clip(df["rainfall_mm"] / 120, 0, 1)
+df["mold_prob"] = np.clip(df["humidity_pct"] / 100, 0, 1)
+df["roof_storm_prob"] = np.clip(df["storm_flag"].astype(int), 0, 1)
+df["freeze_burst_prob"] = np.clip((df["temperature_c"] < 1).astype(int), 0, 1)
+1)
     
     # ---------- CHARTS ----------
     st.markdown("### 📈 Weather Trends")
