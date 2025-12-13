@@ -1666,6 +1666,9 @@ except Exception:
     # if Flask isn't available (not installed) the API simply won't start — harmless
     pass
 # ---------- END BLOCK F ----------
+demand = {}
+season_score = 0.5
+
 # -------------------------------------------------------------
 # SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
 # -------------------------------------------------------------
@@ -1761,6 +1764,24 @@ def page_seasonal_trends():
         df_["freeze_burst_prob"] = np.clip(
             (df_["temperature_c"] < 1).astype(int), 0, 1
         )
+        # ============================================================
+    # 📌 DEMAND DISTRIBUTION (DEFINE ONCE — USED EVERYWHERE)
+    # ============================================================
+    demand = {
+        "Water Damage": float(forecast_df["water_damage_prob"].mean()),
+        "Mold Remediation": float(forecast_df["mold_prob"].mean()),
+        "Storm / Roof": float(forecast_df["roof_storm_prob"].mean()),
+        "Freeze / Pipe Burst": float(forecast_df["freeze_burst_prob"].mean()),
+    }
+    
+    # Safety clamp (prevents edge-case crashes)
+    demand = {k: max(0.0, min(v, 1.0)) for k, v in demand.items()}
+    
+    # ============================================================
+    # 📌 SEASON SCORE (GLOBAL DRIVER)
+    # ============================================================
+    season_score = round(np.mean(list(demand.values())), 2)
+
         # ============================================================
     # 📊 SEASONAL TREND ANALYSIS — HISTORY VS FORECAST
     # ============================================================
