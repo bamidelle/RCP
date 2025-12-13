@@ -1730,7 +1730,7 @@ df["water_damage_prob"] = np.clip(df["rainfall_mm"] / 120, 0, 1)
 df["mold_prob"] = np.clip(df["humidity_pct"] / 100, 0, 1)
 df["roof_storm_prob"] = np.clip(df["storm_flag"].astype(int), 0, 1)
 df["freeze_burst_prob"] = np.clip((df["temperature_c"] < 1).astype(int), 0, 1)
-1)
+
     
     # ---------- CHARTS ----------
     st.markdown("### 📈 Weather Trends")
