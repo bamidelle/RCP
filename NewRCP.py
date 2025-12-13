@@ -1582,20 +1582,19 @@ from functools import lru_cache
 # -------------------------------------------------------------
 @lru_cache(maxsize=1)
 def get_all_countries():
-    url = "https://restcountries.com/v3.1/all"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get("https://restcountries.com/v3.1/all", timeout=10)
         r.raise_for_status()
         data = r.json()
-        countries = []
-        for c in data:
-            name = c.get("name", {}).get("common")
-            code = c.get("cca2")
-            if name and code:
-                countries.append({"name": name, "code": code})
-        return sorted(countries, key=lambda x: x["name"])
+        return sorted(
+            [
+                {"name": c["name"]["common"], "code": c["cca2"]}
+                for c in data
+                if "name" in c and "cca2" in c
+            ],
+            key=lambda x: x["name"]
+        )
     except Exception:
-        # absolute fallback (should almost never trigger)
         return [
             {"name": "United States", "code": "US"},
             {"name": "Canada", "code": "CA"},
@@ -1604,389 +1603,146 @@ def get_all_countries():
         ]
 
 # -------------------------------------------------------------
-# CITY SEARCH (NO STATE DROPDOWNS — GLOBAL & RELIABLE)
+# CITY SEARCH (GLOBAL, NO STATE DROPDOWNS)
 # -------------------------------------------------------------
-def search_cities(country_code: str, city_name: str, limit: int = 10):
+def search_cities(country_code, city_name, limit=10):
     if not city_name:
         return []
 
-    url = (
-        "https://geocoding-api.open-meteo.com/v1/search"
-        f"?name={city_name}&count={limit}&language=en&format=json&country={country_code}"
-    )
-
     try:
-        r = requests.get(url, timeout=8)
+        r = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": city_name,
+                "count": limit,
+                "language": "en",
+                "format": "json",
+                "country": country_code,
+            },
+            timeout=8
+        )
         r.raise_for_status()
-        res = r.json()
-        out = []
-        for x in res.get("results", []):
-            out.append({
+        return [
+            {
                 "name": x.get("name"),
                 "admin1": x.get("admin1"),
                 "lat": x.get("latitude"),
                 "lon": x.get("longitude"),
-            })
-        return out
+            }
+            for x in r.json().get("results", [])
+        ]
     except Exception:
         return []
 
 # -------------------------------------------------------------
-# MOCK WEATHER DATA (SAFE PLACEHOLDER)
+# HISTORICAL WEATHER (OPEN-METEO)
 # -------------------------------------------------------------
-
 @lru_cache(maxsize=128)
-def fetch_mock_weather(lat, lon, months=6):
-    """
-    Fetches REAL historical daily weather from Open-Meteo
-    """
-    end_date = pd.Timestamp.utcnow().date()
-    start_date = (pd.Timestamp.utcnow() - pd.DateOffset(months=months)).date()
+def fetch_weather(lat, lon, months):
+    end = pd.Timestamp.utcnow().date()
+    start = (pd.Timestamp.utcnow() - pd.DateOffset(months=months)).date()
 
-    url = (
-        "https://archive-api.open-meteo.com/v1/archive"
-        f"?latitude={lat}"
-        f"&longitude={lon}"
-        f"&start_date={start_date}"
-        f"&end_date={end_date}"
-        "&daily=precipitation_sum,temperature_2m_mean"
-        "&timezone=UTC"
+    r = requests.get(
+        "https://archive-api.open-meteo.com/v1/archive",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start,
+            "end_date": end,
+            "daily": "precipitation_sum,temperature_2m_mean",
+            "timezone": "UTC",
+        },
+        timeout=10,
     )
-
-    r = requests.get(url, timeout=10)
     r.raise_for_status()
-    data = r.json()["daily"]
+    d = r.json()["daily"]
 
     df = pd.DataFrame({
-        "date": pd.to_datetime(data["time"]),
-        "rainfall_mm": data["precipitation_sum"],
-        "temperature_c": data["temperature_2m_mean"],
+        "date": pd.to_datetime(d["time"]),
+        "rainfall_mm": d["precipitation_sum"],
+        "temperature_c": d["temperature_2m_mean"],
     })
 
-    # derived metrics
-    df["humidity_pct"] = np.clip(
-        60 + (df["rainfall_mm"] * 0.3), 30, 100
-    )
-
-    df["storm_flag"] = (df["rainfall_mm"] > 20).astype(int)
-
-    return df.dropna().reset_index(drop=True)
-@lru_cache(maxsize=128)
-def fetch_forecast_weather(lat, lon, days=90):
-    """
-    Fetches REAL forecast weather from Open-Meteo
-    """
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={lat}"
-        f"&longitude={lon}"
-        f"&daily=precipitation_sum,temperature_2m_mean"
-        f"&forecast_days={days}"
-        "&timezone=UTC"
-    )
-
-    r = requests.get(url, timeout=10)
-    r.raise_for_status()
-    data = r.json()["daily"]
-
-    df = pd.DataFrame({
-        "date": pd.to_datetime(data["time"]),
-        "rainfall_mm": data["precipitation_sum"],
-        "temperature_c": data["temperature_2m_mean"],
-    })
-
-    df["humidity_pct"] = np.clip(
-        60 + (df["rainfall_mm"] * 0.3), 30, 100
-    )
-
-    df["storm_flag"] = (df["rainfall_mm"] > 20).astype(int)
+    # Derived
+    df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
 
     return df.dropna().reset_index(drop=True)
 
 # -------------------------------------------------------------
-# MAIN PAGE — SEASONAL TRENDS
+# MAIN PAGE
 # -------------------------------------------------------------
 def page_seasonal_trends():
     st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
     st.markdown(
-        "<em>Analyze historical weather patterns and predict property damage demand by location.</em>",
+        "<em>Analyze historical weather patterns and predict property damage demand.</em>",
         unsafe_allow_html=True
     )
-    # -------------------------------------------------
-    # GLOBAL SAFE DEFAULTS (Streamlit rerun protection)
-    # -------------------------------------------------
+
+    # ---------- SAFE DEFAULTS ----------
     forecast_months = 3
     season_score = 0.5
-    months_factor = 3
     expected_total_leads = 0
 
-    demand = {
-        "Water Damage": 0.25,
-        "Mold Remediation": 0.25,
-        "Storm / Roof": 0.25,
-        "Freeze / Pipe Burst": 0.25,
-    }
-
-    # COUNTRY
+    # ---------- LOCATION ----------
     countries = get_all_countries()
-    country_names = [c["name"] for c in countries]
-    selected_country = st.selectbox("Country", country_names)
-    country_code = next(c["code"] for c in countries if c["name"] == selected_country)
+    country = st.selectbox("Country", [c["name"] for c in countries])
+    country_code = next(c["code"] for c in countries if c["name"] == country)
 
-    # CITY SEARCH
-    city_query = st.text_input("City name (e.g. Miami, London, Toronto)")
+    city_query = st.text_input("City (e.g. Miami, London, Toronto)")
     matches = search_cities(country_code, city_query)
 
     if not matches:
-        st.info("Start typing a city name to search.")
+        st.info("Start typing a city name.")
         return
 
     labels = [
         f"{m['name']}, {m['admin1']}" if m["admin1"] else m["name"]
         for m in matches
     ]
+    selected = st.selectbox("Select city", labels)
+    chosen = matches[labels.index(selected)]
 
-    selected_label = st.selectbox("Select city", labels)
-    chosen = matches[labels.index(selected_label)]
+    st.success(f"📍 {selected}, {country}")
 
-    st.success(f"📍 {selected_label}, {selected_country}")
-    forecast_range = st.selectbox(
-        "Forecast horizon",
-        ["3 months", "6 months", "12 months"],
-        index=0,
-        key="season_forecast_range"
-    )
+    # ---------- CONTROLS ----------
+    hist_range = st.selectbox("Historical window", ["3 months", "6 months", "12 months"], index=1)
+    forecast_range = st.selectbox("Forecast horizon", ["3 months", "6 months", "12 months"])
 
-    forecast_months = {
-        "3 months": 3,
-        "6 months": 6,
-        "12 months": 12
-    }[forecast_range]
-
-    months_factor = forecast_months
-    st.caption(f"DEBUG → Forecast Months: {forecast_months}")
-
-    # CONTROLS
-    c1, c2 = st.columns(2)
-    with c1:
-        hist_range = st.selectbox(
-            "Historical window",
-            ["3 months", "6 months", "12 months"],
-            index=1
-        )
-    with c2:
-        generate = st.button("Generate Insights")
-
-    if not generate:
-        return
-
+    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
     months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
 
-    # DATA
-    with st.spinner("Generating seasonal insights..."):
-        df = fetch_mock_weather(
-            chosen["lat"],
-            chosen["lon"],
-            months
-        )
+    if not st.button("Generate Insights"):
+        return
 
-    # CHARTS
+    # ---------- DATA ----------
+    with st.spinner("Generating insights..."):
+        df = fetch_weather(chosen["lat"], chosen["lon"], months)
+
+    # ---------- DAMAGE PROBABILITIES (CRITICAL FIX) ----------
+    df["water_damage_prob"] = df["rainfall_mm"] / max(df["rainfall_mm"].max(), 1)
+    df["mold_prob"] = df["humidity_pct"] / 100
+    df["roof_storm_prob"] = np.clip(df["rainfall_mm"] / 40, 0, 1)
+    df["freeze_burst_prob"] = (df["temperature_c"] < 1).astype(float)
+
+    # ---------- CHARTS ----------
     st.markdown("### 📈 Weather Trends")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.plotly_chart(
-            px.line(df, x="date", y="rainfall_mm", title="Rainfall (mm)"),
-            use_container_width=True
-        )
-    with col_b:
-        st.plotly_chart(
-            px.line(df, x="date", y="temperature_c", title="Temperature (°C)"),
-            use_container_width=True
-        )
+    c1, c2 = st.columns(2)
+    c1.plotly_chart(px.line(df, x="date", y="rainfall_mm"), use_container_width=True)
+    c2.plotly_chart(px.line(df, x="date", y="temperature_c"), use_container_width=True)
 
-    st.markdown("### 📊 Damage Probability Indicators")
+    st.markdown("### 📊 Damage Risk Indicators")
     fig = go.Figure()
-    for col, label in [
+    for col, name in [
         ("water_damage_prob", "Water Damage"),
-        ("mold_prob", "Mold Risk"),
+        ("mold_prob", "Mold"),
         ("roof_storm_prob", "Storm / Roof"),
         ("freeze_burst_prob", "Freeze / Burst"),
     ]:
-        fig.add_trace(go.Scatter(
-            x=df["date"],
-            y=df[col],
-            name=label,
-            mode="lines+markers"
-        ))
+        fig.add_trace(go.Scatter(x=df["date"], y=df[col], name=name))
     fig.update_layout(yaxis=dict(range=[0, 1]))
     st.plotly_chart(fig, use_container_width=True)
 
-    # SUMMARY
-    st.markdown("### 🧠 Executive Summary")
-    recs = []
-    if df["water_damage_prob"].mean() > 0.5:
-        recs.append("Prepare for increased water extraction and drying jobs.")
-    if df["mold_prob"].mean() > 0.4:
-        recs.append("Mold remediation demand likely to rise.")
-    if df["roof_storm_prob"].mean() > 0.3:
-        recs.append("Storm-related roof repairs expected.")
-    if df["freeze_burst_prob"].mean() > 0.2:
-        recs.append("Risk of pipe bursts during cold periods.")
-
-    if not recs:
-        recs.append("No major weather-driven risks detected.")
-
-    for r in recs:
-        st.info(r)
-
-    st.markdown(
-        "<small>Prototype module — replace mock weather with Open-Meteo or NOAA for production.</small>",
-        unsafe_allow_html=True
-    )
-        # -------------------------------------------------
-    # BASE SEASON SCORE (shared across all intelligence blocks)
-    # -------------------------------------------------
-    
-    # Default safety value (prevents UnboundLocalError)
-    season_score = 0.5  
-    demand = {
-    "Water Damage": df["water_damage_prob"].mean(),
-    "Mold Remediation": df["mold_prob"].mean(),
-    "Storm / Roof": df["roof_storm_prob"].mean(),
-    "Freeze / Pipe Burst": df["freeze_burst_prob"].mean(),
-}
-
-    if "selected_location" in st.session_state:
-        avg_rain = df["rainfall_mm"].mean()
-        avg_temp = df["temperature_c"].mean()
-        avg_mold = df["mold_prob"].mean()
-        avg_freeze = df["freeze_burst_prob"].mean()
-    
-        # Core seasonal intensity logic
-        season_score = round(
-        max(0.0, min(np.mean(list(demand.values())), 1.0)),
-        2
-    )
-
-    st.caption(f"DEBUG → Season Score: {season_score}")
-
-    
-    # Clamp (extra safety)
-    season_score = round(max(0.0, min(season_score, 1.0)), 2)
-    st.caption(f"DEBUG → Season Score: {season_score}")
-
-
-        # ---------------------------------------------------------
-    # A️⃣ LEAD VOLUME PREDICTION (ESTIMATED)
-    # ---------------------------------------------------------
-    st.markdown("## 🔢 Expected Lead Volume Forecast")
-
-    # Base monthly leads (heuristic baseline)
-    BASE_MONTHLY_LEADS = 40  
-
-    # Scale by seasonal intensity
-    intensity_multiplier = 0.6 + (season_score * 0.8)
-
-    months_factor = forecast_months
-    expected_total_leads = int(BASE_MONTHLY_LEADS * intensity_multiplier * months_factor)
-
-    lead_breakdown = {
-        "Water Damage": int(expected_total_leads * demand["Water Damage"]),
-        "Mold Remediation": int(expected_total_leads * demand["Mold Remediation"]),
-        "Storm / Roof": int(expected_total_leads * demand["Storm / Roof"]),
-        "Freeze / Pipe Burst": int(expected_total_leads * demand["Freeze / Pipe Burst"]),
-    }
-
-    lead_df = pd.DataFrame(
-        [{"Job Type": k, "Expected Leads": v} for k, v in lead_breakdown.items()]
-    )
-
-    st.plotly_chart(
-        px.bar(
-            lead_df,
-            x="Job Type",
-            y="Expected Leads",
-            title=f"Estimated Leads Over Next {forecast_months} Months"
-        ),
-        use_container_width=True
-    )
-
-    st.success(f"📈 Estimated Total Leads: **~{expected_total_leads} jobs**")
-        # ---------------------------------------------------------
-    # B️⃣ MARKETING CAMPAIGN RECOMMENDATIONS
-    # ---------------------------------------------------------
-    st.markdown("## 📣 Recommended Marketing Campaigns")
-
-    if demand["Water Damage"] > 0.45:
-        st.warning(
-            "💧 **Water Damage Campaign**\n"
-            "- Run Google Search Ads for *Emergency Water Removal*\n"
-            "- Increase local service ads (LSA)\n"
-            "- Target insurance-related keywords"
-        )
-
-    if demand["Mold Remediation"] > 0.4:
-        st.warning(
-            "🦠 **Mold Remediation Campaign**\n"
-            "- Facebook & Instagram awareness ads\n"
-            "- Promote free mold inspections\n"
-            "- Retarget property managers"
-        )
-
-    if demand["Storm / Roof"] > 0.35:
-        st.warning(
-            "🌪️ **Storm Damage Campaign**\n"
-            "- Door hangers in storm-prone neighborhoods\n"
-            "- Google Ads: *Storm Damage Repair Near Me*"
-        )
-
-    if demand["Freeze / Pipe Burst"] > 0.25:
-        st.warning(
-            "❄️ **Freeze Protection Campaign**\n"
-            "- Email winterization reminders\n"
-            "- Run emergency plumbing ads during cold snaps"
-        )
-
-    if season_score < 0.3:
-        st.info(
-            "📉 **Low Season Strategy**\n"
-            "- Focus on brand awareness\n"
-            "- Train staff\n"
-            "- Optimize Google Business Profile"
-        )
-        # ---------------------------------------------------------
-    # C️⃣ TECHNICIAN SCHEDULING INTELLIGENCE
-    # ---------------------------------------------------------
-    st.markdown("## 👷 Technician Staffing Forecast")
-
-    AVG_JOBS_PER_TECH_PER_MONTH = 18
-
-    required_techs = max(
-        1,
-        int(np.ceil(expected_total_leads / (AVG_JOBS_PER_TECH_PER_MONTH * months_factor)))
-    )
-
-    st.metric(
-        label="Recommended Active Technicians",
-        value=f"{required_techs} tech(s)",
-        delta=f"{expected_total_leads} projected jobs"
-    )
-
-    if required_techs > 5:
-        st.error("⚠️ High staffing demand — consider temp crews or overtime planning.")
-    elif required_techs <= 2:
-        st.success("🟢 Light workload — good time for training or PTO approvals.")
-    else:
-        st.info("🟡 Moderate workload — maintain standard scheduling.")
-
-
-
-        # ---------------------------------------------------------
-    # BUSINESS INTELLIGENCE LAYER (JOB DEMAND + SEASONALITY)
-    # ---------------------------------------------------------
-
-    st.markdown("### 📊 Expected Job Demand Breakdown")
-
+    # ---------- BUSINESS INTELLIGENCE ----------
     demand = {
         "Water Damage": df["water_damage_prob"].mean(),
         "Mold Remediation": df["mold_prob"].mean(),
@@ -1994,63 +1750,29 @@ def page_seasonal_trends():
         "Freeze / Pipe Burst": df["freeze_burst_prob"].mean(),
     }
 
-    demand_df = (
-        pd.DataFrame.from_dict(demand, orient="index", columns=["Probability"])
-        .reset_index()
-        .rename(columns={"index": "Job Type"})
-    )
+    season_score = round(np.mean(list(demand.values())), 2)
+    st.caption(f"DEBUG → Season Score: {season_score}")
+
+    BASE_MONTHLY_LEADS = 40
+    intensity = 0.6 + (season_score * 0.8)
+    expected_total_leads = int(BASE_MONTHLY_LEADS * intensity * forecast_months)
+
+    st.markdown("## 🔢 Expected Lead Volume")
+    st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
+
+    lead_df = pd.DataFrame([
+        {"Job Type": k, "Expected Leads": int(v * expected_total_leads)}
+        for k, v in demand.items()
+    ])
 
     st.plotly_chart(
-        px.bar(
-            demand_df,
-            x="Job Type",
-            y="Probability",
-            title="Expected Job Type Demand (Next Period)",
-            range_y=[0, 1]
-        ),
+        px.bar(lead_df, x="Job Type", y="Expected Leads"),
         use_container_width=True
     )
 
-    # ---------------------------------------------------------
-    # SEASONAL INTENSITY SCORE
-    # ---------------------------------------------------------
-    season_score = np.mean(list(demand.values()))
-
-    if season_score > 0.6:
-        season_label = "🔥 Peak Season"
-        season_color = "red"
-    elif season_score > 0.4:
-        season_label = "⚠️ Elevated Activity"
-        season_color = "orange"
-    else:
-        season_label = "🟢 Normal / Low Activity"
-        season_color = "green"
-
-    st.markdown(
-        f"<h3 style='color:{season_color};'>Seasonal Status: {season_label}</h3>",
-        unsafe_allow_html=True
-    )
-
-    # ---------------------------------------------------------
-    # ACTIONABLE RECOMMENDATIONS
-    # ---------------------------------------------------------
-    st.markdown("### 🧠 Operational Recommendations")
-
-    if demand["Water Damage"] > 0.5:
-        st.info("Increase drying equipment readiness and emergency response staffing.")
-
-    if demand["Mold Remediation"] > 0.4:
-        st.info("Promote mold inspection services and ensure remediation supplies are stocked.")
-
-    if demand["Storm / Roof"] > 0.4:
-        st.info("Prepare roofing crews and storm response materials.")
-
-    if demand["Freeze / Pipe Burst"] > 0.3:
-        st.info("Prepare winterization campaigns and pipe burst response teams.")
-
-    if season_score < 0.3:
-        st.success("Low activity period detected — ideal time for marketing, training, and maintenance.")
-
+    st.markdown("## 👷 Technician Staffing")
+    techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
+    st.metric("Recommended Technicians", techs)
 
 # ----------------------
 # Router (main)
