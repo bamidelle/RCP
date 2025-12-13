@@ -1761,6 +1761,153 @@ def page_seasonal_trends():
         df_["freeze_burst_prob"] = np.clip(
             (df_["temperature_c"] < 1).astype(int), 0, 1
         )
+        # ============================================================
+    # 📊 SEASONAL TREND ANALYSIS — HISTORY VS FORECAST
+    # ============================================================
+    st.markdown("## 📊 Seasonal Trend Analysis")
+    
+    trend_fig = go.Figure()
+    
+    trend_fig.add_trace(go.Scatter(
+        x=hist_df["date"],
+        y=hist_df["rainfall_mm"],
+        name="Rainfall (Historical)",
+        mode="lines"
+    ))
+    
+    trend_fig.add_trace(go.Scatter(
+        x=forecast_df["date"],
+        y=forecast_df["rainfall_mm"],
+        name="Rainfall (Forecast)",
+        mode="lines",
+        line=dict(dash="dash")
+    ))
+    
+    trend_fig.add_trace(go.Scatter(
+        x=hist_df["date"],
+        y=hist_df["temperature_c"],
+        name="Temperature (Historical)",
+        mode="lines",
+        yaxis="y2"
+    ))
+    
+    trend_fig.add_trace(go.Scatter(
+        x=forecast_df["date"],
+        y=forecast_df["temperature_c"],
+        name="Temperature (Forecast)",
+        mode="lines",
+        line=dict(dash="dash"),
+        yaxis="y2"
+    ))
+    
+    trend_fig.update_layout(
+        xaxis_title="Date",
+        yaxis=dict(title="Rainfall (mm)"),
+        yaxis2=dict(
+            title="Temperature (°C)",
+            overlaying="y",
+            side="right"
+        ),
+        legend=dict(orientation="h"),
+        height=450
+    )
+    
+    st.plotly_chart(trend_fig, use_container_width=True)
+    # ============================================================
+    # 📉 DAMAGE RISK TRENDS — HISTORY VS FORECAST
+    # ============================================================
+    st.markdown("## 📉 Damage Risk Trends")
+    
+    risk_fig = go.Figure()
+    
+    for col, label in [
+        ("water_damage_prob", "Water Damage"),
+        ("mold_prob", "Mold"),
+        ("roof_storm_prob", "Storm / Roof"),
+        ("freeze_burst_prob", "Freeze / Pipe Burst"),
+    ]:
+        risk_fig.add_trace(go.Scatter(
+            x=hist_df["date"],
+            y=hist_df[col],
+            name=f"{label} (History)",
+            mode="lines"
+        ))
+        risk_fig.add_trace(go.Scatter(
+            x=forecast_df["date"],
+            y=forecast_df[col],
+            name=f"{label} (Forecast)",
+            mode="lines",
+            line=dict(dash="dash")
+        ))
+    
+    risk_fig.update_layout(
+        yaxis=dict(range=[0, 1]),
+        legend=dict(orientation="h"),
+        height=450
+    )
+    
+    st.plotly_chart(risk_fig, use_container_width=True)
+    # ============================================================
+    # 🧠 AI-STYLE EXECUTIVE SEASONAL SUMMARY
+    # ============================================================
+    st.markdown("## 🧠 Executive Seasonal Outlook")
+    
+    avg_rain_trend = forecast_df["rainfall_mm"].mean() - hist_df["rainfall_mm"].mean()
+    avg_temp_trend = forecast_df["temperature_c"].mean() - hist_df["temperature_c"].mean()
+    
+    top_risk = max(
+        demand,
+        key=demand.get
+    )
+    
+    summary_lines = []
+    
+    summary_lines.append(
+        f"📍 **Location analyzed:** {selected}, {country}."
+    )
+    
+    if avg_rain_trend > 5:
+        summary_lines.append(
+            "🌧️ Rainfall is trending **above historical averages**, increasing the likelihood of water intrusion and flooding-related claims."
+        )
+    elif avg_rain_trend < -5:
+        summary_lines.append(
+            "🌤️ Rainfall levels are **below seasonal norms**, reducing the probability of widespread water damage."
+        )
+    else:
+        summary_lines.append(
+            "🌦️ Rainfall patterns remain **seasonally consistent** with historical trends."
+        )
+    
+    if avg_temp_trend < -2:
+        summary_lines.append(
+            "❄️ Cooling temperatures elevate the risk of pipe bursts and freeze-related losses."
+        )
+    elif avg_temp_trend > 2:
+        summary_lines.append(
+            "🔥 Warmer temperatures combined with moisture increase mold development risk."
+        )
+    
+    summary_lines.append(
+        f"📈 The **dominant expected damage category** for the upcoming period is **{top_risk}**, "
+        f"accounting for approximately **{int(demand[top_risk]*100)}%** of forecasted activity."
+    )
+    
+    if season_score >= 0.6:
+        summary_lines.append(
+            "🔥 Overall conditions indicate a **Peak Season**. Immediate operational readiness is recommended."
+        )
+    elif season_score >= 0.4:
+        summary_lines.append(
+            "⚠️ Conditions suggest **Elevated Activity**. Flexible staffing and targeted marketing are advised."
+        )
+    else:
+        summary_lines.append(
+            "🟢 The market is in a **Low / Stable Season**, suitable for training, optimization, and brand investment."
+        )
+    
+    for line in summary_lines:
+        st.markdown(f"- {line}")
 
     # =========================================================
     # 5. WEATHER CHARTS
