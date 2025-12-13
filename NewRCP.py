@@ -1660,6 +1660,20 @@ def page_seasonal_trends():
         "<em>Analyze historical weather patterns and predict property damage demand by location.</em>",
         unsafe_allow_html=True
     )
+    # -------------------------------------------------
+    # GLOBAL SAFE DEFAULTS (Streamlit rerun protection)
+    # -------------------------------------------------
+    forecast_months = 3
+    season_score = 0.5
+    months_factor = 3
+    expected_total_leads = 0
+
+    demand = {
+        "Water Damage": 0.25,
+        "Mold Remediation": 0.25,
+        "Storm / Roof": 0.25,
+        "Freeze / Pipe Burst": 0.25,
+    }
 
     # COUNTRY
     countries = get_all_countries()
@@ -1684,26 +1698,21 @@ def page_seasonal_trends():
     chosen = matches[labels.index(selected_label)]
 
     st.success(f"📍 {selected_label}, {selected_country}")
-        # -------------------------------------------------
-    # Forecast window default (prevents NameError)
-    # -------------------------------------------------
-        forecast_months = 3
-        forecast_range = st.selectbox(
+    forecast_range = st.selectbox(
         "Forecast horizon",
         ["3 months", "6 months", "12 months"],
         index=0,
         key="season_forecast_range"
     )
-    
+
     forecast_months = {
         "3 months": 3,
         "6 months": 6,
         "12 months": 12
     }[forecast_range]
+
+    months_factor = forecast_months
     st.caption(f"DEBUG → Forecast Months: {forecast_months}")
-
-
-
 
     # CONTROLS
     c1, c2 = st.columns(2)
@@ -1788,20 +1797,27 @@ def page_seasonal_trends():
     
     # Default safety value (prevents UnboundLocalError)
     season_score = 0.5  
-    
+    demand = {
+    "Water Damage": df["water_damage_prob"].mean(),
+    "Mold Remediation": df["mold_prob"].mean(),
+    "Storm / Roof": df["roof_storm_prob"].mean(),
+    "Freeze / Pipe Burst": df["freeze_burst_prob"].mean(),
+}
+
     if "selected_location" in st.session_state:
-        avg_rain = merged["rainfall_mm"].mean()
-        avg_temp = merged["temperature_c"].mean()
-        avg_mold = merged["mold_prob"].mean()
-        avg_freeze = merged["freeze_burst_prob"].mean()
+        avg_rain = df["rainfall_mm"].mean()
+        avg_temp = df["temperature_c"].mean()
+        avg_mold = df["mold_prob"].mean()
+        avg_freeze = df["freeze_burst_prob"].mean()
     
         # Core seasonal intensity logic
-        season_score = (
-            min(avg_rain / 120, 1.0) * 0.35 +
-            min(avg_mold, 1.0) * 0.25 +
-            min(avg_freeze, 1.0) * 0.20 +
-            min(abs(avg_temp - 18) / 18, 1.0) * 0.20
-        )
+            season_score = round(
+        max(0.0, min(np.mean(list(demand.values())), 1.0)),
+        2
+    )
+
+    st.caption(f"DEBUG → Season Score: {season_score}")
+
     
     # Clamp (extra safety)
     season_score = round(max(0.0, min(season_score, 1.0)), 2)
