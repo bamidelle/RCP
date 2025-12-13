@@ -1565,176 +1565,25 @@ except Exception:
     # if Flask isn't available (not installed) the API simply won't start — harmless
     pass
 # ---------- END BLOCK F ----------
-# =============================================================
-# SEASONAL TRENDS & WEATHER-BASED DAMAGE INSIGHTS (SINGLE MODULE)
-# =============================================================
-
-import requests
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-import streamlit as st
-from functools import lru_cache
-
 # -------------------------------------------------------------
-# COUNTRY LOOKUP (ALL COUNTRIES)
-# -------------------------------------------------------------
-@lru_cache(maxsize=1)
-def get_all_countries():
-    try:
-        r = requests.get("https://restcountries.com/v3.1/all", timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        return sorted(
-            [
-                {"name": c["name"]["common"], "code": c["cca2"]}
-                for c in data
-                if "name" in c and "cca2" in c
-            ],
-            key=lambda x: x["name"]
-        )
-    except Exception:
-        return [
-            {"name": "United States", "code": "US"},
-            {"name": "Canada", "code": "CA"},
-            {"name": "United Kingdom", "code": "GB"},
-            {"name": "Australia", "code": "AU"},
-        ]
-
-# -------------------------------------------------------------
-# CITY SEARCH (GLOBAL, NO STATE DROPDOWNS)
-# -------------------------------------------------------------
-def search_cities(country_code, city_name, limit=10):
-    if not city_name:
-        return []
-
-    try:
-        r = requests.get(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            params={
-                "name": city_name,
-                "count": limit,
-                "language": "en",
-                "format": "json",
-                "country": country_code,
-            },
-            timeout=8
-        )
-        r.raise_for_status()
-        return [
-            {
-                "name": x.get("name"),
-                "admin1": x.get("admin1"),
-                "lat": x.get("latitude"),
-                "lon": x.get("longitude"),
-            }
-            for x in r.json().get("results", [])
-        ]
-    except Exception:
-        return []
-
-# -------------------------------------------------------------
-# HISTORICAL WEATHER (OPEN-METEO)
-# -------------------------------------------------------------
-@lru_cache(maxsize=128)
-def fetch_weather(lat, lon, months):
-    end = pd.Timestamp.utcnow().date()
-    start = (pd.Timestamp.utcnow() - pd.DateOffset(months=months)).date()
-
-    r = requests.get(
-        "https://archive-api.open-meteo.com/v1/archive",
-        params={
-            "latitude": lat,
-            "longitude": lon,
-            "start_date": start,
-            "end_date": end,
-            "daily": "precipitation_sum,temperature_2m_mean",
-            "timezone": "UTC",
-        },
-        timeout=10,
-    )
-    r.raise_for_status()
-    d = r.json()["daily"]
-
-    df = pd.DataFrame({
-        "date": pd.to_datetime(d["time"]),
-        "rainfall_mm": d["precipitation_sum"],
-        "temperature_c": d["temperature_2m_mean"],
-    })
-
-    # Derived
-    df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
-
-    return df.dropna().reset_index(drop=True)
-
-@lru_cache(maxsize=128)
-def fetch_forecast_weather(lat, lon, requested_days):
-    """
-    Open-Meteo allows MAX 16 forecast days.
-    We clamp automatically and fail safely.
-    """
-
-    MAX_FORECAST_DAYS = 16
-    days = min(requested_days, MAX_FORECAST_DAYS)
-
-    try:
-        r = requests.get(
-            "https://api.open-meteo.com/v1/forecast",
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "daily": "precipitation_sum,temperature_2m_mean",
-                "forecast_days": days,
-                "timezone": "UTC",
-            },
-            timeout=10,
-        )
-        r.raise_for_status()
-        d = r.json()["daily"]
-
-        df = pd.DataFrame({
-            "date": pd.to_datetime(d["time"]),
-            "rainfall_mm": d["precipitation_sum"],
-            "temperature_c": d["temperature_2m_mean"],
-        })
-
-        df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
-
-        return df.dropna().reset_index(drop=True)
-
-    except Exception as e:
-        # FAIL SAFE — return empty DF instead of crashing app
-        print("Forecast API error:", repr(e))
-        return pd.DataFrame()
-
-    # ---------- DAMAGE PROBABILITIES ----------
-    for df_ in [hist_df, forecast_df]:
-        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
-        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
-        df_["roof_storm_prob"] = np.clip(df_["storm_flag"], 0, 1)
-        df_["freeze_burst_prob"] = np.clip(
-            (df_["temperature_c"] < 1).astype(int), 0, 1
-        )
-
-
-
-# -------------------------------------------------------------
-# MAIN PAGE
+# SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
 # -------------------------------------------------------------
 def page_seasonal_trends():
+    import numpy as np
+    import pandas as pd
+    import plotly.express as px
+    import plotly.graph_objects as go
+    import streamlit as st
+
     st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
     st.markdown(
-        "<em>Analyze historical weather patterns and predict property damage demand.</em>",
+        "<em>Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations.</em>",
         unsafe_allow_html=True
     )
 
-    # ---------- SAFE DEFAULTS ----------
-    forecast_months = 3
-    season_score = 0.5
-    expected_total_leads = 0
-
-    # ---------- LOCATION ----------
+    # =========================================================
+    # 1. LOCATION SELECTION
+    # =========================================================
     countries = get_all_countries()
     country = st.selectbox("Country", [c["name"] for c in countries])
     country_code = next(c["code"] for c in countries if c["name"] == country)
@@ -1754,258 +1603,171 @@ def page_seasonal_trends():
     chosen = matches[labels.index(selected)]
 
     st.success(f"📍 {selected}, {country}")
-    # ---------- CONTROLS ----------
+
+    # =========================================================
+    # 2. CONTROLS
+    # =========================================================
     hist_range = st.selectbox(
         "Historical window",
         ["3 months", "6 months", "12 months"],
         index=1
     )
-    
+
     forecast_range = st.selectbox(
         "Forecast horizon",
         ["3 months", "6 months", "12 months"]
     )
-    
-    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+
     months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-    
+    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+
     if not st.button("Generate Insights"):
         return
-    
-    
-    # ---------- DATA FETCH (THIS DEFINES hist_df) ----------
+
+    # =========================================================
+    # 3. DATA FETCH
+    # =========================================================
     with st.spinner("Generating insights..."):
         hist_df = fetch_weather(
-            chosen["lat"],
-            chosen["lon"],
-            months
+            chosen["lat"], chosen["lon"], months
         )
-    
+
         forecast_days = forecast_months * 30
         forecast_df = fetch_forecast_weather(
-            chosen["lat"],
-            chosen["lon"],
-            forecast_days
-        )
-    
-    # ---------- SAFETY ----------
-    if hist_df.empty:
-        st.error("No historical data available.")
-        return
-    
-    if forecast_df.empty:
-        st.warning("Forecast data limited — using historical trends only.")
-
-        # ---------- DERIVED FLAGS ----------
-    for df_ in [hist_df, forecast_df]:
-        df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
-        df_["storm_flag"] = (df_["rainfall_mm"] >= 20).astype(int)
-    
-        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
-        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
-        df_["roof_storm_prob"] = np.clip(df_["storm_flag"], 0, 1)
-        df_["freeze_burst_prob"] = np.clip(
-            (df_["temperature_c"] < 1).astype(int), 0, 1
+            chosen["lat"], chosen["lon"], forecast_days
         )
 
-
-    # ---------- FORECAST LIMIT WARNING ----------
-    if forecast_df.empty:
-        st.warning(
-            "⚠️ Forecast limited to short range due to weather API restrictions. "
-            "Longer-range projections are inferred from historical trends."
-        )
-    
-    
-    # ---------- SAFETY CHECK ----------
     if hist_df.empty:
         st.error("Historical weather data unavailable for this location.")
         return
 
-    
-    # ---------- DERIVED FLAGS & PROBABILITIES ----------
+    if forecast_df.empty:
+        st.warning(
+            "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
+        )
+        forecast_df = hist_df.copy()
+
+    # =========================================================
+    # 4. FEATURE ENGINEERING (SINGLE PASS)
+    # =========================================================
     for df_ in [hist_df, forecast_df]:
+        df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
         df_["storm_flag"] = (df_["rainfall_mm"] >= 20).astype(int)
-    
+
         df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
         df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
         df_["roof_storm_prob"] = df_["storm_flag"]
         df_["freeze_burst_prob"] = np.clip(
             (df_["temperature_c"] < 1).astype(int), 0, 1
         )
-    
-    
-# ---------- WEATHER CHARTS ----------
-st.markdown("### 📈 Weather Trends")
 
-c1, c2 = st.columns(2)
-c1.plotly_chart(
-    px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
-    use_container_width=True
-)
-c2.plotly_chart(
-    px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
-    use_container_width=True
-)
+    # =========================================================
+    # 5. WEATHER CHARTS
+    # =========================================================
+    st.markdown("### 📈 Weather Trends")
 
-# ---------- SUMMARY METRICS ----------
-summary = {
-    "avg_rain_hist": hist_df["rainfall_mm"].mean(),
-    "avg_rain_forecast": forecast_df["rainfall_mm"].mean(),
-    "avg_temp_hist": hist_df["temperature_c"].mean(),
-    "avg_temp_forecast": forecast_df["temperature_c"].mean(),
-    "avg_water_risk": forecast_df["water_damage_prob"].mean(),
-    "avg_mold_risk": forecast_df["mold_prob"].mean(),
-    "avg_storm_risk": forecast_df["roof_storm_prob"].mean(),
-    "avg_freeze_risk": forecast_df["freeze_burst_prob"].mean(),
-}
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(
+            px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
+            use_container_width=True
+        )
+    with c2:
+        st.plotly_chart(
+            px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
+            use_container_width=True
+        )
 
-# ---------- GRAPH INTERPRETATION ----------
-st.markdown("## 📝 Seasonal Trend Analysis")
-
-notes = []
-
-# Rainfall analysis
-if summary["avg_rain_forecast"] > summary["avg_rain_hist"] * 1.15:
-    notes.append(
-        "🌧️ **Rainfall is trending upward** compared to historical levels, "
-        "increasing flood and water intrusion risk."
-    )
-elif summary["avg_rain_forecast"] < summary["avg_rain_hist"] * 0.85:
-    notes.append(
-        "🌤️ **Rainfall is declining**, reducing large-scale water damage likelihood."
-    )
-else:
-    notes.append(
-        "🌦️ **Rainfall levels are stable**, aligning with historical seasonal norms."
-    )
-
-# Temperature analysis
-if summary["avg_temp_forecast"] > summary["avg_temp_hist"] + 2:
-    notes.append(
-        "🔥 **Above-normal temperatures** may elevate humidity and mold growth risk."
-    )
-elif summary["avg_temp_forecast"] < summary["avg_temp_hist"] - 2:
-    notes.append(
-        "❄️ **Colder-than-normal temperatures** increase freeze and pipe burst risk."
-    )
-else:
-    notes.append(
-        "🌡️ **Temperatures remain seasonally consistent**."
-    )
-
-for n in notes:
-    st.info(n)
-
-# ---------- DAMAGE RISK OUTLOOK ----------
-st.markdown("## 🧠 Damage Risk Outlook")
-
-risk_notes = []
-
-if summary["avg_water_risk"] > 0.55:
-    risk_notes.append("💧 **High Water Damage Risk** — Expect increased emergency calls.")
-
-if summary["avg_mold_risk"] > 0.45:
-    risk_notes.append("🦠 **Elevated Mold Risk** — Sustained moisture conditions detected.")
-
-if summary["avg_storm_risk"] > 0.4:
-    risk_notes.append("🌪️ **Storm Damage Risk** — Roof and exterior failures more likely.")
-
-if summary["avg_freeze_risk"] > 0.3:
-    risk_notes.append("❄️ **Freeze / Pipe Burst Risk** — Cold exposure may damage plumbing.")
-
-if not risk_notes:
-    risk_notes.append("🟢 **Low overall weather-driven damage risk detected.**")
-
-for r in risk_notes:
-    st.warning(r)
-
-# ---------- EXECUTIVE RECOMMENDATIONS ----------
-st.markdown("## 🎯 Strategic Recommendations")
-
-if season_score >= 0.6:
-    st.error(
-        "🔥 **Peak Season Strategy**\n"
-        "- Increase technician availability\n"
-        "- Pre-stage drying and extraction equipment\n"
-        "- Increase emergency PPC & LSA spend\n"
-        "- Prepare for high lead volume"
-    )
-elif season_score >= 0.4:
-    st.warning(
-        "⚠️ **Elevated Activity Strategy**\n"
-        "- Maintain flexible scheduling\n"
-        "- Run targeted storm & water campaigns\n"
-        "- Monitor lead volume daily"
-    )
-else:
-    st.success(
-        "🟢 **Low / Normal Season Strategy**\n"
-        "- Focus on SEO & brand awareness\n"
-        "- Schedule training & maintenance\n"
-        "- Optimize operations"
-    )
-  
-    # ---------- DAMAGE RISK: HISTORY VS FORECAST ----------
-    st.markdown("### 📊 Damage Risk — Historical vs Forecast")
-    
-    fig = go.Figure()
-    
-    for col, label in [
-        ("water_damage_prob", "Water Damage"),
-        ("mold_prob", "Mold"),
-        ("roof_storm_prob", "Storm / Roof"),
-        ("freeze_burst_prob", "Freeze / Burst"),
-    ]:
-        fig.add_trace(go.Scatter(
-            x=hist_df["date"],
-            y=hist_df[col],
-            name=f"{label} (History)",
-            mode="lines"
-        ))
-        fig.add_trace(go.Scatter(
-            x=forecast_df["date"],
-            y=forecast_df[col],
-            name=f"{label} (Forecast)",
-            mode="lines",
-            line=dict(dash="dash")
-        ))
-    
-    fig.update_layout(yaxis=dict(range=[0, 1]))
-    st.plotly_chart(fig, use_container_width=True)
-    
-    
-    # ---------- BUSINESS INTELLIGENCE ----------
-    demand = {
-        "Water Damage": forecast_df["water_damage_prob"].mean(),
-        "Mold Remediation": forecast_df["mold_prob"].mean(),
-        "Storm / Roof": forecast_df["roof_storm_prob"].mean(),
-        "Freeze / Pipe Burst": forecast_df["freeze_burst_prob"].mean(),
+    # =========================================================
+    # 6. SUMMARY METRICS
+    # =========================================================
+    summary = {
+        "avg_rain_hist": hist_df["rainfall_mm"].mean(),
+        "avg_rain_forecast": forecast_df["rainfall_mm"].mean(),
+        "avg_temp_hist": hist_df["temperature_c"].mean(),
+        "avg_temp_forecast": forecast_df["temperature_c"].mean(),
+        "avg_water_risk": forecast_df["water_damage_prob"].mean(),
+        "avg_mold_risk": forecast_df["mold_prob"].mean(),
+        "avg_storm_risk": forecast_df["roof_storm_prob"].mean(),
+        "avg_freeze_risk": forecast_df["freeze_burst_prob"].mean(),
     }
-    
+
+    # =========================================================
+    # 7. NARRATIVE EXPLANATION
+    # =========================================================
+    st.markdown("## 📝 Seasonal Trend Analysis")
+
+    notes = []
+
+    if summary["avg_rain_forecast"] > summary["avg_rain_hist"] * 1.15:
+        notes.append("🌧️ Rainfall is trending **above seasonal norms**, increasing water intrusion risk.")
+    elif summary["avg_rain_forecast"] < summary["avg_rain_hist"] * 0.85:
+        notes.append("🌤️ Rainfall is trending **below normal**, reducing flood exposure.")
+    else:
+        notes.append("🌦️ Rainfall patterns are **seasonally stable**.")
+
+    if summary["avg_temp_forecast"] > summary["avg_temp_hist"] + 2:
+        notes.append("🔥 Warmer temperatures may elevate humidity-driven mold risk.")
+    elif summary["avg_temp_forecast"] < summary["avg_temp_hist"] - 2:
+        notes.append("❄️ Colder temperatures increase freeze and pipe burst exposure.")
+    else:
+        notes.append("🌡️ Temperatures remain within normal seasonal ranges.")
+
+    for n in notes:
+        st.info(n)
+
+    # =========================================================
+    # 8. DAMAGE RISK OUTLOOK
+    # =========================================================
+    st.markdown("## 🧠 Damage Risk Outlook")
+
+    risk_notes = []
+    if summary["avg_water_risk"] > 0.55:
+        risk_notes.append("💧 High likelihood of water damage events.")
+    if summary["avg_mold_risk"] > 0.45:
+        risk_notes.append("🦠 Elevated mold growth risk.")
+    if summary["avg_storm_risk"] > 0.4:
+        risk_notes.append("🌪️ Storm-related roof damage risk detected.")
+    if summary["avg_freeze_risk"] > 0.3:
+        risk_notes.append("❄️ Freeze and pipe burst risk present.")
+
+    if not risk_notes:
+        risk_notes.append("🟢 Overall weather-driven damage risk is low.")
+
+    for r in risk_notes:
+        st.warning(r)
+
+    # =========================================================
+    # 9. SEASON SCORE + RECOMMENDATIONS
+    # =========================================================
+    demand = {
+        "Water Damage": summary["avg_water_risk"],
+        "Mold Remediation": summary["avg_mold_risk"],
+        "Storm / Roof": summary["avg_storm_risk"],
+        "Freeze / Pipe Burst": summary["avg_freeze_risk"],
+    }
+
     season_score = round(np.mean(list(demand.values())), 2)
     st.caption(f"DEBUG → Season Score: {season_score}")
-    
+
+    st.markdown("## 🎯 Strategic Recommendations")
+
+    if season_score >= 0.6:
+        st.error("🔥 **Peak Season** — Increase staffing, pre-stage equipment, boost emergency marketing.")
+    elif season_score >= 0.4:
+        st.warning("⚠️ **Elevated Activity** — Maintain flexible scheduling and monitor leads closely.")
+    else:
+        st.success("🟢 **Low / Normal Season** — Focus on branding, SEO, and internal optimization.")
+
+    # =========================================================
+    # 10. EXPECTED LEADS & STAFFING
+    # =========================================================
     BASE_MONTHLY_LEADS = 40
-    intensity = 0.6 + (season_score * 0.8)
-    expected_total_leads = int(BASE_MONTHLY_LEADS * intensity * forecast_months)
-    
+    expected_total_leads = int(BASE_MONTHLY_LEADS * (0.6 + season_score) * forecast_months)
+
     st.markdown("## 🔢 Expected Lead Volume")
     st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
-    
-    lead_df = pd.DataFrame([
-        {"Job Type": k, "Expected Leads": int(v * expected_total_leads)}
-        for k, v in demand.items()
-    ])
-    
-    st.plotly_chart(
-        px.bar(lead_df, x="Job Type", y="Expected Leads"),
-        use_container_width=True
-    )
-    
-    
-    # ---------- TECHNICIAN STAFFING ----------
-    st.markdown("## 👷 Technician Staffing Forecast")
+
     techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
     st.metric("Recommended Technicians", techs)
 
