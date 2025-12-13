@@ -1642,6 +1642,16 @@ def fetch_weather(lat, lon, months):
     end = pd.Timestamp.utcnow().date()
     start = (pd.Timestamp.utcnow() - pd.DateOffset(months=months)).date()
 
+@st.cache_resource
+def load_models():
+    return {
+        "water": joblib.load("models/water_damage.pkl"),
+        "mold": joblib.load("models/mold.pkl"),
+        "storm": joblib.load("models/storm.pkl"),
+        "freeze": joblib.load("models/freeze.pkl"),
+    }
+
+
     r = requests.get(
         "https://archive-api.open-meteo.com/v1/archive",
         params={
@@ -1703,65 +1713,63 @@ def page_seasonal_trends():
     chosen = matches[labels.index(selected)]
 
     st.success(f"📍 {selected}, {country}")
+# ---------- CONTROLS ----------
+hist_range = st.selectbox(
+    "Historical window",
+    ["3 months", "6 months", "12 months"],
+    index=1
+)
 
-    # ---------- CONTROLS ----------
-    hist_range = st.selectbox("Historical window", ["3 months", "6 months", "12 months"], index=1)
-    forecast_range = st.selectbox("Forecast horizon", ["3 months", "6 months", "12 months"])
+forecast_range = st.selectbox(
+    "Forecast horizon",
+    ["3 months", "6 months", "12 months"]
+)
 
-    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
-    months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
+forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
 
-    if not st.button("Generate Insights"):
-        return
+if not st.button("Generate Insights"):
+    return
 
-    # ---------- DATA ----------
-    with st.spinner("Generating insights..."):
-        df = fetch_weather(chosen["lat"], chosen["lon"], months)
+# ---------- DATA ----------
+with st.spinner("Generating insights..."):
+    df = fetch_mock_weather(chosen["lat"], chosen["lon"], months)
 
-        @st.cache_resource
-    def load_models():
-        return {
-            "water": joblib.load("models/water_damage.pkl"),
-            "mold": joblib.load("models/mold.pkl"),
-            "storm": joblib.load("models/storm.pkl"),
-            "freeze": joblib.load("models/freeze.pkl"),
-        }
+# ---------- DAMAGE PROBABILITIES ----------
+models = load_models()
 
-
-    # ---------- DAMAGE PROBABILITIES (Heuristic ML Replacement) ----------
-        models = load_models()
-    
-    X = df[[
+X = df[
+    [
         "rainfall_mm",
         "temperature_c",
         "humidity_pct",
         "storm_flag"
-    ]]
-    
-    df["water_damage_prob"] = models["water"].predict(X).clip(0, 1)
-    df["mold_prob"] = models["mold"].predict(X).clip(0, 1)
-    df["roof_storm_prob"] = models["storm"].predict(X).clip(0, 1)
-    df["freeze_burst_prob"] = models["freeze"].predict(X).clip(0, 1)
+    ]
+]
 
+df["water_damage_prob"] = models["water"].predict(X).clip(0, 1)
+df["mold_prob"] = models["mold"].predict(X).clip(0, 1)
+df["roof_storm_prob"] = models["storm"].predict(X).clip(0, 1)
+df["freeze_burst_prob"] = models["freeze"].predict(X).clip(0, 1)
 
+# ---------- CHARTS ----------
+st.markdown("### 📈 Weather Trends")
+c1, c2 = st.columns(2)
+c1.plotly_chart(px.line(df, x="date", y="rainfall_mm"), use_container_width=True)
+c2.plotly_chart(px.line(df, x="date", y="temperature_c"), use_container_width=True)
 
-    # ---------- CHARTS ----------
-    st.markdown("### 📈 Weather Trends")
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(px.line(df, x="date", y="rainfall_mm"), use_container_width=True)
-    c2.plotly_chart(px.line(df, x="date", y="temperature_c"), use_container_width=True)
+st.markdown("### 📊 Damage Risk Indicators")
+fig = go.Figure()
+for col, name in [
+    ("water_damage_prob", "Water Damage"),
+    ("mold_prob", "Mold"),
+    ("roof_storm_prob", "Storm / Roof"),
+    ("freeze_burst_prob", "Freeze / Burst"),
+]:
+    fig.add_trace(go.Scatter(x=df["date"], y=df[col], name=name))
+fig.update_layout(yaxis=dict(range=[0, 1]))
+st.plotly_chart(fig, use_container_width=True)
 
-    st.markdown("### 📊 Damage Risk Indicators")
-    fig = go.Figure()
-    for col, name in [
-        ("water_damage_prob", "Water Damage"),
-        ("mold_prob", "Mold"),
-        ("roof_storm_prob", "Storm / Roof"),
-        ("freeze_burst_prob", "Freeze / Burst"),
-    ]:
-        fig.add_trace(go.Scatter(x=df["date"], y=df[col], name=name))
-    fig.update_layout(yaxis=dict(range=[0, 1]))
-    st.plotly_chart(fig, use_container_width=True)
 
     # ---------- BUSINESS INTELLIGENCE ----------
     demand = {
