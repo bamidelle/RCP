@@ -1719,20 +1719,19 @@ def page_seasonal_trends():
         df = fetch_weather(chosen["lat"], chosen["lon"], months)
 
     # ---------- DAMAGE PROBABILITIES (Heuristic ML Replacement) ----------
-    models = load_models()
-
-X = df[[
-    "rainfall_mm",
-    "temperature_c",
-    "humidity_pct",
-    "storm_flag"
-]]
-
-df["water_damage_prob"] = models["water"].predict(X).clip(0, 1)
-df["mold_prob"] = models["mold"].predict(X).clip(0, 1)
-df["roof_storm_prob"] = models["storm"].predict(X).clip(0, 1)
-df["freeze_burst_prob"] = models["freeze"].predict(X).clip(0, 1)
-
+        models = load_models()
+    
+    X = df[[
+        "rainfall_mm",
+        "temperature_c",
+        "humidity_pct",
+        "storm_flag"
+    ]]
+    
+    df["water_damage_prob"] = models["water"].predict(X).clip(0, 1)
+    df["mold_prob"] = models["mold"].predict(X).clip(0, 1)
+    df["roof_storm_prob"] = models["storm"].predict(X).clip(0, 1)
+    df["freeze_burst_prob"] = models["freeze"].predict(X).clip(0, 1)
 
 
 
