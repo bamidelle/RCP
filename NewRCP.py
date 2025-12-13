@@ -1811,7 +1811,7 @@ def page_seasonal_trends():
         avg_freeze = df["freeze_burst_prob"].mean()
     
         # Core seasonal intensity logic
-            season_score = round(
+        season_score = round(
         max(0.0, min(np.mean(list(demand.values())), 1.0)),
         2
     )
