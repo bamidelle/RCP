@@ -1699,13 +1699,13 @@ def fetch_forecast_weather(lat, lon, days):
     return df.dropna().reset_index(drop=True)
 
     # ---------- DAMAGE PROBABILITIES ----------
-for df_ in [hist_df, forecast_df]:
-    df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
-    df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
-    df_["roof_storm_prob"] = np.clip(df_["storm_flag"], 0, 1)
-    df_["freeze_burst_prob"] = np.clip(
-        (df_["temperature_c"] < 1).astype(int), 0, 1
-    )
+    for df_ in [hist_df, forecast_df]:
+        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
+        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
+        df_["roof_storm_prob"] = np.clip(df_["storm_flag"], 0, 1)
+        df_["freeze_burst_prob"] = np.clip(
+            (df_["temperature_c"] < 1).astype(int), 0, 1
+        )
 
 
 
