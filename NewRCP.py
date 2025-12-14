@@ -293,6 +293,18 @@ class LocationPing(Base):
     longitude = Column(Float, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     accuracy = Column(Float, nullable=True)          # optional accuracy (meters)
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(String, nullable=True)
+    technician_username = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, default="open")  # open, in_progress, done
+    due_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # ---------- END BLOCK A ----------
 
 
@@ -420,6 +432,54 @@ def leads_to_df(start_date=None, end_date=None):
     finally:
         s.close()
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
+def create_task(title, technician_username=None, lead_id=None, due_at=None):
+    s = get_session()
+    try:
+        t = Task(
+            title=title,
+            technician_username=technician_username,
+            lead_id=lead_id,
+            due_at=due_at
+        )
+        s.add(t)
+        s.commit()
+    finally:
+        s.close()
+def get_tasks_for_user(username):
+    s = get_session()
+    try:
+        rows = s.query(Task).filter(Task.technician_username == username).all()
+        return pd.DataFrame([
+            {
+                "id": r.id,
+                "title": r.title,
+                "status": r.status,
+                "lead_id": r.lead_id,
+                "due_at": r.due_at
+            } for r in rows
+        ])
+    finally:
+        s.close()
+def page_tasks():
+    st.markdown("## ✅ Tasks")
+
+    techs = get_technicians_df(active_only=True)
+    tech = st.selectbox("Assign to Technician", [""] + techs["username"].tolist())
+
+    title = st.text_input("Task Title")
+    lead_id = st.text_input("Lead ID (optional)")
+    due = st.date_input("Due Date", value=date.today())
+
+    if st.button("Create Task"):
+        create_task(
+            title,
+            tech or None,
+            lead_id or None,
+            datetime.combine(due, datetime.min.time())
+        )
+        st.success("Task created")
+
+
 def add_technician(username: str, full_name: str = "", phone: str = "", specialization: str = "Tech", active: bool = True):
     s = get_session()
     try:
@@ -451,6 +511,9 @@ def get_technicians_df(active_only=True):
         return pd.DataFrame([{"username": r.username, "full_name": r.full_name, "phone": r.phone, "specialization": r.specialization, "active": r.active} for r in rows])
     finally:
         s.close()
+
+
+
 
 
 def create_inspection_assignment(lead_id: str, technician_username: str, notes: str = None):
@@ -494,6 +557,22 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
         raise
     finally:
         s.close()
+        except Exception as e:
+            st.error(str(e))
+def get_latest_location_pings():
+    s = get_session()
+    try:
+        rows = s.execute("""
+            SELECT tech_username, latitude, longitude, MAX(timestamp) as ts
+            FROM location_pings
+            GROUP BY tech_username
+        """).fetchall()
+
+        return pd.DataFrame(rows, columns=["tech", "lat", "lon", "ts"])
+    finally:
+        s.close()
+
+
 # ---------- END BLOCK C ----------
 
 
@@ -1282,6 +1361,16 @@ def page_analytics():
         st.dataframe(pd.DataFrame(overdue_rows))
     else:
         st.info("No overdue leads currently.")
+        
+def page_technician_map_tracking():
+    st.markdown("## 🗺️ Technician Live Map")
+
+    df = get_latest_location_pings()
+    if df.empty:
+        st.info("No technician locations yet.")
+        return
+
+    st.map(df.rename(columns={"lat":"latitude","lon":"longitude"}))
 
 
 # CPA & ROI page
@@ -1522,6 +1611,37 @@ def page_settings():
     if not users_df.empty:
         st.dataframe(users_df)
     st.markdown("---")
+
+def page_technician_mobile():
+    st.markdown("## 📱 Technician Mobile")
+
+    techs = get_technicians_df(active_only=True)
+    if techs.empty:
+        st.warning("No active technicians found.")
+        return
+
+    tech = st.selectbox("Select Technician", techs["username"].tolist())
+
+    st.markdown("### 🧾 My Tasks")
+    tasks = get_tasks_for_user(tech)
+    if tasks.empty:
+        st.info("No tasks assigned.")
+    else:
+        for _, t in tasks.iterrows():
+            st.checkbox(
+                f"{t['title']} (Lead: {t['lead_id']})",
+                value=(t["status"] == "done"),
+                key=f"task_{t['id']}"
+            )
+
+    st.markdown("### 📍 Send Location Ping")
+    lat = st.number_input("Latitude", format="%.6f")
+    lon = st.number_input("Longitude", format="%.6f")
+
+    if st.button("Send Location Ping"):
+        persist_location_ping(tech, lat, lon)
+        st.success("Location sent")
+
     # ---------- BEGIN BLOCK D: SETTINGS UI - TECHNICIANS MANAGEMENT ----------
     st.markdown("---")
     st.subheader("Technicians (Field Users)")
@@ -1546,6 +1666,8 @@ def page_settings():
         st.dataframe(tech_df)
     else:
         st.info("No technicians yet.")
+
+
 # ---------- END BLOCK D ----------
 
 
@@ -2062,8 +2184,10 @@ elif page == "AI Recommendations":
     page_ai_recommendations()
 elif page == "ML (internal)":
     page_ml_internal()
+elif page == "Technician Mobile":
+    page_technician_mobile()
 elif page == "Technician Map Tracking":
-    page_technician_map()
+    page_technician_map_tracking()
 elif page == "Tasks":
     page_tasks()
 elif page == "Settings":
