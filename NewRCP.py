@@ -1631,6 +1631,52 @@ def page_settings():
     if not users_df.empty:
         st.dataframe(users_df)
     st.markdown("---")
+st.markdown("## 👷 Technician Management")
+
+with st.expander("➕ Add Technician", expanded=False):
+    col1, col2 = st.columns(2)
+
+    with col1:
+        tech_username = st.text_input("Username (unique)")
+        tech_name = st.text_input("Full Name")
+        tech_phone = st.text_input("Phone Number")
+
+    with col2:
+        tech_role = st.selectbox(
+            "Specialization",
+            ["Estimator", "Restoration Tech", "Inspector", "Adjuster", "Other"]
+        )
+        tech_active = st.checkbox("Active", value=True)
+
+    if st.button("Save Technician"):
+        if not tech_username:
+            st.error("Username is required")
+        else:
+            try:
+                add_technician(
+                    tech_username.strip(),
+                    full_name=tech_name.strip(),
+                    phone=tech_phone.strip(),
+                    specialization=tech_role,
+                    active=tech_active
+                )
+                st.success("✅ Technician saved")
+                st.experimental_rerun()
+            except Exception as e:
+                st.error("Failed to save technician: " + str(e))
+
+st.markdown("### 📋 Existing Technicians")
+
+tech_df = get_technicians_df(active_only=False)
+
+if tech_df.empty:
+    st.info("No technicians added yet.")
+else:
+    st.dataframe(
+        tech_df[["username", "full_name", "phone", "specialization", "active"]],
+        use_container_width=True
+    )
+
 
 def page_technician_mobile():
     st.markdown("## 📱 Technician Mobile")
@@ -1677,9 +1723,14 @@ def page_technician_mobile():
                 st.error("Technician username required")
             else:
                 try:
-                    add_technician(t_uname.strip(), full_name=t_name.strip(), phone=t_phone.strip(), specialization=t_role_sel, active=t_active)
-                    st.success("Technician saved")
-                    st.experimental_rerun()
+                    add_technician(
+                    username=tech_username.strip(),
+                    full_name=tech_name.strip(),
+                    phone=tech_phone.strip(),
+                    specialization=tech_role,
+                    active=tech_active
+                )
+
                 except Exception as e:
                     st.error("Failed to save technician: " + str(e))
     if tech_df is not None and not tech_df.empty:
