@@ -464,7 +464,15 @@ def page_tasks():
     st.markdown("## ✅ Tasks")
 
     techs = get_technicians_df(active_only=True)
-    tech = st.selectbox("Assign to Technician", [""] + techs["username"].tolist())
+
+    if techs.empty:
+        st.warning("⚠️ No active technicians found. Add technicians in Settings.")
+        return
+
+    tech = st.selectbox(
+        "Assign to Technician",
+        [""] + techs["username"].tolist()
+    )
 
     title = st.text_input("Task Title")
     lead_id = st.text_input("Lead ID (optional)")
@@ -472,12 +480,13 @@ def page_tasks():
 
     if st.button("Create Task"):
         create_task(
-            title,
-            tech or None,
-            lead_id or None,
-            datetime.combine(due, datetime.min.time())
+            title=title,
+            technician_username=tech or None,
+            lead_id=lead_id or None,
+            due_at=datetime.combine(due, datetime.min.time())
         )
         st.success("Task created")
+
 
 
 def add_technician(username: str, full_name: str = "", phone: str = "", specialization: str = "Tech", active: bool = True):
@@ -507,10 +516,22 @@ def get_technicians_df(active_only=True):
         q = s.query(Technician)
         if active_only:
             q = q.filter(Technician.active == True)
-        rows = q.order_by(Technician.created_at.desc()).all()
-        return pd.DataFrame([{"username": r.username, "full_name": r.full_name, "phone": r.phone, "specialization": r.specialization, "active": r.active} for r in rows])
+
+        rows = q.all()
+
+        return pd.DataFrame([
+            {
+                "username": t.username,
+                "full_name": t.full_name,
+                "phone": t.phone,
+                "specialization": t.specialization,
+                "active": t.active
+            }
+            for t in rows
+        ])
     finally:
         s.close()
+
 
 
 
