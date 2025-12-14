@@ -557,8 +557,7 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
         raise
     finally:
         s.close()
-        except Exception as e:
-            st.error(str(e))
+
 def get_latest_location_pings():
     s = get_session()
     try:
