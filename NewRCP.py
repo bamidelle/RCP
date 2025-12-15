@@ -40,15 +40,7 @@ from sklearn.metrics import accuracy_score
 
 
 
-if "_save_location" in st.query_params:
-    data = st.get_json()
-    save_location_ping(
-        data["username"],
-        data["lat"],
-        data["lon"],
-        data.get("accuracy")
-    )
-    st.stop()
+
 
 
 
@@ -641,6 +633,17 @@ def update_technician_status(username: str, status: str):
         return True
     finally:
         s.close()
+
+if "_save_location" in st.query_params:
+    data = st.get_json()
+    save_location_ping(
+        data["username"],
+        data["lat"],
+        data["lon"],
+        data.get("accuracy")
+    )
+    st.stop()
+
 def save_location_ping(username, lat, lon, accuracy=None):
     s = get_session()
     try:
