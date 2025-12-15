@@ -1638,12 +1638,20 @@ def page_technician_map_tracking():
         st.info("No technician location data yet.")
         return
 
+    # Display map
     st.map(df[["latitude", "longitude"]])
 
-    # 🔁 Live refresh (NO simulation)
+    # Optional details table
+    st.dataframe(
+        df[["tech_username", "latitude", "longitude", "timestamp"]],
+        use_container_width=True
+    )
+
+    # 🔁 LIVE REFRESH (Streamlit-native, Cloud-safe)
     import time
     time.sleep(10)
     st.rerun()
+
 
 
     df["status"] = df["timestamp"].apply(classify_tech_status)
