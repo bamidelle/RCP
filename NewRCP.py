@@ -557,6 +557,31 @@ def get_technicians_df(active_only=True):
 
 
 
+def get_leads_df():
+    s = get_session()
+    try:
+        rows = s.query(Lead).all()
+
+        if not rows:
+            return pd.DataFrame()
+
+        return pd.DataFrame([
+            {
+                "lead_id": r.lead_id,
+                "stage": r.stage,
+                "estimated_value": r.estimated_value or 0,
+                "assigned_to": r.assigned_to,
+                "score": r.score if r.score is not None else 0.5,
+                "sla_hours": r.sla_hours,
+                "sla_entered_at": r.sla_entered_at,
+                "created_at": r.created_at,
+                "source": r.source,
+                "damage_type": r.damage_type
+            }
+            for r in rows
+        ])
+    finally:
+        s.close()
 
 
 def create_inspection_assignment(lead_id: str, technician_username: str, notes: str = None):
