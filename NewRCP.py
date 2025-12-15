@@ -18,14 +18,27 @@ import numpy as np
 import plotly.express as px
 import joblib
 from sqlalchemy import (
-    create_engine, Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, inspect
+    create_engine,
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    DateTime,
+    Text,
+    ForeignKey,
+    inspect,
+    text
 )
+
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-from sqlalchemy import text
+
+
+
 
 
 
@@ -613,6 +626,29 @@ def get_technicians_df(active_only=True):
     finally:
         s.close()
 
+def save_location_ping(
+    tech_username: str,
+    latitude: float,
+    longitude: float,
+    lead_id: str | None = None,
+    accuracy: float | None = None,
+):
+    s = get_session()
+    try:
+        ping = LocationPing(
+            tech_username=tech_username,
+            latitude=latitude,
+            longitude=longitude,
+            lead_id=lead_id,
+            accuracy=accuracy
+        )
+        s.add(ping)
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
 
 
 
@@ -685,34 +721,29 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
     finally:
         s.close()
 
-from sqlalchemy import text
-
 def get_latest_location_pings():
     s = get_session()
     try:
-        rows = s.execute(text("""
-            SELECT lp.tech_username,
-                   lp.latitude,
-                   lp.longitude,
-                   lp.timestamp
-            FROM location_pings lp
-            INNER JOIN (
-                SELECT tech_username, MAX(timestamp) AS max_ts
-                FROM location_pings
-                GROUP BY tech_username
-            ) latest
-            ON lp.tech_username = latest.tech_username
-            AND lp.timestamp = latest.max_ts
-        """)).fetchall()
-
-        if not rows:
-            return pd.DataFrame()
+        rows = s.execute(
+            text("""
+                SELECT lp.tech_username, lp.latitude, lp.longitude, lp.timestamp
+                FROM location_pings lp
+                INNER JOIN (
+                    SELECT tech_username, MAX(timestamp) AS max_ts
+                    FROM location_pings
+                    GROUP BY tech_username
+                ) latest
+                ON lp.tech_username = latest.tech_username
+                AND lp.timestamp = latest.max_ts
+            """)
+        ).fetchall()
 
         return pd.DataFrame(rows, columns=[
             "tech_username", "latitude", "longitude", "timestamp"
         ])
     finally:
         s.close()
+
 
 def classify_tech_status(ts):
     minutes_ago = (datetime.utcnow() - ts).total_seconds() / 60
@@ -1690,22 +1721,21 @@ def page_technician_map_tracking():
     df = get_latest_location_pings()
 
     if df.empty:
-        st.info("No technician location data yet.")
+        st.info("No live technician locations yet.")
         return
 
-    # Display map
-    st.map(df[["latitude", "longitude"]])
+    st.caption("Showing latest known location per technician")
 
-    # Optional details table
-    st.dataframe(
-        df[["tech_username", "latitude", "longitude", "timestamp"]],
-        use_container_width=True
+    st.map(
+        df.rename(columns={
+            "latitude": "lat",
+            "longitude": "lon"
+        })
     )
 
-    # 🔁 LIVE REFRESH (Streamlit-native, Cloud-safe)
-    import time
-    time.sleep(10)
-    st.rerun()
+    with st.expander("📍 Location Details"):
+        st.dataframe(df, use_container_width=True)
+
 
 
 
