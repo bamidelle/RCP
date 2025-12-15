@@ -284,13 +284,20 @@ from sqlalchemy import DateTime as SA_DateTime
 
 class Technician(Base):
     __tablename__ = "technicians"
+
     id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False)  # ideally matches User.username
+    username = Column(String, unique=True, nullable=False)
     full_name = Column(String, default="")
     phone = Column(String, nullable=True)
-    specialization = Column(String, nullable=True)  # e.g., 'Estimator','Adjuster','Tech'
+    specialization = Column(String, nullable=True)
+
+    # ✅ ADD THIS LINE
+    status = Column(String, default="available")  
+    # available, assigned, enroute, onsite, completed
+
     active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 
 class InspectionAssignment(Base):
@@ -373,15 +380,28 @@ def safe_migrate():
         pass
 
 
-safe_migrate()
-# ---------- BEGIN BLOCK B: SAFE MIGRATION / CREATE NEW TABLES ----------
+from sqlalchemy import inspect, text
+
 def safe_migrate_new_tables():
+    """Add missing columns and create tables safely."""
     try:
         inspector = inspect(engine)
-        # If tables don't exist in DB, create them via metadata.create_all()
+
+        # Check if "status" column exists in "technicians"
+        cols = [c["name"] for c in inspector.get_columns("technicians")]
+        if "status" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'"))
+                conn.commit()
+
+        # Create any missing tables
         Base.metadata.create_all(bind=engine)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Safe migration failed: {e}")
+
+# Call migration
+safe_migrate_new_tables()
+
 
 
 # Run it once on startup (safe)
@@ -600,6 +620,17 @@ def add_technician(username: str, full_name: str = "", phone: str = "", speciali
     except Exception:
         s.rollback()
         raise
+    finally:
+        s.close()
+def update_technician_status(username: str, status: str):
+    s = get_session()
+    try:
+        tech = s.query(Technician).filter_by(username=username).first()
+        if not tech:
+            return False
+        tech.status = status
+        s.commit()
+        return True
     finally:
         s.close()
 
@@ -1714,7 +1745,15 @@ def page_analytics():
         st.dataframe(pd.DataFrame(overdue_rows))
     else:
         st.info("No overdue leads currently.")
-        
+
+STATUS_COLORS = {
+    "available": "green",
+    "assigned": "orange",
+    "enroute": "blue",
+    "onsite": "purple",
+    "completed": "gray"
+}
+
 def page_technician_map_tracking():
     st.markdown("## 🗺️ Technician Live Map")
 
@@ -2047,16 +2086,34 @@ def page_settings():
                     st.error("Failed to save technician: " + str(e))
     
     st.markdown("### 📋 Existing Technicians")
-    
+
     tech_df = get_technicians_df(active_only=False)
     
     if tech_df.empty:
         st.info("No technicians added yet.")
     else:
-        st.dataframe(
-            tech_df[["username", "full_name", "phone", "specialization", "active"]],
-            use_container_width=True
-        )
+        for _, row in tech_df.iterrows():
+            col1, col2, col3 = st.columns([3,2,2])
+    
+            with col1:
+                st.write(f"👷 **{row['full_name']}** (`{row['username']}`)")
+    
+            with col2:
+                new_status = st.selectbox(
+                    "Status",
+                    ["available", "assigned", "enroute", "onsite", "completed"],
+                    index=["available","assigned","enroute","onsite","completed"].index(
+                        row.get("status","available")
+                    ),
+                    key=f"status_{row['username']}"
+                )
+    
+            with col3:
+                if st.button("Update", key=f"btn_{row['username']}"):
+                    update_technician_status(row["username"], new_status)
+                    st.success("Status updated")
+                    st.rerun()
+
 
 
 def page_technician_mobile():
