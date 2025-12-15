@@ -438,19 +438,25 @@ def leads_to_df(start_date=None, end_date=None):
     finally:
         s.close()
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
-def create_task(title, technician_username=None, lead_id=None, due_at=None):
+def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
     s = get_session()
     try:
-        t = Task(
+        task = Task(
             title=title,
             technician_username=technician_username,
             lead_id=lead_id,
+            description=description,
+            status="open",
             due_at=due_at
         )
-        s.add(t)
+        s.add(task)
         s.commit()
+    except Exception:
+        s.rollback()
+        raise
     finally:
         s.close()
+
 def get_tasks_for_user(username):
     s = get_session()
     try:
@@ -467,52 +473,86 @@ def get_tasks_for_user(username):
     finally:
         s.close()
 def page_tasks():
-    st.markdown("## ✅ Tasks")
+    st.markdown("## ✅ Task Assignment & Management")
+    st.caption("Assign jobs to technicians and track execution status.")
 
-    techs = get_technicians_df(active_only=True)
+    # ---------- LOAD DATA ----------
+    techs_df = get_technicians_df(active_only=True)
+    leads_df = get_leads_df()
 
-    if techs.empty:
-        st.warning("⚠️ No active technicians found. Add technicians in Settings.")
+    if techs_df.empty:
+        st.warning("No technicians available. Add technicians in Settings.")
         return
 
-    tech = st.selectbox(
-        "Assign to Technician",
-        [""] + techs["username"].tolist()
+    # ---------- CREATE TASK ----------
+    with st.expander("➕ Create New Task", expanded=True):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            technician = st.selectbox(
+                "Assign to Technician",
+                techs_df["username"].tolist()
+            )
+            task_title = st.text_input("Task Title")
+
+        with col2:
+            lead_options = [""] + leads_df["lead_id"].tolist()
+            lead_id = st.selectbox("Lead ID (optional)", lead_options)
+            due_date = st.date_input("Due Date", value=date.today())
+
+        if st.button("Create Task"):
+            if not task_title or not technician:
+                st.error("Task title and technician are required.")
+            else:
+                create_task(
+                    title=task_title.strip(),
+                    technician_username=technician,
+                    lead_id=lead_id or None,
+                    due_at=datetime.combine(due_date, datetime.min.time())
+                )
+                st.success("✅ Task created successfully")
+                st.rerun()
+
+    # ---------- VIEW TASKS ----------
+    st.markdown("### 📋 Active Tasks")
+
+    tasks_df = get_tasks_df()
+
+    if tasks_df.empty:
+        st.info("No tasks created yet.")
+        return
+
+    st.dataframe(
+        tasks_df[
+            [
+                "title",
+                "technician_username",
+                "lead_id",
+                "status",
+                "due_at"
+            ]
+        ],
+        use_container_width=True
     )
 
-    title = st.text_input("Task Title")
-    # ---------- LEAD SELECTION ----------
-    leads_df = get_leads_for_task_dropdown()
-    
-    if leads_df.empty:
-        st.info("No leads available yet.")
-        selected_lead_id = None
-    else:
-        lead_options = [""] + leads_df["label"].tolist()
-        selected_label = st.selectbox(
-            "Assign to Lead (optional)",
-            lead_options
-        )
-    
-        if selected_label:
-            selected_lead_id = leads_df.loc[
-                leads_df["label"] == selected_label, "lead_id"
-            ].iloc[0]
-        else:
-            selected_lead_id = None
 
-    due = st.date_input("Due Date", value=date.today())
-
-    if st.button("Create Task"):
-        create_task(
-            title=title,
-            technician_username=tech or None,
-            lead_id=selected_lead_id,
-            due_at=datetime.combine(due, datetime.min.time())
-        )
-
-        st.success("Task created")
-
+def get_tasks_df():
+    s = get_session()
+    try:
+        rows = s.query(Task).order_by(Task.created_at.desc()).all()
+        return pd.DataFrame([
+            {
+                "id": r.id,
+                "title": r.title,
+                "technician_username": r.technician_username,
+                "lead_id": r.lead_id,
+                "status": r.status,
+                "due_at": r.due_at,
+                "created_at": r.created_at
+            } for r in rows
+        ])
+    finally:
+        s.close()
 
 
 def add_technician(username: str, full_name: str = "", phone: str = "", specialization: str = "Tech", active: bool = True):
