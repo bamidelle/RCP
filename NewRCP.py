@@ -1798,6 +1798,15 @@ STATUS_COLORS = {
     "offline": "red",
 }
 
+st.subheader("🔎 GPS Debug")
+
+df_debug = get_latest_location_pings()
+
+if df_debug.empty:
+    st.error("❌ No GPS data found in location_pings table")
+else:
+    st.success(f"✅ GPS rows found: {len(df_debug)}")
+    st.dataframe(df_debug)
 
 def page_technician_map_tracking():
     st.markdown("## 🗺️ Technician Live Map")
