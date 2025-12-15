@@ -802,32 +802,25 @@ def get_latest_location_pings():
 
 
 def classify_tech_status(ts):
-    """
-    Classify technician activity based on last GPS ping time.
-    Safe against NULLs, strings, and missing timestamps.
-    """
-
-    if ts is None or pd.isna(ts):
+    if ts is None:
         return "offline"
 
-    # Convert string timestamps safely
     if isinstance(ts, str):
         try:
             ts = pd.to_datetime(ts)
         except Exception:
             return "offline"
 
-    if not isinstance(ts, (datetime, pd.Timestamp)):
-        return "offline"
+    now = datetime.utcnow()
+    delta = (now - ts).total_seconds() / 60
 
-    minutes_ago = (datetime.utcnow() - ts).total_seconds() / 60
-
-    if minutes_ago <= 2:
-        return "live"
-    elif minutes_ago <= 10:
-        return "recent"
+    if delta <= 2:
+        return "🟢 Live"
+    elif delta <= 10:
+        return "🟡 Idle"
     else:
-        return "offline"
+        return "🔴 Offline"
+
 
 
 
@@ -1823,8 +1816,9 @@ def page_technician_map_tracking():
         df.rename(columns={
             "latitude": "lat",
             "longitude": "lon"
-        })
+        })[["lat", "lon"]]
     )
+
 
     with st.expander("📍 Location Details"):
         st.dataframe(df, use_container_width=True)
