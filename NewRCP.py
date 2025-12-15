@@ -1630,18 +1630,21 @@ def page_analytics():
         st.info("No overdue leads currently.")
         
 def page_technician_map_tracking():
-    st.markdown("## 🛰️ Technician Live Map")
-
-    auto_refresh = st.toggle("🔄 Live Refresh (every 10s)", value=True)
-
-    if auto_refresh:st_autorefresh(interval=10_000, key="tech_map_refresh")
-
+    st.markdown("## 🗺️ Technician Live Map")
 
     df = get_latest_location_pings()
 
     if df.empty:
         st.info("No technician location data yet.")
         return
+
+    st.map(df[["latitude", "longitude"]])
+
+    # 🔁 Live refresh (NO simulation)
+    import time
+    time.sleep(10)
+    st.rerun()
+
 
     df["status"] = df["timestamp"].apply(classify_tech_status)
 
