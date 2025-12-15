@@ -26,6 +26,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sqlalchemy import text
+from streamlit.runtime.scriptrunner import add_script_run_ctx
+from streamlit_extras.st_autorefresh import st_autorefresh
+
 
 # ---------- Country list helper (robust) ----------
 import requests
@@ -1630,8 +1633,8 @@ def page_technician_map_tracking():
 
     auto_refresh = st.toggle("🔄 Live Refresh (every 10s)", value=True)
 
-    if auto_refresh:
-        st.experimental_autorefresh(interval=10_000, key="tech_map_refresh")
+    if auto_refresh:st_autorefresh(interval=10_000, key="tech_map_refresh")
+
 
     df = get_latest_location_pings()
 
