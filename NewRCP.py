@@ -1385,89 +1385,158 @@ def page_lead_capture():
         st.dataframe(df.sort_values("created_at", ascending=False).head(50))
 
 # Pipeline Board 
+# =============================
+# PIPELINE BOARD — HYBRID VIEW
+# Priority Intelligence + Stage Overview
+# =============================
+
 def page_pipeline_board():
-    st.markdown("<div class='header'>📊 Pipeline Board</div>", unsafe_allow_html=True)
+    st.markdown("<div class='header'>📊 Pipeline Intelligence Board</div>", unsafe_allow_html=True)
     st.markdown(
-        "<em>Visual overview of all leads grouped by pipeline stage.</em>",
-        unsafe_allow_html=True
+        "<em>Operational pipeline combining urgency, value, and stage visibility.</em>",
+        unsafe_allow_html=True,
     )
 
-    alerts_ui()
-    st.markdown("---")
+    # ---------- LOAD DATA ----------
+    leads_df = get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
 
-    # ----------------------
-    # FETCH LEADS
-    # ----------------------
-    s = get_session()
-    try:
-        leads = s.query(Lead).order_by(Lead.created_at.desc()).all()
-    finally:
-        s.close()
-
-    if not leads:
-        st.info("No leads in the pipeline yet.")
+    if leads_df.empty:
+        st.info("No leads in pipeline yet.")
         return
 
-    # ----------------------
-    # ORGANIZE BY STAGE
-    # ----------------------
-    stage_map = {stage: [] for stage in PIPELINE_STAGES}
+    # ---------- DERIVED METRICS ----------
+    now = datetime.utcnow()
+    leads_df["sla_remaining_hr"] = (
+        leads_df["sla_entered_at"] + pd.to_timedelta(leads_df["sla_hours"], unit="h") - now
+    ).dt.total_seconds() / 3600
 
-    for lead in leads:
-        stage = lead.stage if lead.stage in stage_map else "New"
-        stage_map[stage].append(lead)
+    leads_df["priority_score"] = (
+        (1 - leads_df["sla_remaining_hr"].clip(lower=0) / leads_df["sla_hours"]) * 0.4
+        + leads_df["score"].fillna(0) * 0.4
+        + (leads_df["estimated_value"].fillna(0) / 20000).clip(0, 1) * 0.2
+    )
 
-    # ----------------------
-    # PIPELINE METRICS
-    # ----------------------
-    total_value = sum(l.estimated_value or 0 for l in leads)
-    won_value = sum(l.estimated_value or 0 for l in leads if l.stage == "Won")
+    # ---------- URGENCY BANDS ----------
+    def urgency_label(row):
+        if row.sla_remaining_hr <= 6:
+            return "🔴 Critical"
+        if row.sla_remaining_hr <= 24:
+            return "🟠 High"
+        if row.sla_remaining_hr <= 48:
+            return "🟡 Medium"
+        return "🟢 Normal"
 
-    k1, k2, k3 = st.columns(3)
-    k1.metric("Total Leads", len(leads))
-    k2.metric("Pipeline Value", f"${total_value:,.0f}")
-    k3.metric("Won Value", f"${won_value:,.0f}")
+    leads_df["urgency"] = leads_df.apply(urgency_label, axis=1)
 
+    # ---------- TOP PRIORITY QUEUE ----------
+    st.markdown("## 🔥 Priority Queue (What needs attention now)")
+
+    priority_df = (
+        leads_df.sort_values("priority_score", ascending=False)
+        .head(10)
+        [[
+            "urgency",
+            "lead_id",
+            "stage",
+            "sla_remaining_hr",
+            "assigned_to",
+            "estimated_value",
+            "score",
+        ]]
+    )
+
+    st.dataframe(
+        priority_df.style.format({
+            "sla_remaining_hr": "{:.1f}h",
+            "estimated_value": "${:,.0f}",
+            "score": "{:.2f}",
+        }),
+        use_container_width=True,
+    )
+
+    # ---------- STAGE OVERVIEW ----------
     st.markdown("---")
+    st.markdown("## 🧭 Pipeline by Stage")
 
-    # ----------------------
-    # KANBAN COLUMNS
-    # ----------------------
-    cols = st.columns(len(PIPELINE_STAGES))
+    stage_summary = (
+        leads_df.groupby("stage")
+        .agg(
+            leads=("lead_id", "count"),
+            value=("estimated_value", "sum"),
+            avg_score=("score", "mean"),
+        )
+        .reset_index()
+    )
 
-    for idx, stage in enumerate(PIPELINE_STAGES):
-        with cols[idx]:
-            st.markdown(f"### {stage}")
-            st.caption(f"{len(stage_map[stage])} lead(s)")
+    c1, c2 = st.columns(2)
 
-            if not stage_map[stage]:
-                st.markdown(
-                    "<small style='color:#888;'>No leads</small>",
-                    unsafe_allow_html=True
-                )
+    with c1:
+        st.plotly_chart(
+            px.bar(
+                stage_summary,
+                x="stage",
+                y="leads",
+                title="Lead Volume by Stage",
+            ),
+            use_container_width=True,
+        )
 
-            for lead in stage_map[stage]:
-                with st.container():
-                    st.markdown(
-                        f"""
-                        <div style="
-                            border:1px solid #333;
-                            border-radius:8px;
-                            padding:8px;
-                            margin-bottom:8px;
-                            background:#0f172a;
-                        ">
-                            <strong>{lead.contact_name or 'Unnamed Lead'}</strong><br>
-                            <small>{lead.lead_id}</small><br>
-                            <small>{lead.property_address or ''}</small><br>
-                            <small>💰 ${lead.estimated_value or 0:,.0f}</small>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+    with c2:
+        st.plotly_chart(
+            px.bar(
+                stage_summary,
+                x="stage",
+                y="value",
+                title="Pipeline Value by Stage",
+            ),
+            use_container_width=True,
+        )
 
+    # ---------- STAGE DETAIL TABLE ----------
+    st.markdown("### 📋 Detailed Stage Breakdown")
 
+    selected_stage = st.selectbox(
+        "View stage details",
+        sorted(leads_df["stage"].unique()),
+    )
 
+    stage_df = leads_df[leads_df["stage"] == selected_stage].sort_values(
+        "priority_score", ascending=False
+    )
+
+    st.dataframe(
+        stage_df[[
+            "urgency",
+            "lead_id",
+            "assigned_to",
+            "sla_remaining_hr",
+            "estimated_value",
+            "score",
+        ]].style.format({
+            "sla_remaining_hr": "{:.1f}h",
+            "estimated_value": "${:,.0f}",
+            "score": "{:.2f}",
+        }),
+        use_container_width=True,
+    )
+
+    # ---------- EXECUTIVE SUMMARY ----------
+    st.markdown("---")
+    st.markdown("## 🧠 Executive Pipeline Insight")
+
+    critical = (leads_df.sla_remaining_hr <= 6).sum()
+    total_value = leads_df.estimated_value.sum()
+    avg_score = leads_df.score.mean()
+
+    summary = (
+        f"The pipeline currently contains **{len(leads_df)} active leads** with a total "
+        f"estimated value of **${total_value:,.0f}**. "
+        f"There are **{critical} leads** approaching SLA breach, requiring immediate action. "
+        f"Overall conversion confidence remains {'strong' if avg_score >= 0.6 else 'moderate' if avg_score >= 0.4 else 'low'}, "
+        f"with an average lead quality score of **{avg_score:.2f}**."
+    )
+
+    st.info(summary)
 
 
 # Analytics page (donut + SLA line + overdue table)
