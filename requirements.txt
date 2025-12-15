@@ -9,3 +9,4 @@ scikit-learn
 plotly
 matplotlib
 requests
+streamlit-extras
