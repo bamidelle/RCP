@@ -777,12 +777,33 @@ def get_latest_location_pings():
 
 
 def classify_tech_status(ts):
+    """
+    Classify technician activity based on last GPS ping time.
+    Safe against NULLs, strings, and missing timestamps.
+    """
+
+    if ts is None or pd.isna(ts):
+        return "offline"
+
+    # Convert string timestamps safely
+    if isinstance(ts, str):
+        try:
+            ts = pd.to_datetime(ts)
+        except Exception:
+            return "offline"
+
+    if not isinstance(ts, (datetime, pd.Timestamp)):
+        return "offline"
+
     minutes_ago = (datetime.utcnow() - ts).total_seconds() / 60
+
     if minutes_ago <= 2:
-        return "Active"
+        return "live"
     elif minutes_ago <= 10:
-        return "Stale"
-    return "Offline"
+        return "recent"
+    else:
+        return "offline"
+
 
 
 
@@ -1745,14 +1766,13 @@ def page_analytics():
         st.dataframe(pd.DataFrame(overdue_rows))
     else:
         st.info("No overdue leads currently.")
-
+        
 STATUS_COLORS = {
-    "available": "green",
-    "assigned": "orange",
-    "enroute": "blue",
-    "onsite": "purple",
-    "completed": "gray"
+    "live": "green",
+    "recent": "orange",
+    "offline": "red",
 }
+
 
 def page_technician_map_tracking():
     st.markdown("## 🗺️ Technician Live Map")
