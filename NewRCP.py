@@ -477,16 +477,36 @@ def page_tasks():
     )
 
     title = st.text_input("Task Title")
-    lead_id = st.text_input("Lead ID (optional)")
+    # ---------- LEAD SELECTION ----------
+    leads_df = get_leads_for_task_dropdown()
+    
+    if leads_df.empty:
+        st.info("No leads available yet.")
+        selected_lead_id = None
+    else:
+        lead_options = [""] + leads_df["label"].tolist()
+        selected_label = st.selectbox(
+            "Assign to Lead (optional)",
+            lead_options
+        )
+    
+        if selected_label:
+            selected_lead_id = leads_df.loc[
+                leads_df["label"] == selected_label, "lead_id"
+            ].iloc[0]
+        else:
+            selected_lead_id = None
+
     due = st.date_input("Due Date", value=date.today())
 
     if st.button("Create Task"):
         create_task(
             title=title,
             technician_username=tech or None,
-            lead_id=lead_id or None,
+            lead_id=selected_lead_id,
             due_at=datetime.combine(due, datetime.min.time())
         )
+
         st.success("Task created")
 
 
@@ -705,6 +725,31 @@ def get_users_df():
         users = s.query(User).order_by(User.created_at.desc()).all()
         data = [{"id":u.id, "username":u.username, "full_name":u.full_name, "role":u.role, "created_at":u.created_at} for u in users]
         return pd.DataFrame(data)
+    finally:
+        s.close()
+def get_leads_for_task_dropdown():
+    """
+    Returns DataFrame of leads for task assignment dropdown
+    """
+    s = get_session()
+    try:
+        rows = (
+            s.query(
+                Lead.lead_id,
+                Lead.contact_name,
+                Lead.property_address
+            )
+            .order_by(Lead.created_at.desc())
+            .all()
+        )
+
+        return pd.DataFrame([
+            {
+                "lead_id": r.lead_id,
+                "label": f"{r.lead_id} — {r.contact_name or 'No Name'} ({r.property_address or 'No Address'})"
+            }
+            for r in rows
+        ])
     finally:
         s.close()
 
