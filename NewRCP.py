@@ -931,7 +931,7 @@ with st.sidebar:
     page = st.radio(
     "Navigate", 
     [
-        "Dashboard",
+        "Overview",
         "Lead Capture",
         "Pipeline Board",
         "Analytics",
@@ -1062,7 +1062,7 @@ def alerts_ui():
 
 
 
-def page_dashboard():
+def page_overview():
     import plotly.express as px
     st.markdown("<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>", unsafe_allow_html=True)
     st.markdown("<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>", unsafe_allow_html=True)
@@ -1225,11 +1225,11 @@ def page_dashboard():
     # Quick filters
     q1, q2, q3 = st.columns([3,2,3])
     with q1:
-        search_q = st.text_input("Search (lead_id, contact name, address, notes)", key="dashboard_search")
+        search_q = st.text_input("Search (lead_id, contact name, address, notes)", key="overview_search")
     with q2:
-        filter_src = st.selectbox("Source filter", options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"], key="dashboard_filter_src")
+        filter_src = st.selectbox("Source filter", options=["All"] + sorted(df["source"].dropna().unique().tolist()) if not df.empty else ["All"], key="overview_filter_src")
     with q3:
-        filter_stage = st.selectbox("Stage filter", options=["All"] + stages, key="dashboard_filter_stage")
+        filter_stage = st.selectbox("Stage filter", options=["All"] + stages, key="overview_filter_stage")
 
 
     df_view = df.copy()
@@ -1384,7 +1384,7 @@ def page_lead_capture():
     else:
         st.dataframe(df.sort_values("created_at", ascending=False).head(50))
 
-# Pipeline Board (mostly similar to Dashboard but with card layout)
+# Pipeline Board 
 def page_pipeline_board():
     st.markdown("<div class='header'>PIPELINE BOARD — TOTAL LEAD PIPELINE</div>", unsafe_allow_html=True)
     st.markdown("<em>High-level pipeline board with KPI cards and priority list.</em>", unsafe_allow_html=True)
@@ -2294,8 +2294,8 @@ def page_seasonal_trends():
 # ----------------------
 # Router (main)
 # ----------------------
-if page == "Dashboard":
-    page_dashboard()
+if page == "Overview":
+    page_overview()
 elif page == "Lead Capture":
     page_lead_capture()
 elif page == "Pipeline Board":
