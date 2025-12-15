@@ -626,25 +626,42 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
     finally:
         s.close()
 
+from sqlalchemy import text
+
 def get_latest_location_pings():
     s = get_session()
     try:
-        rows = s.execute(
-            text("""
-                SELECT tech_username, latitude, longitude, MAX(timestamp) as ts
+        rows = s.execute(text("""
+            SELECT lp.tech_username,
+                   lp.latitude,
+                   lp.longitude,
+                   lp.timestamp
+            FROM location_pings lp
+            INNER JOIN (
+                SELECT tech_username, MAX(timestamp) AS max_ts
                 FROM location_pings
                 GROUP BY tech_username
-            """)
-        ).fetchall()
+            ) latest
+            ON lp.tech_username = latest.tech_username
+            AND lp.timestamp = latest.max_ts
+        """)).fetchall()
+
+        if not rows:
+            return pd.DataFrame()
 
         return pd.DataFrame(rows, columns=[
-            "tech_username",
-            "latitude",
-            "longitude",
-            "timestamp"
+            "tech_username", "latitude", "longitude", "timestamp"
         ])
     finally:
         s.close()
+
+def classify_tech_status(ts):
+    minutes_ago = (datetime.utcnow() - ts).total_seconds() / 60
+    if minutes_ago <= 2:
+        return "Active"
+    elif minutes_ago <= 10:
+        return "Stale"
+    return "Offline"
 
 
 
@@ -1609,14 +1626,52 @@ def page_analytics():
         st.info("No overdue leads currently.")
         
 def page_technician_map_tracking():
-    st.markdown("## 🗺️ Technician Live Map")
+    st.markdown("## 🛰️ Technician Live Map")
+
+    auto_refresh = st.toggle("🔄 Live Refresh (every 10s)", value=True)
+
+    if auto_refresh:
+        st.experimental_autorefresh(interval=10_000, key="tech_map_refresh")
 
     df = get_latest_location_pings()
+
     if df.empty:
-        st.info("No technician locations yet.")
+        st.info("No technician location data yet.")
         return
 
-    st.map(df.rename(columns={"lat":"latitude","lon":"longitude"}))
+    df["status"] = df["timestamp"].apply(classify_tech_status)
+
+    color_map = {
+        "Active": "green",
+        "Stale": "orange",
+        "Offline": "red"
+    }
+
+    fig = px.scatter_mapbox(
+        df,
+        lat="latitude",
+        lon="longitude",
+        color="status",
+        color_discrete_map=color_map,
+        hover_name="tech_username",
+        hover_data={
+            "timestamp": True,
+            "latitude": False,
+            "longitude": False
+        },
+        zoom=9,
+        height=600
+    )
+
+    fig.update_layout(
+        mapbox_style="open-street-map",
+        margin={"r":0,"t":0,"l":0,"b":0}
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.caption("🟢 Active < 2 min | 🟠 Stale < 10 min | 🔴 Offline")
+
 
 
 # CPA & ROI page
