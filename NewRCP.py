@@ -27,6 +27,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sqlalchemy import text
 from streamlit.runtime.scriptrunner import add_script_run_ctx
+from streamlit_extras.st_autorefresh import st_autorefresh
+
 
 
 
