@@ -1386,9 +1386,86 @@ def page_lead_capture():
 
 # Pipeline Board 
 def page_pipeline_board():
-    st.markdown("<div class='header'>PIPELINE BOARD — TOTAL LEAD PIPELINE</div>", unsafe_allow_html=True)
-    st.markdown("<em>High-level pipeline board with KPI cards and priority list.</em>", unsafe_allow_html=True)
+    st.markdown("<div class='header'>📊 Pipeline Board</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<em>Visual overview of all leads grouped by pipeline stage.</em>",
+        unsafe_allow_html=True
+    )
+
     alerts_ui()
+    st.markdown("---")
+
+    # ----------------------
+    # FETCH LEADS
+    # ----------------------
+    s = get_session()
+    try:
+        leads = s.query(Lead).order_by(Lead.created_at.desc()).all()
+    finally:
+        s.close()
+
+    if not leads:
+        st.info("No leads in the pipeline yet.")
+        return
+
+    # ----------------------
+    # ORGANIZE BY STAGE
+    # ----------------------
+    stage_map = {stage: [] for stage in PIPELINE_STAGES}
+
+    for lead in leads:
+        stage = lead.stage if lead.stage in stage_map else "New"
+        stage_map[stage].append(lead)
+
+    # ----------------------
+    # PIPELINE METRICS
+    # ----------------------
+    total_value = sum(l.estimated_value or 0 for l in leads)
+    won_value = sum(l.estimated_value or 0 for l in leads if l.stage == "Won")
+
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Total Leads", len(leads))
+    k2.metric("Pipeline Value", f"${total_value:,.0f}")
+    k3.metric("Won Value", f"${won_value:,.0f}")
+
+    st.markdown("---")
+
+    # ----------------------
+    # KANBAN COLUMNS
+    # ----------------------
+    cols = st.columns(len(PIPELINE_STAGES))
+
+    for idx, stage in enumerate(PIPELINE_STAGES):
+        with cols[idx]:
+            st.markdown(f"### {stage}")
+            st.caption(f"{len(stage_map[stage])} lead(s)")
+
+            if not stage_map[stage]:
+                st.markdown(
+                    "<small style='color:#888;'>No leads</small>",
+                    unsafe_allow_html=True
+                )
+
+            for lead in stage_map[stage]:
+                with st.container():
+                    st.markdown(
+                        f"""
+                        <div style="
+                            border:1px solid #333;
+                            border-radius:8px;
+                            padding:8px;
+                            margin-bottom:8px;
+                            background:#0f172a;
+                        ">
+                            <strong>{lead.contact_name or 'Unnamed Lead'}</strong><br>
+                            <small>{lead.lead_id}</small><br>
+                            <small>{lead.property_address or ''}</small><br>
+                            <small>💰 ${lead.estimated_value or 0:,.0f}</small>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
 
 
 
