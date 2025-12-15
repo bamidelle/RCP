@@ -40,7 +40,15 @@ from sklearn.metrics import accuracy_score
 
 
 
-
+if "_save_location" in st.query_params:
+    data = st.get_json()
+    save_location_ping(
+        data["username"],
+        data["lat"],
+        data["lon"],
+        data.get("accuracy")
+    )
+    st.stop()
 
 
 
@@ -631,6 +639,20 @@ def update_technician_status(username: str, status: str):
         tech.status = status
         s.commit()
         return True
+    finally:
+        s.close()
+def save_location_ping(username, lat, lon, accuracy=None):
+    s = get_session()
+    try:
+        ping = LocationPing(
+            tech_username=username,
+            latitude=float(lat),
+            longitude=float(lon),
+            accuracy=accuracy,
+            timestamp=datetime.utcnow()
+        )
+        s.add(ping)
+        s.commit()
     finally:
         s.close()
 
@@ -1831,6 +1853,42 @@ def page_technician_map_tracking():
 
     st.caption("🟢 Active < 2 min | 🟠 Stale < 10 min | 🔴 Offline")
 
+def page_technician_mobile():
+    st.markdown("## 📍 Technician Live Location")
+
+    tech_username = st.text_input("Your technician username")
+
+    if not tech_username:
+        st.info("Enter your username to begin tracking")
+        return
+
+    st.markdown(
+        """
+        <script>
+        navigator.geolocation.getCurrentPosition(
+            (pos) => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                const acc = pos.coords.accuracy;
+
+                fetch("/?_save_location=1", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        username: "%s",
+                        lat: lat,
+                        lon: lon,
+                        accuracy: acc
+                    })
+                });
+            }
+        );
+        </script>
+        """ % tech_username,
+        unsafe_allow_html=True
+    )
+
+    st.success("📡 Location sent (refreshes every time page loads)")
 
 
 # CPA & ROI page
@@ -2717,6 +2775,8 @@ elif page == "Technician Mobile":
     page_technician_mobile()
 elif page == "Technician Map Tracking":
     page_technician_map_tracking()
+elif page == "Technician Mobile":
+    page_technician_mobile()
 elif page == "Tasks":
     page_tasks()
 elif page == "Settings":
