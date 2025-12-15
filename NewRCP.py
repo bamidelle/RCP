@@ -25,6 +25,8 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+from sqlalchemy import text
+
 # ---------- Country list helper (robust) ----------
 import requests
 from functools import lru_cache
@@ -582,15 +584,23 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
 def get_latest_location_pings():
     s = get_session()
     try:
-        rows = s.execute("""
-            SELECT tech_username, latitude, longitude, MAX(timestamp) as ts
-            FROM location_pings
-            GROUP BY tech_username
-        """).fetchall()
+        rows = s.execute(
+            text("""
+                SELECT tech_username, latitude, longitude, MAX(timestamp) as ts
+                FROM location_pings
+                GROUP BY tech_username
+            """)
+        ).fetchall()
 
-        return pd.DataFrame(rows, columns=["tech", "lat", "lon", "ts"])
+        return pd.DataFrame(rows, columns=[
+            "tech_username",
+            "latitude",
+            "longitude",
+            "timestamp"
+        ])
     finally:
         s.close()
+
 
 
 # ---------- END BLOCK C ----------
