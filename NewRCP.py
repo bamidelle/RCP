@@ -2768,7 +2768,7 @@ if not insights:
 else:
     for i in insights:
         st.info(i)
-)
+
 
 
     # =========================================================
