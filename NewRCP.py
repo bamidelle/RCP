@@ -565,29 +565,6 @@ def page_tasks():
                 st.success("✔ Completed")
 
 
-    # ---------- VIEW TASKS ----------
-    st.markdown("### 📋 Active Tasks")
-
-    tasks_df = get_tasks_df()
-
-    if tasks_df.empty:
-        st.info("No tasks created yet.")
-        return
-
-    st.dataframe(
-        tasks_df[
-            [
-                "title",
-                "technician_username",
-                "lead_id",
-                "status",
-                "due_at"
-            ]
-        ],
-        use_container_width=True
-    )
-
-
 def get_tasks_df():
     s = get_session()
     try:
@@ -803,6 +780,7 @@ def get_latest_location_pings():
         ])
     finally:
         s.close()
+
 
 
 def classify_tech_status(ts):
@@ -2162,7 +2140,7 @@ def page_settings():
                     st.error("Failed to save technician: " + str(e))
     
     st.markdown("### 📋 Existing Technicians")
-
+    
     tech_df = get_technicians_df(active_only=False)
     
     if tech_df.empty:
@@ -2189,6 +2167,7 @@ def page_settings():
                     update_technician_status(row["username"], new_status)
                     st.success("Status updated")
                     st.rerun()
+
 
 
 
