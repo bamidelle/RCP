@@ -335,6 +335,37 @@ class Task(Base):
     due_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+# ---------- BEGIN BLOCK A2: COMPETITOR INTELLIGENCE MODELS ----------
+
+class Competitor(Base):
+    __tablename__ = "competitors"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    place_id = Column(String, unique=True, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    rating = Column(Float, default=0.0)
+    total_reviews = Column(Integer, default=0)
+    primary_category = Column(String, nullable=True)
+    service_area = Column(String, nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CompetitorSnapshot(Base):
+    __tablename__ = "competitor_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"))
+    rating = Column(Float)
+    total_reviews = Column(Integer)
+    captured_at = Column(DateTime, default=datetime.utcnow)
+
+    competitor = relationship("Competitor")
+
+# ---------- END BLOCK A2 ----------
+
 # ---------- END BLOCK A ----------
 
 
@@ -714,6 +745,35 @@ def get_leads_df():
         ])
     finally:
         s.close()
+
+def add_time_windows(df, date_col="date"):
+    df[date_col] = pd.to_datetime(df[date_col])
+    now = df[date_col].max()
+
+    return {
+        "3m": df[df[date_col] >= now - pd.DateOffset(months=3)],
+        "6m": df[df[date_col] >= now - pd.DateOffset(months=6)],
+        "12m": df[df[date_col] >= now - pd.DateOffset(months=12)],
+    }
+def generate_seasonal_insights(leads_df, weather_df):
+    insights = []
+
+    if weather_df["rainfall_mm"].mean() > weather_df["rainfall_mm"].median():
+        insights.append(
+            "Higher-than-normal rainfall is increasing water damage and mold remediation demand."
+        )
+
+    if weather_df["humidity_pct"].mean() > 65:
+        insights.append(
+            "Sustained high humidity levels indicate elevated mold and fungal growth risk."
+        )
+
+    top_damage = leads_df["damage_type"].value_counts().idxmax()
+    insights.append(
+        f"The most frequent damage type this period is **{top_damage}**, suggesting focused crew allocation."
+    )
+
+    return insights
 
 
 def create_inspection_assignment(lead_id: str, technician_username: str, notes: str = None):
@@ -1583,6 +1643,27 @@ def page_pipeline_board():
 
     # ---------- LOAD DATA ----------
     leads_df = get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
+
+        st.subheader("🧱 Seasonal Damage Type Distribution")
+    
+    leads_df["month"] = pd.to_datetime(leads_df["created_at"]).dt.month_name()
+    
+    damage_month = (
+        leads_df
+        .groupby(["month", "damage_type"])
+        .size()
+        .reset_index(name="jobs")
+    )
+    
+    fig_damage = px.bar(
+        damage_month,
+        x="month",
+        y="jobs",
+        color="damage_type",
+        title="Damage Types by Month (Seasonal Impact)"
+    )
+    
+    st.plotly_chart(fig_damage, use_container_width=True)
 
     if leads_df.empty:
         st.info("No leads in pipeline yet.")
@@ -2522,10 +2603,38 @@ def page_seasonal_trends():
     )
     
     st.plotly_chart(trend_fig, use_container_width=True)
+
+    st.subheader("🌡️ Temperature & Humidity Trends")
+
+windows = add_time_windows(hist_df)
+
+for label, wdf in windows.items():
+    st.markdown(f"**Last {label.upper()}**")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fig_temp = px.line(
+            wdf,
+            x="date",
+            y="temperature_c",
+            title=f"Average Temperature ({label})"
+        )
+        st.plotly_chart(fig_temp, use_container_width=True)
+
+    with col2:
+        fig_hum = px.line(
+            wdf,
+            x="date",
+            y="humidity_pct",
+            title=f"Average Humidity ({label})"
+        )
+        st.plotly_chart(fig_hum, use_container_width=True)
+
     # ============================================================
     # 📉 DAMAGE RISK TRENDS — HISTORY VS FORECAST
     # ============================================================
-    st.markdown("## 📉 Damage Risk Trends")
+    st.markdown("## 📉 Property Damage Risk Trends")
     
     risk_fig = go.Figure()
     
@@ -2630,10 +2739,13 @@ def page_seasonal_trends():
             use_container_width=True
         )
     with c2:
-        st.plotly_chart(
-            px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
-            use_container_width=True
-        )
+    st.subheader("🧠 Executive Seasonal Insights")
+    
+    insights = generate_seasonal_insights(leads_df, hist_df)
+    
+    for i in insights:
+        st.info(i)
+
 
     # =========================================================
     # 6. SUMMARY METRICS
