@@ -438,9 +438,20 @@ def safe_migrate_new_tables():
 safe_migrate_new_tables()
 
 
+def haversine_km(lat1, lon1, lat2, lon2):
+    """
+    Calculate distance between two lat/lon points in KM
+    """
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
 
-# Run it once on startup (safe)
-safe_migrate_new_tables()
+    a = math.sin(dphi / 2) ** 2 + \
+        math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 
 
 # ---------- BEGIN BLOCK D: COMPETITOR HELPERS ----------
@@ -468,6 +479,89 @@ def save_competitor_snapshot(competitor_id, rating, total_reviews):
         s.close()
 
 # ---------- END BLOCK D ----------
+# ---------- BEGIN BLOCK F: GOOGLE PLACES INGESTION ----------
+
+def ingest_competitors_google(
+    lat,
+    lon,
+    radius_m=15000,
+    keyword="water damage restoration",
+    throttle_sec=2
+):
+    """
+    Safe, manual-trigger Google Places ingestion
+    """
+    api_key = st.secrets.get("GOOGLE_MAPS_API_KEY", None)
+    if not api_key:
+        st.error("Google Maps API key not configured.")
+        return
+
+    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+
+    params = {
+        "location": f"{lat},{lon}",
+        "radius": radius_m,
+        "keyword": keyword,
+        "key": api_key
+    }
+
+    r = requests.get(url, params=params, timeout=10)
+    r.raise_for_status()
+    results = r.json().get("results", [])
+
+    s = get_session()
+    try:
+        for place in results:
+            name = place.get("name")
+            place_id = place.get("place_id")
+            rating = place.get("rating", 0)
+            reviews = place.get("user_ratings_total", 0)
+            geo = place.get("geometry", {}).get("location", {})
+
+            exists = s.query(Competitor).filter_by(place_id=place_id).first()
+            if exists:
+                exists.rating = rating
+                exists.total_reviews = reviews
+                save_competitor_snapshot(exists.id, rating, reviews)
+            else:
+                c = Competitor(
+                    name=name,
+                    place_id=place_id,
+                    latitude=geo.get("lat"),
+                    longitude=geo.get("lng"),
+                    rating=rating,
+                    total_reviews=reviews,
+                    primary_category=keyword
+                )
+                s.add(c)
+                s.flush()
+                save_competitor_snapshot(c.id, rating, reviews)
+
+            time.sleep(throttle_sec)
+
+        s.commit()
+    except Exception as e:
+        s.rollback()
+        st.error(str(e))
+    finally:
+        s.close()
+
+# ---------- END BLOCK F ----------
+def review_velocity(competitor_id, days):
+    s = get_session()
+    try:
+        since = datetime.utcnow() - timedelta(days=days)
+        count = (
+            s.query(CompetitorSnapshot)
+            .filter(
+                CompetitorSnapshot.competitor_id == competitor_id,
+                CompetitorSnapshot.captured_at >= since
+            )
+            .count()
+        )
+        return round(count / max(days, 1), 2)
+    finally:
+        s.close()
 
 
 # ----------------------
@@ -2924,6 +3018,15 @@ else:
 
 def page_competitor_intelligence():
     st.title("🏆 Competitor Intelligence")
+    with st.expander("➕ Discover Competitors"):
+    lat = st.number_input("Latitude", value=39.9612)
+    lon = st.number_input("Longitude", value=-82.9988)
+    keyword = st.text_input("Search keyword", "water damage restoration")
+
+    if st.button("Run Competitor Scan"):
+        ingest_competitors_google(lat, lon, keyword=keyword)
+        st.success("Competitor scan completed.")
+
 
     s = get_session()
     try:
@@ -2937,11 +3040,20 @@ def page_competitor_intelligence():
 
     rows = []
     for c in competitors:
+        hq_lat, hq_lon = st.session_state.get("hq_lat"), st.session_state.get("hq_lon")
+        
+        distance = (
+            haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
+            if hq_lat and c.latitude
+            else 10
+        )
+        
         score = calculate_competitor_score(
             c.rating or 0,
             c.total_reviews or 0,
-            5  # placeholder distance (km) – phase 2 will calculate real distance
+            distance
         )
+
         rows.append({
             "Name": c.name,
             "Rating": c.rating,
@@ -2949,6 +3061,9 @@ def page_competitor_intelligence():
             "Category": c.primary_category,
             "Strength Score": score
         })
+        
+    "Velocity (7d)": review_velocity(c.id, 7),
+    "Velocity (30d)": review_velocity(c.id, 30),
 
     df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
 
