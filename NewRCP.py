@@ -1843,10 +1843,11 @@ def page_technician_map_tracking():
     )
 
     fig.update_layout(
-    mapbox_style="streets",   # or "satellite-streets"
-    mapbox_accesstoken=MAPBOX_TOKEN,
-    margin={"r":0,"t":0,"l":0,"b":0}
+        mapbox_style="mapbox://styles/mapbox/streets-v12",
+        mapbox_accesstoken=MAPBOX_TOKEN,
+        margin={"r": 0, "t": 0, "l": 0, "b": 0}
     )
+
     st.caption("🗺️ Mapbox active" if MAPBOX_TOKEN else "⚠️ Mapbox token missing")
     
     st.plotly_chart(fig, use_container_width=True)
