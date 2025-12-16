@@ -441,7 +441,33 @@ safe_migrate_new_tables()
 
 # Run it once on startup (safe)
 safe_migrate_new_tables()
-# ---------- END BLOCK B ----------
+
+
+# ---------- BEGIN BLOCK D: COMPETITOR HELPERS ----------
+
+@st.cache_data(ttl=86400)
+def calculate_competitor_score(rating, reviews, distance_km):
+    if distance_km <= 0:
+        distance_km = 1
+    return round((rating * reviews) / distance_km, 2)
+
+
+def save_competitor_snapshot(competitor_id, rating, total_reviews):
+    s = get_session()
+    try:
+        snap = CompetitorSnapshot(
+            competitor_id=competitor_id,
+            rating=rating,
+            total_reviews=total_reviews
+        )
+        s.add(snap)
+        s.commit()
+    except Exception:
+        s.rollback()
+    finally:
+        s.close()
+
+# ---------- END BLOCK D ----------
 
 
 # ----------------------
@@ -1186,6 +1212,7 @@ with st.sidebar:
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
+        "Competitor Intelligence",
         "Settings",
         "Exports"
     ], 
@@ -2438,6 +2465,27 @@ except Exception:
 demand = {}
 season_score = 0.5
 
+def add_time_windows(hist_df):
+    """
+    Adds rolling time windows (3, 6, 12 months) for seasonal comparison
+    """
+    if hist_df.empty:
+        return {}
+
+    df = hist_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")
+
+    latest_date = df["date"].max()
+
+    windows = {
+        "3_months": df[df["date"] >= latest_date - pd.DateOffset(months=3)],
+        "6_months": df[df["date"] >= latest_date - pd.DateOffset(months=6)],
+        "12_months": df[df["date"] >= latest_date - pd.DateOffset(months=12)],
+    }
+
+    return windows
+
 # -------------------------------------------------------------
 # SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
 # -------------------------------------------------------------
@@ -2496,29 +2544,37 @@ def page_seasonal_trends():
 
     if not st.button("Generate Insights"):
         return
+# =========================================================
+# 3. DATA FETCH
+# =========================================================
+with st.spinner("Generating insights..."):
+    hist_df = fetch_weather(
+        chosen["lat"], chosen["lon"], months
+    )
 
-    # =========================================================
-    # 3. DATA FETCH
-    # =========================================================
-    with st.spinner("Generating insights..."):
-        hist_df = fetch_weather(
-            chosen["lat"], chosen["lon"], months
-        )
+    forecast_days = forecast_months * 30
+    forecast_df = fetch_forecast_weather(
+        chosen["lat"], chosen["lon"], forecast_days
+    )
 
-        forecast_days = forecast_months * 30
-        forecast_df = fetch_forecast_weather(
-            chosen["lat"], chosen["lon"], forecast_days
-        )
+# =========================================================
+# SAFETY CHECKS
+# =========================================================
+if hist_df.empty:
+    st.error("Historical weather data unavailable for this location.")
+    return
 
-    if hist_df.empty:
-        st.error("Historical weather data unavailable for this location.")
-        return
+if forecast_df.empty:
+    st.warning(
+        "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
+    )
+    forecast_df = hist_df.copy()
 
-    if forecast_df.empty:
-        st.warning(
-            "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
-        )
-        forecast_df = hist_df.copy()
+# =========================================================
+# TIME WINDOWS (3 / 6 / 12 MONTHS)
+# =========================================================
+windows = add_time_windows(hist_df)
+
 
     # =========================================================
     # 4. FEATURE ENGINEERING (SINGLE PASS)
@@ -2864,6 +2920,42 @@ else:
     techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
     st.metric("Recommended Technicians", techs)
 
+# ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
+
+def page_competitor_intelligence():
+    st.title("🏆 Competitor Intelligence")
+
+    s = get_session()
+    try:
+        competitors = s.query(Competitor).all()
+    finally:
+        s.close()
+
+    if not competitors:
+        st.info("No competitors tracked yet.")
+        return
+
+    rows = []
+    for c in competitors:
+        score = calculate_competitor_score(
+            c.rating or 0,
+            c.total_reviews or 0,
+            5  # placeholder distance (km) – phase 2 will calculate real distance
+        )
+        rows.append({
+            "Name": c.name,
+            "Rating": c.rating,
+            "Reviews": c.total_reviews,
+            "Category": c.primary_category,
+            "Strength Score": score
+        })
+
+    df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
+
+    st.subheader("Top Competitors")
+    st.dataframe(df, use_container_width=True)
+
+# ---------- END BLOCK E ----------
 
 # ----------------------
 # Router (main)
@@ -2878,6 +2970,8 @@ elif page == "Analytics":
     page_analytics()
 elif page == "Seasonal Trends":
     page_seasonal_trends()
+elif page == "Competitor Intelligence":
+    page_competitor_intelligence()
 elif page == "CPA & ROI":
     page_cpa_roi()
 elif page == "AI Recommendations":
