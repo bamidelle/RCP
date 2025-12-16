@@ -36,6 +36,8 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+MAPBOX_TOKEN = st.secrets.get("MAPBOX_TOKEN", "")
+
 
 
 
@@ -1841,11 +1843,15 @@ def page_technician_map_tracking():
     )
 
     fig.update_layout(
-        mapbox_style="open-street-map",
-        margin={"r":0,"t":0,"l":0,"b":0}
+    mapbox_style="streets",   # or "satellite-streets"
+    mapbox_accesstoken=MAPBOX_TOKEN,
+    margin={"r":0,"t":0,"l":0,"b":0}
     )
-
+    st.caption("🗺️ Mapbox active" if MAPBOX_TOKEN else "⚠️ Mapbox token missing")
+    
     st.plotly_chart(fig, use_container_width=True)
+
+
 
     st.caption("🟢 Active < 2 min | 🟠 Stale < 10 min | 🔴 Offline")
 
