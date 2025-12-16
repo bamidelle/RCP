@@ -2727,24 +2727,48 @@ for label, wdf in windows.items():
     for line in summary_lines:
         st.markdown(f"- {line}")
 
-    # =========================================================
-    # 5. WEATHER CHARTS
-    # =========================================================
-    st.markdown("### 📈 Weather Trends")
+# =========================================================
+# 5. WEATHER CHARTS
+# =========================================================
+st.markdown("### 📈 Weather Trends")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(
-            px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
-            use_container_width=True
-        )
-    with c2:
-    st.subheader("🧠 Executive Seasonal Insights")
-    
-    insights = generate_seasonal_insights(leads_df, hist_df)
-    
+c1, c2 = st.columns(2)
+
+with c1:
+    st.plotly_chart(
+        px.line(
+            hist_df,
+            x="date",
+            y="rainfall_mm",
+            title="Historical Rainfall"
+        ),
+        use_container_width=True
+    )
+
+with c2:
+    st.plotly_chart(
+        px.line(
+            hist_df,
+            x="date",
+            y="temperature_c",
+            title="Historical Temperature"
+        ),
+        use_container_width=True
+    )
+
+# =========================================================
+# 6. EXECUTIVE SEASONAL INSIGHTS  ✅ ADD HERE
+# =========================================================
+st.subheader("🧠 Executive Seasonal Insights")
+
+insights = generate_seasonal_insights(leads_df, hist_df)
+
+if not insights:
+    st.info("No significant seasonal signals detected for the selected period.")
+else:
     for i in insights:
         st.info(i)
+)
 
 
     # =========================================================
