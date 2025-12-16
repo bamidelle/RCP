@@ -38,85 +38,9 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
-MAPBOX_TOKEN = st.secrets.get("MAPBOX_TOKEN", "")
 
 
-import streamlit as st
 
-st.markdown("""
-<style>
-/* ORANGE PRIMARY BUTTON */
-div.stButton > button {
-    width: 100%;
-    background-color: #f57c00; /* Google Ads orange */
-    color: white;
-    padding: 14px 24px;
-    border-radius: 999px; /* pill shape */
-    font-size: 16px;
-    font-weight: 600;
-    border: none;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-    transition: all 0.2s ease-in-out;
-}
-
-/* Hover effect */
-div.stButton > button:hover {
-    background-color: #ef6c00;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-}
-
-/* Click effect */
-div.stButton > button:active {
-    transform: scale(0.98);
-}
-
-/* Remove default focus outline */
-div.stButton > button:focus {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(245,124,0,0.35);
-}
-</style>
-""", unsafe_allow_html=True)
-
-with st.sidebar:
-
-    # OVERVIEW
-    st.markdown(
-        '<div class="nav-btn {}">'.format(
-            "active" if st.session_state.active_page == "overview" else ""
-        ),
-        unsafe_allow_html=True
-    )
-    if st.button("📊 Overview"):
-        st.session_state.active_page = "overview"
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # TECHNICIAN MAP
-    st.markdown(
-        '<div class="nav-btn {}">'.format(
-            "active" if st.session_state.active_page == "map" else ""
-        ),
-        unsafe_allow_html=True
-    )
-    if st.button("📍 Technician Map"):
-        st.session_state.active_page = "map"
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # SEASONAL TRENDS
-    st.markdown(
-        '<div class="nav-btn {}">'.format(
-            "active" if st.session_state.active_page == "trends" else ""
-        ),
-        unsafe_allow_html=True
-    )
-    if st.button("🌦 Seasonal Trends"):
-        st.session_state.active_page = "trends"
-        st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 
