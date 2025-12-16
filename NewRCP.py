@@ -16,6 +16,12 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.express as px
+import plotly.graph_objects as go
+
+MAPBOX_TOKEN = st.secrets.get("MAPBOX_TOKEN", "")
+px.set_mapbox_access_token(MAPBOX_TOKEN)
+
 import joblib
 from sqlalchemy import (
     create_engine,
@@ -1842,9 +1848,9 @@ def page_technician_map_tracking():
         height=600
     )
 
+
     fig.update_layout(
         mapbox_style="mapbox://styles/mapbox/streets-v12",
-        mapbox_accesstoken=MAPBOX_TOKEN,
         mapbox_center={
             "lat": df["latitude"].mean(),
             "lon": df["longitude"].mean()
@@ -1852,6 +1858,7 @@ def page_technician_map_tracking():
         mapbox_zoom=10,
         margin={"r": 0, "t": 0, "l": 0, "b": 0}
     )
+
 
 
     st.caption("🗺️ Mapbox active" if MAPBOX_TOKEN else "⚠️ Mapbox token missing")
