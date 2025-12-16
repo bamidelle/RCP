@@ -1644,7 +1644,7 @@ def page_pipeline_board():
     # ---------- LOAD DATA ----------
     leads_df = get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
 
-        st.subheader("🧱 Seasonal Damage Type Distribution")
+    st.subheader("🧱 Seasonal Damage Type Distribution")
     
     leads_df["month"] = pd.to_datetime(leads_df["created_at"]).dt.month_name()
     
