@@ -13,14 +13,11 @@ import os
 from datetime import datetime, timedelta, date
 import io, base64, traceback
 import streamlit as st
+import folium
+from streamlit_folium import st_folium
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import plotly.express as px
-import plotly.graph_objects as go
-
-MAPBOX_TOKEN = st.secrets.get("MAPBOX_TOKEN", "")
-px.set_mapbox_access_token(MAPBOX_TOKEN)
 
 import joblib
 from sqlalchemy import (
@@ -1873,76 +1870,62 @@ STATUS_COLORS = {
     "recent": "orange",
     "offline": "red",
 }
-
 def page_technician_map_tracking():
     st.markdown("## 🗺️ Technician Live Map")
 
     df = get_latest_location_pings()
 
     if df.empty:
-        st.info("No live technician locations yet.")
+        st.warning("No technician GPS data available.")
         return
 
-    st.caption("Showing latest known location per technician")
+    # Convert timestamp safely
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
 
-    st.map(
-        df.rename(columns={
-            "latitude": "lat",
-            "longitude": "lon"
-        })[["lat", "lon"]]
-    )
+    def classify_status(ts):
+        if pd.isna(ts):
+            return "offline"
+        mins = (datetime.utcnow() - ts).total_seconds() / 60
+        if mins <= 10:
+            return "active"
+        elif mins <= 30:
+            return "idle"
+        return "offline"
 
+    df["status"] = df["timestamp"].apply(classify_status)
 
-    with st.expander("📍 Location Details"):
-        st.dataframe(df, use_container_width=True)
-
-
-
-
-    df["status"] = df["timestamp"].apply(classify_tech_status)
-
-    color_map = {
-        "Active": "green",
-        "Stale": "orange",
-        "Offline": "red"
+    status_color = {
+        "active": "green",
+        "idle": "orange",
+        "offline": "red"
     }
 
-    fig = px.scatter_mapbox(
-        df,
-        lat="latitude",
-        lon="longitude",
-        color="status",
-        color_discrete_map=color_map,
-        hover_name="tech_username",
-        hover_data={
-            "timestamp": True,
-            "latitude": False,
-            "longitude": False
-        },
-        zoom=9,
-        height=600
+    # Center map
+    center_lat = df["latitude"].mean()
+    center_lon = df["longitude"].mean()
+
+    m = folium.Map(
+        location=[center_lat, center_lon],
+        zoom_start=11,
+        tiles="OpenStreetMap"
     )
 
+    for _, r in df.iterrows():
+        folium.CircleMarker(
+            location=[r["latitude"], r["longitude"]],
+            radius=8,
+            color=status_color[r["status"]],
+            fill=True,
+            fill_opacity=0.85,
+            popup=f"""
+            <b>Technician:</b> {r['tech_username']}<br>
+            <b>Status:</b> {r['status']}<br>
+            <b>Last Ping:</b> {r['timestamp']}
+            """
+        ).add_to(m)
 
-    fig.update_layout(
-        mapbox_style="mapbox://styles/mapbox/streets-v12",
-        mapbox_center={
-            "lat": df["latitude"].mean(),
-            "lon": df["longitude"].mean()
-        },
-        mapbox_zoom=10,
-        margin={"r": 0, "t": 0, "l": 0, "b": 0}
-    )
+    st_folium(m, height=600, use_container_width=True)
 
-
-
-    st.caption("🗺️ Mapbox active" if MAPBOX_TOKEN else "⚠️ Mapbox token missing")
-    
-    st.plotly_chart(fig, use_container_width=True)
-
-
-
-    st.caption("🟢 Active < 2 min | 🟠 Stale < 10 min | 🔴 Offline")
 
 def page_technician_mobile():
     st.markdown("## 📍 Technician Live Location")
