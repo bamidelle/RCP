@@ -2544,36 +2544,36 @@ def page_seasonal_trends():
 
     if not st.button("Generate Insights"):
         return
-# =========================================================
-# 3. DATA FETCH
-# =========================================================
-with st.spinner("Generating insights..."):
-    hist_df = fetch_weather(
-        chosen["lat"], chosen["lon"], months
-    )
-
-    forecast_days = forecast_months * 30
-    forecast_df = fetch_forecast_weather(
-        chosen["lat"], chosen["lon"], forecast_days
-    )
-
-# =========================================================
-# SAFETY CHECKS
-# =========================================================
-if hist_df.empty:
-    st.error("Historical weather data unavailable for this location.")
-    return
-
-if forecast_df.empty:
-    st.warning(
-        "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
-    )
-    forecast_df = hist_df.copy()
-
-# =========================================================
-# TIME WINDOWS (3 / 6 / 12 MONTHS)
-# =========================================================
-windows = add_time_windows(hist_df)
+    # =========================================================
+    # 3. DATA FETCH
+    # =========================================================
+    with st.spinner("Generating insights..."):
+        hist_df = fetch_weather(
+            chosen["lat"], chosen["lon"], months
+        )
+    
+        forecast_days = forecast_months * 30
+        forecast_df = fetch_forecast_weather(
+            chosen["lat"], chosen["lon"], forecast_days
+        )
+    
+    # =========================================================
+    # SAFETY CHECKS
+    # =========================================================
+    if hist_df.empty:
+        st.error("Historical weather data unavailable for this location.")
+        return
+    
+    if forecast_df.empty:
+        st.warning(
+            "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
+        )
+        forecast_df = hist_df.copy()
+    
+    # =========================================================
+    # TIME WINDOWS (3 / 6 / 12 MONTHS)
+    # =========================================================
+    windows = add_time_windows(hist_df)
 
 
     # =========================================================
