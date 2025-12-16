@@ -10,3 +10,6 @@ plotly
 matplotlib
 requests
 streamlit-extras
+streamlit-folium
+folium
+
