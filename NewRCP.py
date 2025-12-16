@@ -1845,8 +1845,14 @@ def page_technician_map_tracking():
     fig.update_layout(
         mapbox_style="mapbox://styles/mapbox/streets-v12",
         mapbox_accesstoken=MAPBOX_TOKEN,
+        mapbox_center={
+            "lat": df["latitude"].mean(),
+            "lon": df["longitude"].mean()
+        },
+        mapbox_zoom=10,
         margin={"r": 0, "t": 0, "l": 0, "b": 0}
     )
+
 
     st.caption("🗺️ Mapbox active" if MAPBOX_TOKEN else "⚠️ Mapbox token missing")
     
