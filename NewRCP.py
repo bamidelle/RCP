@@ -2581,267 +2581,64 @@ def add_time_windows(hist_df):
 
     return windows
 
-# -------------------------------------------------------------
-# SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
-# -------------------------------------------------------------
-def page_seasonal_trends():
-    import numpy as np
-    import pandas as pd
-    import plotly.express as px
-    import plotly.graph_objects as go
-    import streamlit as st
-
-    st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
+# =========================================================
+# 18. SEASONAL JOB INSIGHTS
+# =========================================================
+st.markdown("## 🏗️ Seasonal Job Insights")
+with st.expander("Click to explore how seasonal trends affect property damage types"):
     st.markdown(
-        "<em>Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations.</em>",
-        unsafe_allow_html=True
+        """
+Seasonal trends play a huge role in influencing property damage types because weather, climate, and seasonal human activity create predictable patterns of damage. Here’s a breakdown of how seasonal trends can affect each type of property damage:
+
+**1. Water Damage**  
+- Rainy/monsoon seasons: Increased flooding, roof leaks, and basement water intrusion.  
+- Winter / cold seasons: Burst pipes from freezing temperatures, ice dam damage on roofs.  
+- Spring thaw: Snowmelt leads to basement flooding or structural water infiltration.  
+**Seasonal influence:** High rainfall or snow increases the frequency of water-related damage claims.
+
+**2. Fire & Smoke Damage**  
+- Summer: Higher risk of wildfires in dry regions; BBQ and outdoor fire incidents.  
+- Winter: Heating system failures, chimney fires, electrical fires from holiday lights.  
+- Dry periods: Smoke odor and minor fire damage incidents increase.  
+**Seasonal influence:** Fire restoration jobs spike during dry, hot months or heating-intensive months.
+
+**3. Mold & Fungal Damage**  
+- Wet seasons / high humidity: Mold growth accelerates in basements, attics, and bathrooms.  
+- Post-flooding seasons: Mold often develops after water damage incidents.  
+**Seasonal influence:** Mold remediation jobs correlate strongly with rainy seasons or periods of high indoor humidity.
+
+**4. Storm & Wind Damage**  
+- Hurricane / typhoon season: Roof damage, fallen trees, broken windows.  
+- Spring storms / tornado season: Structural damage to homes and commercial buildings.  
+- Winter storms: Snow accumulation leading to collapsed roofs or water intrusion.  
+**Seasonal influence:** Weather prediction allows restoration companies to anticipate emergency response demand.
+
+**5. Natural Disaster Damage**  
+- Monsoon/flood-prone seasons: Increased flood-related structural damage.  
+- Earthquake-prone periods: Less seasonal but sometimes tied to secondary hazards (landslides after rainy season).  
+**Seasonal influence:** Restoration companies can forecast staffing and resource allocation based on historical disaster trends.
+
+**6. Theft & Vandalism Damage**  
+- Holiday seasons: Higher burglary rates around Christmas or vacation periods.  
+- Summer months: Increased property vandalism in urban and vacation areas.  
+**Seasonal influence:** Insurance claims for vandalism tend to fluctuate based on social patterns, not just weather.
+
+**7. Biohazard & Hazardous Material Damage**  
+- Winter / flu season: Higher demand for cleaning contaminated areas.  
+- Flood season: Increased sewage backup and waterborne contamination.  
+**Seasonal influence:** Certain biohazard jobs spike during periods of heavy rainfall or high disease prevalence.
+
+**8. Roof & Exterior Damage**  
+- Winter: Ice dams, snow weight damage.  
+- Spring & Fall storms: Hail, strong winds, falling branches.  
+**Seasonal influence:** Roof repair and exterior restoration are heavily seasonal, often tied to storm forecasts.
+
+**Key Takeaways**  
+- **Predictive power:** Seasonal trends let companies forecast high-demand periods, allocate crews, stock materials, and manage insurance response times.  
+- **Job type correlation:** Some damage types are season-specific (e.g., mold in rainy seasons, fires in dry seasons), while others fluctuate moderately with weather patterns.  
+- **Revenue planning:** Knowing which jobs spike in which season allows SLA/restoration companies to plan staffing, marketing, and emergency response.
+"""
     )
-
-    # =========================================================
-    # 1. LOCATION SELECTION
-    # =========================================================
-    countries = get_all_countries()
-    country = st.selectbox("Country", [c["name"] for c in countries])
-    country_code = next(c["code"] for c in countries if c["name"] == country)
-
-    city_query = st.text_input("City (e.g. Miami, London, Toronto)")
-    matches = search_cities(country_code, city_query)
-
-    if not matches:
-        st.info("Start typing a city name.")
-        return
-
-    labels = [
-        f"{m['name']}, {m['admin1']}" if m["admin1"] else m["name"]
-        for m in matches
-    ]
-    selected = st.selectbox("Select city", labels)
-    chosen = matches[labels.index(selected)]
-
-    st.success(f"📍 {selected}, {country}")
-
-    # =========================================================
-    # 2. CONTROLS
-    # =========================================================
-    hist_range = st.selectbox(
-        "Historical window",
-        ["3 months", "6 months", "12 months"],
-        index=1
-    )
-
-    forecast_range = st.selectbox(
-        "Forecast horizon",
-        ["3 months", "6 months", "12 months"]
-    )
-
-    months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
-
-    if not st.button("Generate Insights"):
-        return
-
-    # =========================================================
-    # 3. DATA FETCH
-    # =========================================================
-    with st.spinner("Generating insights..."):
-        hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
-        forecast_days = forecast_months * 30
-        forecast_df = fetch_forecast_weather(chosen["lat"], chosen["lon"], forecast_days)
-
-    # =========================================================
-    # 4. SAFETY CHECKS
-    # =========================================================
-    if hist_df.empty:
-        st.error("Historical weather data unavailable for this location.")
-        return
-
-    if forecast_df.empty:
-        st.warning(
-            "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
-        )
-        forecast_df = hist_df.copy()
-
-    # =========================================================
-    # 5. FEATURE ENGINEERING (SINGLE PASS)
-    # =========================================================
-    for df_ in [hist_df, forecast_df]:
-        df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
-        df_["storm_flag"] = (df_["rainfall_mm"] >= 20).astype(int)
-        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
-        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
-        df_["roof_storm_prob"] = df_["storm_flag"]
-        df_["freeze_burst_prob"] = np.clip((df_["temperature_c"] < 1).astype(int), 0, 1)
-
-    # =========================================================
-    # 6. DEMAND DISTRIBUTION & SEASON SCORE
-    # =========================================================
-    demand = {
-        "Water Damage": float(forecast_df["water_damage_prob"].mean()),
-        "Mold Remediation": float(forecast_df["mold_prob"].mean()),
-        "Storm / Roof": float(forecast_df["roof_storm_prob"].mean()),
-        "Freeze / Pipe Burst": float(forecast_df["freeze_burst_prob"].mean()),
-    }
-    demand = {k: max(0.0, min(v, 1.0)) for k, v in demand.items()}
-    season_score = round(np.mean(list(demand.values())), 2)
-
-    # =========================================================
-    # 7. TIME WINDOWS (3 / 6 / 12 MONTHS)
-    # =========================================================
-    windows = add_time_windows(hist_df)
-
-    for i, (label, wdf) in enumerate(windows.items()):
-        st.markdown(f"**Last {label.upper()}**")
-        col1, col2 = st.columns(2)
-        with col1:
-            fig_temp = px.line(
-                wdf, x="date", y="temperature_c", title=f"Average Temperature ({label})"
-            )
-            st.plotly_chart(fig_temp, use_container_width=True, key=f"temp_chart_{i}")
-        with col2:
-            fig_hum = px.line(
-                wdf, x="date", y="humidity_pct", title=f"Average Humidity ({label})"
-            )
-            st.plotly_chart(fig_hum, use_container_width=True, key=f"hum_chart_{i}")
-
-    # =========================================================
-    # 8. SEASONAL TREND ANALYSIS — HISTORY VS FORECAST
-    # =========================================================
-    trend_fig = go.Figure()
-    trend_fig.add_trace(go.Scatter(
-        x=hist_df["date"], y=hist_df["rainfall_mm"], name="Rainfall (Historical)", mode="lines"
-    ))
-    trend_fig.add_trace(go.Scatter(
-        x=forecast_df["date"], y=forecast_df["rainfall_mm"], name="Rainfall (Forecast)", mode="lines", line=dict(dash="dash")
-    ))
-    trend_fig.add_trace(go.Scatter(
-        x=hist_df["date"], y=hist_df["temperature_c"], name="Temperature (Historical)", mode="lines", yaxis="y2"
-    ))
-    trend_fig.add_trace(go.Scatter(
-        x=forecast_df["date"], y=forecast_df["temperature_c"], name="Temperature (Forecast)", mode="lines", line=dict(dash="dash"), yaxis="y2"
-    ))
-    trend_fig.update_layout(
-        xaxis_title="Date",
-        yaxis=dict(title="Rainfall (mm)"),
-        yaxis2=dict(title="Temperature (°C)", overlaying="y", side="right"),
-        legend=dict(orientation="h"),
-        height=450
-    )
-    st.plotly_chart(trend_fig, use_container_width=True, key="trend_fig")
-
-    # =========================================================
-    # 9. DAMAGE RISK TRENDS
-    # =========================================================
-    risk_fig = go.Figure()
-    for col, label_ in [
-        ("water_damage_prob", "Water Damage"),
-        ("mold_prob", "Mold"),
-        ("roof_storm_prob", "Storm / Roof"),
-        ("freeze_burst_prob", "Freeze / Pipe Burst"),
-    ]:
-        risk_fig.add_trace(go.Scatter(
-            x=hist_df["date"], y=hist_df[col], name=f"{label_} (History)", mode="lines"
-        ))
-        risk_fig.add_trace(go.Scatter(
-            x=forecast_df["date"], y=forecast_df[col], name=f"{label_} (Forecast)", mode="lines", line=dict(dash="dash")
-        ))
-    risk_fig.update_layout(yaxis=dict(range=[0,1]), legend=dict(orientation="h"), height=450)
-    st.plotly_chart(risk_fig, use_container_width=True, key="risk_fig")
-
-    # =========================================================
-    # 10. WEATHER CHARTS — HISTORICAL
-    # =========================================================
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(
-            px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
-            use_container_width=True,
-            key="hist_rainfall"
-        )
-    with c2:
-        st.plotly_chart(
-            px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
-            use_container_width=True,
-            key="hist_temp"
-        )
-
-    # =========================================================
-    # 11. EXECUTIVE SEASONAL INSIGHTS
-    # =========================================================
-    st.subheader("🧠 Executive Seasonal Insights")
-    insights = generate_seasonal_insights(leads_df, hist_df)
-    if not insights:
-        st.info("No significant seasonal signals detected for the selected period.")
-    else:
-        for i, insight in enumerate(insights):
-            st.info(insight, icon="💡")
-
-    # =========================================================
-    # 12. SUMMARY METRICS & NARRATIVE
-    # =========================================================
-    summary = {
-        "avg_rain_hist": hist_df["rainfall_mm"].mean(),
-        "avg_rain_forecast": forecast_df["rainfall_mm"].mean(),
-        "avg_temp_hist": hist_df["temperature_c"].mean(),
-        "avg_temp_forecast": forecast_df["temperature_c"].mean(),
-        "avg_water_risk": forecast_df["water_damage_prob"].mean(),
-        "avg_mold_risk": forecast_df["mold_prob"].mean(),
-        "avg_storm_risk": forecast_df["roof_storm_prob"].mean(),
-        "avg_freeze_risk": forecast_df["freeze_burst_prob"].mean(),
-    }
-
-    st.markdown("## 📝 Narrative Analysis")
-    notes = []
-    if summary["avg_rain_forecast"] > summary["avg_rain_hist"] * 1.15:
-        notes.append("🌧️ Rainfall is trending above seasonal norms — water intrusion risk rising.")
-    elif summary["avg_rain_forecast"] < summary["avg_rain_hist"] * 0.85:
-        notes.append("🌤️ Rainfall below normal — flood exposure reduced.")
-    else:
-        notes.append("🌦️ Rainfall is seasonally stable.")
-
-    if summary["avg_temp_forecast"] > summary["avg_temp_hist"] + 2:
-        notes.append("🔥 Warmer temperatures may elevate mold risk.")
-    elif summary["avg_temp_forecast"] < summary["avg_temp_hist"] - 2:
-        notes.append("❄️ Colder temperatures increase freeze/pipe burst risk.")
-    else:
-        notes.append("🌡️ Temperatures remain within seasonal norms.")
-
-    for n in notes:
-        st.info(n)
-
-    # =========================================================
-    # 13. DAMAGE RISK OUTLOOK & RECOMMENDATIONS
-    # =========================================================
-    st.markdown("## 🧠 Damage Risk & Recommendations")
-    risk_notes = []
-    if summary["avg_water_risk"] > 0.55:
-        risk_notes.append("💧 High likelihood of water damage events.")
-    if summary["avg_mold_risk"] > 0.45:
-        risk_notes.append("🦠 Elevated mold growth risk.")
-    if summary["avg_storm_risk"] > 0.4:
-        risk_notes.append("🌪️ Storm-related roof damage risk.")
-    if summary["avg_freeze_risk"] > 0.3:
-        risk_notes.append("❄️ Freeze/pipe burst risk present.")
-    if not risk_notes:
-        risk_notes.append("🟢 Overall weather-driven damage risk is low.")
-    for r in risk_notes:
-        st.warning(r)
-
-    if season_score >= 0.6:
-        st.error("🔥 Peak Season — increase staffing, pre-stage equipment, boost emergency marketing.")
-    elif season_score >= 0.4:
-        st.warning("⚠️ Elevated Activity — flexible scheduling and monitor leads closely.")
-    else:
-        st.success("🟢 Low / Normal Season — focus on branding, SEO, and internal optimization.")
-
-    # =========================================================
-    # 14. EXPECTED LEADS & STAFFING
-    # =========================================================
-    BASE_MONTHLY_LEADS = 40
-    expected_total_leads = int(BASE_MONTHLY_LEADS * (0.6 + season_score) * forecast_months)
-    st.markdown("## 🔢 Expected Lead Volume")
-    st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
-    techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
-    st.metric("Recommended Technicians", techs)
 
 
 
