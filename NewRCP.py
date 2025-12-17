@@ -2956,30 +2956,14 @@ def page_competitor_intelligence():
     if not alerts:
         st.success("No competitive threats detected.")
     else:
-        for a in alerts:
+        for i, a in enumerate(alerts):
+            key = f"alert_{i}"
             if a.severity == "high":
-                st.error(a.message)
+                st.error(a.message, key=key)
             else:
-                st.warning(a.message)
+                st.warning(a.message, key=key)
 
     st.divider()
-
-    def market_pressure_score(df):
-        return round(
-            (
-                df["Velocity (7d)"].mean() * 0.4 +
-                df["Strength Score"].mean() * 60
-            ),
-            1
-        )
-
-    pressure = market_pressure_score(df)
-
-    st.metric(
-        "Market Pressure Score",
-        pressure,
-        delta="Rising" if pressure > 60 else "Stable"
-    )
 
     # ===============================
     # 🔍 COMPETITOR DISCOVERY
@@ -2993,12 +2977,12 @@ def page_competitor_intelligence():
             key="comp_keyword"
         )
 
-        if st.button("Run Competitor Scan"):
+        if st.button("Run Competitor Scan", key="run_comp_scan"):
             ingest_competitors_openstreetmap(lat, lon, keyword)
             st.success("Competitor scan completed.")
 
     # ===============================
-    # 📊 COMPETITOR TABLE
+    # 📊 FETCH COMPETITORS
     # ===============================
     s = get_session()
     try:
@@ -3010,17 +2994,17 @@ def page_competitor_intelligence():
         st.info("No competitors tracked yet.")
         return
 
+    # ===============================
+    # 📊 BUILD COMPETITOR TABLE
+    # ===============================
     rows = []
+    hq_lat = st.session_state.get("hq_lat")
+    hq_lon = st.session_state.get("hq_lon")
 
     for c in competitors:
         distance = 10
-        hq_lat = st.session_state.get("hq_lat")
-        hq_lon = st.session_state.get("hq_lon")
-
         if hq_lat and hq_lon and c.latitude and c.longitude:
-            distance = haversine_km(
-                hq_lat, hq_lon, c.latitude, c.longitude
-            )
+            distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
 
         score = calculate_competitor_score(
             c.rating or 0,
@@ -3044,28 +3028,60 @@ def page_competitor_intelligence():
     )
 
     st.subheader("Top Competitors")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, use_container_width=True, key="competitor_table")
 
-st.subheader("📉 SEO Visibility Gap")
+    # ===============================
+    # 📊 MARKET PRESSURE
+    # ===============================
+    def market_pressure_score(df):
+        if df.empty:
+            return 0
+        return round(
+            df["Velocity (7d)"].mean() * 0.4 +
+            df["Strength Score"].mean() * 60,
+            1
+        )
 
-you_reviews = st.number_input("Your total reviews", value=120)
-you_rating = st.number_input("Your rating", value=4.6)
+    pressure = market_pressure_score(df)
 
-gap = seo_visibility_gap(you_reviews, you_rating, df)
-
-if gap["pressure"] == "HIGH":
-    st.error(
-        f"Competitors average {gap['review_gap']} more reviews and "
-        f"{gap['rating_gap']} higher rating. SEO pressure is HIGH."
+    st.metric(
+        "Market Pressure Score",
+        pressure,
+        delta="Rising" if pressure > 60 else "Stable",
+        key="market_pressure"
     )
-else:
-    st.warning("You are competitive, but review velocity must be maintained.")
 
-st.subheader("🧠 Executive Competitive Summary")
+    # ===============================
+    # 📉 SEO VISIBILITY GAP
+    # ===============================
+    st.subheader("📉 SEO Visibility Gap")
 
-top = df.iloc[0]
+    you_reviews = st.number_input("Your total reviews", value=120, key="you_reviews")
+    you_rating = st.number_input("Your rating", value=4.6, key="you_rating")
 
-st.markdown(f"""
+    if not df.empty:
+        gap = seo_visibility_gap(you_reviews, you_rating, df)
+
+        if gap["pressure"] == "HIGH":
+            st.error(
+                f"Competitors average {gap['review_gap']} more reviews and "
+                f"{gap['rating_gap']} higher rating. SEO pressure is HIGH.",
+                key="seo_gap_high"
+            )
+        else:
+            st.warning(
+                "You are competitive, but review velocity must be maintained.",
+                key="seo_gap_warn"
+            )
+
+    # ===============================
+    # 🧠 EXECUTIVE COMPETITIVE SUMMARY
+    # ===============================
+    st.subheader("🧠 Executive Competitive Summary")
+
+    if not df.empty:
+        top = df.iloc[0]
+        st.markdown(f"""
 **Market Overview**
 
 The local restoration market is currently under **{gap['pressure']} competitive pressure**.
@@ -3081,7 +3097,8 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 1. Launch review campaigns immediately
 2. Optimize GMB categories and services
 3. Increase local landing page coverage
-""")
+""", unsafe_allow_html=True)
+# ---------- END BLOCK E ----------
 
 # ---------- END BLOCK E ----------
 
