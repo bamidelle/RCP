@@ -3040,15 +3040,16 @@ def page_competitor_intelligence():
         return
 
     rows = []
+
     for c in competitors:
-        hq_lat, hq_lon = st.session_state.get("hq_lat"), st.session_state.get("hq_lon")
-        
-        distance = (
-            haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
-            if hq_lat and c.latitude
-            else 10
-        )
-        
+        # distance fallback
+        distance = 10
+        hq_lat = st.session_state.get("hq_lat")
+        hq_lon = st.session_state.get("hq_lon")
+
+        if hq_lat and hq_lon and c.latitude and c.longitude:
+            distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
+
         score = calculate_competitor_score(
             c.rating or 0,
             c.total_reviews or 0,
@@ -3060,19 +3061,19 @@ def page_competitor_intelligence():
             "Rating": c.rating,
             "Reviews": c.total_reviews,
             "Category": c.primary_category,
+            "Distance (km)": round(distance, 2),
             "Strength Score": score,
             "Velocity (7d)": review_velocity(c.id, 7),
             "Velocity (30d)": review_velocity(c.id, 30),
         })
 
-        
-    "Velocity (7d)": review_velocity(c.id, 7),
-    "Velocity (30d)": review_velocity(c.id, 30),
-
-    df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
+    df = pd.DataFrame(rows).sort_values(
+        "Strength Score", ascending=False
+    )
 
     st.subheader("Top Competitors")
     st.dataframe(df, use_container_width=True)
+
 
 # ---------- END BLOCK E ----------
 
