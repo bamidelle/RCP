@@ -503,70 +503,110 @@ def seo_visibility_gap(you_reviews, you_rating, competitors_df):
 # ---------- END BLOCK D ----------
 # ---------- BEGIN BLOCK F: GOOGLE PLACES INGESTION ----------
 
-def ingest_competitors_google(
-    lat,
-    lon,
-    radius_m=15000,
-    keyword="water damage restoration",
-    throttle_sec=2
+import requests
+from datetime import datetime
+
+OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+
+def ingest_competitors_openstreetmap(
+    lat: float,
+    lon: float,
+    keyword: str,
+    radius_km: int = 10
 ):
     """
-    Safe, manual-trigger Google Places ingestion
+    Discover nearby competitors using OpenStreetMap (Overpass API)
+    and store them in the Competitor table.
+
+    This is a FREE alternative to Google Places.
     """
-    api_key = st.secrets.get("GOOGLE_MAPS_API_KEY", None)
-    if not api_key:
-        st.error("Google Maps API key not configured.")
-        return
 
-    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+    radius_m = radius_km * 1000
 
-    params = {
-        "location": f"{lat},{lon}",
-        "radius": radius_m,
-        "keyword": keyword,
-        "key": api_key
-    }
+    # Overpass QL — searches nodes & ways by name
+    query = f"""
+    [out:json][timeout:25];
+    (
+      node["name"~"{keyword}", i](around:{radius_m},{lat},{lon});
+      way["name"~"{keyword}", i](around:{radius_m},{lat},{lon});
+    );
+    out center;
+    """
 
-    r = requests.get(url, params=params, timeout=10)
-    r.raise_for_status()
-    results = r.json().get("results", [])
-
-    s = get_session()
     try:
-        for place in results:
-            name = place.get("name")
-            place_id = place.get("place_id")
-            rating = place.get("rating", 0)
-            reviews = place.get("user_ratings_total", 0)
-            geo = place.get("geometry", {}).get("location", {})
-
-            exists = s.query(Competitor).filter_by(place_id=place_id).first()
-            if exists:
-                exists.rating = rating
-                exists.total_reviews = reviews
-                save_competitor_snapshot(exists.id, rating, reviews)
-            else:
-                c = Competitor(
-                    name=name,
-                    place_id=place_id,
-                    latitude=geo.get("lat"),
-                    longitude=geo.get("lng"),
-                    rating=rating,
-                    total_reviews=reviews,
-                    primary_category=keyword
-                )
-                s.add(c)
-                s.flush()
-                save_competitor_snapshot(c.id, rating, reviews)
-
-            time.sleep(throttle_sec)
-
-        s.commit()
+        response = requests.post(
+            OVERPASS_URL,
+            data={"data": query},
+            headers={"User-Agent": "ReCapturePro/1.0"}
+        )
+        response.raise_for_status()
+        data = response.json()
     except Exception as e:
-        s.rollback()
-        st.error(str(e))
+        raise RuntimeError(f"OSM competitor scan failed: {e}")
+
+    if "elements" not in data or not data["elements"]:
+        return 0
+
+    session = get_session()
+    created = 0
+
+    try:
+        for el in data["elements"]:
+            tags = el.get("tags", {})
+            name = tags.get("name")
+            if not name:
+                continue
+
+            # Latitude / Longitude handling
+            if el["type"] == "node":
+                c_lat = el.get("lat")
+                c_lon = el.get("lon")
+            else:
+                center = el.get("center", {})
+                c_lat = center.get("lat")
+                c_lon = center.get("lon")
+
+            if not c_lat or not c_lon:
+                continue
+
+            # Basic category inference
+            category = (
+                tags.get("business")
+                or tags.get("shop")
+                or tags.get("amenity")
+                or "restoration"
+            )
+
+            # Prevent duplicates by name + proximity
+            existing = (
+                session.query(Competitor)
+                .filter(Competitor.name == name)
+                .first()
+            )
+
+            if existing:
+                continue
+
+            competitor = Competitor(
+                name=name,
+                latitude=c_lat,
+                longitude=c_lon,
+                primary_category=category,
+                rating=None,               # OSM does not provide ratings
+                total_reviews=0,
+                source="openstreetmap",
+                discovered_at=datetime.utcnow(),
+            )
+
+            session.add(competitor)
+            created += 1
+
+        session.commit()
     finally:
-        s.close()
+        session.close()
+
+    return created
 
 # ---------- END BLOCK F ----------
 def review_velocity(competitor_id, days):
@@ -2954,7 +2994,7 @@ def page_competitor_intelligence():
         )
 
         if st.button("Run Competitor Scan"):
-            ingest_competitors_google(lat, lon, keyword=keyword)
+            ingest_competitors_openstreetmap(lat, lon, keyword)
             st.success("Competitor scan completed.")
 
     # ===============================
