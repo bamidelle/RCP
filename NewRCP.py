@@ -3060,8 +3060,11 @@ def page_competitor_intelligence():
             "Rating": c.rating,
             "Reviews": c.total_reviews,
             "Category": c.primary_category,
-            "Strength Score": score
+            "Strength Score": score,
+            "Velocity (7d)": review_velocity(c.id, 7),
+            "Velocity (30d)": review_velocity(c.id, 30),
         })
+
         
     "Velocity (7d)": review_velocity(c.id, 7),
     "Velocity (30d)": review_velocity(c.id, 30),
