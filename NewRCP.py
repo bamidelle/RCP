@@ -875,25 +875,26 @@ def add_time_windows(df, date_col="date"):
         "6m": df[df[date_col] >= now - pd.DateOffset(months=6)],
         "12m": df[df[date_col] >= now - pd.DateOffset(months=12)],
     }
-def generate_seasonal_insights(leads_df, weather_df):
+def generate_seasonal_insights(leads_df, hist_df):
     insights = []
 
-    if weather_df["rainfall_mm"].mean() > weather_df["rainfall_mm"].median():
-        insights.append(
-            "Higher-than-normal rainfall is increasing water damage and mold remediation demand."
-        )
+    # Safety check
+    if leads_df.empty or "damage_type" not in leads_df.columns:
+        return ["ℹ️ No lead data available to generate insights."]
 
-    if weather_df["humidity_pct"].mean() > 65:
-        insights.append(
-            "Sustained high humidity levels indicate elevated mold and fungal growth risk."
-        )
-
+    # Example logic
     top_damage = leads_df["damage_type"].value_counts().idxmax()
-    insights.append(
-        f"The most frequent damage type this period is **{top_damage}**, suggesting focused crew allocation."
-    )
+    insights.append(f"Most common damage type among recent leads: {top_damage}")
+
+    # You can add more insights based on hist_df
+    avg_rain = hist_df["rainfall_mm"].mean()
+    if avg_rain > 50:
+        insights.append("🌧️ High rainfall observed, water damage risk elevated.")
+    else:
+        insights.append("🌤️ Rainfall is moderate, typical seasonal risk.")
 
     return insights
+
 
 
 def create_inspection_assignment(lead_id: str, technician_username: str, notes: str = None):
