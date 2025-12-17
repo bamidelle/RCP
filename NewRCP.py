@@ -509,104 +509,62 @@ from datetime import datetime
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 
 
-def ingest_competitors_openstreetmap(
-    lat: float,
-    lon: float,
-    keyword: str,
-    radius_km: int = 10
-):
+import requests
+
+def ingest_competitors_openstreetmap(lat, lon, keyword, radius=5000):
     """
-    Discover nearby competitors using OpenStreetMap (Overpass API)
-    and store them in the Competitor table.
-
-    This is a FREE alternative to Google Places.
+    Fetch competitors from OpenStreetMap around a point using Overpass API.
     """
+    overpass_url = "https://overpass-api.de/api/interpreter"
+    # Replace spaces in keyword for OSM query
+    keyword = keyword.lower().replace(" ", "_")
 
-    radius_m = radius_km * 1000
-
-    # Overpass QL — searches nodes & ways by name
     query = f"""
     [out:json][timeout:25];
-    (
-      node["name"~"{keyword}", i](around:{radius_m},{lat},{lon});
-      way["name"~"{keyword}", i](around:{radius_m},{lat},{lon});
-    );
+    node
+      ["name"]
+      ["amenity"]
+      (around:{radius},{lat},{lon});
     out center;
     """
 
     try:
-        response = requests.post(
-            OVERPASS_URL,
-            data={"data": query},
-            headers={"User-Agent": "ReCapturePro/1.0"}
-        )
+        response = requests.get(overpass_url, params={"data": query})
         response.raise_for_status()
         data = response.json()
+        elements = data.get("elements", [])
+
+        if not elements:
+            st.warning("No competitors found in this area.")
+            return
+
+        s = get_session()
+        try:
+            for e in elements:
+                name = e.get("tags", {}).get("name")
+                category = e.get("tags", {}).get("amenity", "unknown")
+                lat_ = e.get("lat") or e.get("center", {}).get("lat")
+                lon_ = e.get("lon") or e.get("center", {}).get("lon")
+                if name and lat_ and lon_:
+                    # Avoid duplicates
+                    exists = s.query(Competitor).filter_by(name=name).first()
+                    if not exists:
+                        comp = Competitor(
+                            name=name,
+                            primary_category=category,
+                            latitude=lat_,
+                            longitude=lon_,
+                            total_reviews=0,
+                            rating=0.0,
+                        )
+                        s.add(comp)
+            s.commit()
+        finally:
+            s.close()
+
     except Exception as e:
         raise RuntimeError(f"OSM competitor scan failed: {e}")
 
-    if "elements" not in data or not data["elements"]:
-        return 0
-
-    session = get_session()
-    created = 0
-
-    try:
-        for el in data["elements"]:
-            tags = el.get("tags", {})
-            name = tags.get("name")
-            if not name:
-                continue
-
-            # Latitude / Longitude handling
-            if el["type"] == "node":
-                c_lat = el.get("lat")
-                c_lon = el.get("lon")
-            else:
-                center = el.get("center", {})
-                c_lat = center.get("lat")
-                c_lon = center.get("lon")
-
-            if not c_lat or not c_lon:
-                continue
-
-            # Basic category inference
-            category = (
-                tags.get("business")
-                or tags.get("shop")
-                or tags.get("amenity")
-                or "restoration"
-            )
-
-            # Prevent duplicates by name + proximity
-            existing = (
-                session.query(Competitor)
-                .filter(Competitor.name == name)
-                .first()
-            )
-
-            if existing:
-                continue
-
-            competitor = Competitor(
-                name=name,
-                latitude=c_lat,
-                longitude=c_lon,
-                primary_category=category,
-                rating=None,               # OSM does not provide ratings
-                total_reviews=0,
-                source="openstreetmap",
-                discovered_at=datetime.utcnow(),
-            )
-
-            session.add(competitor)
-            created += 1
-
-        session.commit()
-    finally:
-        session.close()
-
-    return created
 
 # ---------- END BLOCK F ----------
 def review_velocity(competitor_id, days):
