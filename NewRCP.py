@@ -2667,8 +2667,11 @@ def page_seasonal_trends():
     # =========================================================
     # TIME WINDOWS (3 / 6 / 12 MONTHS)
     # =========================================================
-    windows = add_time_windows(hist_df)
+    if hist_df.empty:
+    st.info("Select a city/location to view seasonal trends.")
+    return
 
+    windows = add_time_windows(hist_df)
 
     # =========================================================
     # 4. FEATURE ENGINEERING (SINGLE PASS)
