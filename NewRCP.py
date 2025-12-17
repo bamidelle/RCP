@@ -364,6 +364,16 @@ class CompetitorSnapshot(Base):
 
     competitor = relationship("Competitor")
 
+class CompetitorAlert(Base):
+    __tablename__ = "competitor_alerts"
+
+    id = Column(Integer, primary_key=True)
+    competitor_id = Column(Integer)
+    alert_type = Column(String)
+    message = Column(String)
+    severity = Column(String)  # low / medium / high
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # ---------- END BLOCK A2 ----------
 
 # ---------- END BLOCK A ----------
@@ -477,6 +487,18 @@ def save_competitor_snapshot(competitor_id, rating, total_reviews):
         s.rollback()
     finally:
         s.close()
+def seo_visibility_gap(you_reviews, you_rating, competitors_df):
+    avg_comp_reviews = competitors_df["Reviews"].mean()
+    avg_comp_rating = competitors_df["Rating"].mean()
+
+    review_gap = avg_comp_reviews - you_reviews
+    rating_gap = avg_comp_rating - you_rating
+
+    return {
+        "review_gap": round(review_gap, 1),
+        "rating_gap": round(rating_gap, 2),
+        "pressure": "HIGH" if review_gap > 20 or rating_gap > 0.3 else "MODERATE"
+    }
 
 # ---------- END BLOCK D ----------
 # ---------- BEGIN BLOCK F: GOOGLE PLACES INGESTION ----------
@@ -560,6 +582,34 @@ def review_velocity(competitor_id, days):
             .count()
         )
         return round(count / max(days, 1), 2)
+    finally:
+        s.close()
+def generate_competitor_alerts():
+    s = get_session()
+    try:
+        competitors = s.query(Competitor).all()
+
+        for c in competitors:
+            v7 = review_velocity(c.id, 7)
+            v30 = review_velocity(c.id, 30)
+
+            if v7 >= 10:
+                s.add(CompetitorAlert(
+                    competitor_id=c.id,
+                    alert_type="REVIEW_SPIKE",
+                    severity="high",
+                    message=f"{c.name} gained {v7} reviews in 7 days."
+                ))
+
+            if v30 >= 25:
+                s.add(CompetitorAlert(
+                    competitor_id=c.id,
+                    alert_type="AGGRESSIVE_GROWTH",
+                    severity="high",
+                    message=f"{c.name} gained {v30} reviews in 30 days."
+                ))
+
+        s.commit()
     finally:
         s.close()
 
@@ -2846,20 +2896,70 @@ def page_seasonal_trends():
 
 
 # ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
-
 def page_competitor_intelligence():
     st.title("🏆 Competitor Intelligence")
+
+    # ===============================
+    # 🚨 COMPETITIVE ALERTS (TOP)
+    # ===============================
+    st.subheader("🚨 Competitive Alerts")
+
+    s = get_session()
+    alerts = (
+        s.query(CompetitorAlert)
+        .order_by(CompetitorAlert.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    s.close()
+
+    if not alerts:
+        st.success("No competitive threats detected.")
+    else:
+        for a in alerts:
+            if a.severity == "high":
+                st.error(a.message)
+            else:
+                st.warning(a.message)
+
+    st.divider()
+
+    def market_pressure_score(df):
+    return round(
+        (
+            df["Velocity (7d)"].mean() * 0.4 +
+            df["Strength Score"].mean() * 60
+        ),
+        1
+    )
+
+    pressure = market_pressure_score(df)
+
+    st.metric(
+        "Market Pressure Score",
+        pressure,
+        delta="Rising" if pressure > 60 else "Stable"
+    )
+
+    # ===============================
+    # 🔍 COMPETITOR DISCOVERY
+    # ===============================
     with st.expander("➕ Discover Competitors"):
-        lat = st.number_input("Latitude", value=39.9612)
-        lon = st.number_input("Longitude", value=-82.9988)
-        keyword = st.text_input("Search keyword", "water damage restoration")
-    
+        lat = st.number_input("Latitude", value=39.9612, key="comp_lat")
+        lon = st.number_input("Longitude", value=-82.9988, key="comp_lon")
+        keyword = st.text_input(
+            "Search keyword",
+            "water damage restoration",
+            key="comp_keyword"
+        )
+
         if st.button("Run Competitor Scan"):
             ingest_competitors_google(lat, lon, keyword=keyword)
             st.success("Competitor scan completed.")
 
-
-
+    # ===============================
+    # 📊 COMPETITOR TABLE
+    # ===============================
     s = get_session()
     try:
         competitors = s.query(Competitor).all()
@@ -2873,13 +2973,14 @@ def page_competitor_intelligence():
     rows = []
 
     for c in competitors:
-        # distance fallback
         distance = 10
         hq_lat = st.session_state.get("hq_lat")
         hq_lon = st.session_state.get("hq_lon")
 
         if hq_lat and hq_lon and c.latitude and c.longitude:
-            distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
+            distance = haversine_km(
+                hq_lat, hq_lon, c.latitude, c.longitude
+            )
 
         score = calculate_competitor_score(
             c.rating or 0,
@@ -2905,8 +3006,45 @@ def page_competitor_intelligence():
     st.subheader("Top Competitors")
     st.dataframe(df, use_container_width=True)
 
+st.subheader("📉 SEO Visibility Gap")
+
+you_reviews = st.number_input("Your total reviews", value=120)
+you_rating = st.number_input("Your rating", value=4.6)
+
+gap = seo_visibility_gap(you_reviews, you_rating, df)
+
+if gap["pressure"] == "HIGH":
+    st.error(
+        f"Competitors average {gap['review_gap']} more reviews and "
+        f"{gap['rating_gap']} higher rating. SEO pressure is HIGH."
+    )
+else:
+    st.warning("You are competitive, but review velocity must be maintained.")
+
+st.subheader("🧠 Executive Competitive Summary")
+
+top = df.iloc[0]
+
+st.markdown(f"""
+**Market Overview**
+
+The local restoration market is currently under **{gap['pressure']} competitive pressure**.
+
+**Key Threat**
+- {top['Name']} leads the market with {top['Reviews']} reviews and rapid growth velocity.
+
+**Risk Outlook**
+- Continued review acceleration from competitors could reduce inbound lead share.
+- Immediate review acquisition and proximity-focused SEO are recommended.
+
+**Recommended Actions**
+1. Launch review campaigns immediately
+2. Optimize GMB categories and services
+3. Increase local landing page coverage
+""")
 
 # ---------- END BLOCK E ----------
+
 
 # ----------------------
 # Router (main)
