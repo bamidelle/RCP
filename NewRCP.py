@@ -3019,13 +3019,14 @@ else:
 def page_competitor_intelligence():
     st.title("🏆 Competitor Intelligence")
     with st.expander("➕ Discover Competitors"):
-    lat = st.number_input("Latitude", value=39.9612)
-    lon = st.number_input("Longitude", value=-82.9988)
-    keyword = st.text_input("Search keyword", "water damage restoration")
+        lat = st.number_input("Latitude", value=39.9612)
+        lon = st.number_input("Longitude", value=-82.9988)
+        keyword = st.text_input("Search keyword", "water damage restoration")
+    
+        if st.button("Run Competitor Scan"):
+            ingest_competitors_google(lat, lon, keyword=keyword)
+            st.success("Competitor scan completed.")
 
-    if st.button("Run Competitor Scan"):
-        ingest_competitors_google(lat, lon, keyword=keyword)
-        st.success("Competitor scan completed.")
 
 
     s = get_session()
