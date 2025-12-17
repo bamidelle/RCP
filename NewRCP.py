@@ -2581,18 +2581,18 @@ def add_time_windows(hist_df):
     return windows
 
 # -------------------------------------------------------------
-# SEASONAL TRENDS PAGE — PRODUCTION VERSION
+# SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
 # -------------------------------------------------------------
 def page_seasonal_trends():
     import numpy as np
     import pandas as pd
-    import streamlit as st
     import plotly.express as px
     import plotly.graph_objects as go
+    import streamlit as st
 
-    st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Intelligence")
+    st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
     st.markdown(
-        "<em>Unified weather analytics, damage forecasting, and executive decision insights.</em>",
+        "<em>Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations.</em>",
         unsafe_allow_html=True
     )
 
@@ -2607,7 +2607,7 @@ def page_seasonal_trends():
     matches = search_cities(country_code, city_query)
 
     if not matches:
-        st.info("Start typing a city name to begin.")
+        st.info("Start typing a city name.")
         return
 
     labels = [
@@ -2622,23 +2622,30 @@ def page_seasonal_trends():
     # =========================================================
     # 2. CONTROLS
     # =========================================================
-    hist_range = st.selectbox("Historical window", ["3 months", "6 months", "12 months"], index=1)
-    forecast_range = st.selectbox("Forecast horizon", ["3 months", "6 months", "12 months"])
+    hist_range = st.selectbox(
+        "Historical window",
+        ["3 months", "6 months", "12 months"],
+        index=1
+    )
+
+    forecast_range = st.selectbox(
+        "Forecast horizon",
+        ["3 months", "6 months", "12 months"]
+    )
 
     months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
     forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
 
-    if not st.button("Generate Seasonal Intelligence"):
+    if not st.button("Generate Insights"):
         return
 
     # =========================================================
     # 3. DATA FETCH
     # =========================================================
-    with st.spinner("Analyzing weather intelligence..."):
+    with st.spinner("Generating insights..."):
         hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
-        forecast_df = fetch_forecast_weather(
-            chosen["lat"], chosen["lon"], forecast_months * 30
-        )
+        forecast_days = forecast_months * 30
+        forecast_df = fetch_forecast_weather(chosen["lat"], chosen["lon"], forecast_days)
 
     # =========================================================
     # 4. SAFETY CHECKS
@@ -2648,23 +2655,24 @@ def page_seasonal_trends():
         return
 
     if forecast_df.empty:
-        st.warning("Forecast API limited — extrapolating from historical patterns.")
+        st.warning(
+            "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
+        )
         forecast_df = hist_df.copy()
 
     # =========================================================
     # 5. FEATURE ENGINEERING (SINGLE PASS)
     # =========================================================
-    for df in (hist_df, forecast_df):
-        df["humidity_pct"] = np.clip(60 + df["rainfall_mm"] * 0.3, 30, 100)
-        df["storm_flag"] = (df["rainfall_mm"] >= 20).astype(int)
-
-        df["water_damage_prob"] = np.clip(df["rainfall_mm"] / 120, 0, 1)
-        df["mold_prob"] = np.clip(df["humidity_pct"] / 100, 0, 1)
-        df["roof_storm_prob"] = df["storm_flag"]
-        df["freeze_burst_prob"] = (df["temperature_c"] < 1).astype(int)
+    for df_ in [hist_df, forecast_df]:
+        df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
+        df_["storm_flag"] = (df_["rainfall_mm"] >= 20).astype(int)
+        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
+        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
+        df_["roof_storm_prob"] = df_["storm_flag"]
+        df_["freeze_burst_prob"] = np.clip((df_["temperature_c"] < 1).astype(int), 0, 1)
 
     # =========================================================
-    # 6. DEMAND DISTRIBUTION (SINGLE SOURCE)
+    # 6. DEMAND DISTRIBUTION & SEASON SCORE
     # =========================================================
     demand = {
         "Water Damage": float(forecast_df["water_damage_prob"].mean()),
@@ -2672,130 +2680,168 @@ def page_seasonal_trends():
         "Storm / Roof": float(forecast_df["roof_storm_prob"].mean()),
         "Freeze / Pipe Burst": float(forecast_df["freeze_burst_prob"].mean()),
     }
-
     demand = {k: max(0.0, min(v, 1.0)) for k, v in demand.items()}
     season_score = round(np.mean(list(demand.values())), 2)
 
     # =========================================================
-    # 7. SEASONAL TREND ANALYSIS — HISTORY VS FORECAST
+    # 7. TIME WINDOWS (3 / 6 / 12 MONTHS)
     # =========================================================
-    st.markdown("## 📊 Seasonal Weather Trends")
+    windows = add_time_windows(hist_df)
 
+    for i, (label, wdf) in enumerate(windows.items()):
+        st.markdown(f"**Last {label.upper()}**")
+        col1, col2 = st.columns(2)
+        with col1:
+            fig_temp = px.line(
+                wdf, x="date", y="temperature_c", title=f"Average Temperature ({label})"
+            )
+            st.plotly_chart(fig_temp, use_container_width=True, key=f"temp_chart_{i}")
+        with col2:
+            fig_hum = px.line(
+                wdf, x="date", y="humidity_pct", title=f"Average Humidity ({label})"
+            )
+            st.plotly_chart(fig_hum, use_container_width=True, key=f"hum_chart_{i}")
+
+    # =========================================================
+    # 8. SEASONAL TREND ANALYSIS — HISTORY VS FORECAST
+    # =========================================================
     trend_fig = go.Figure()
-
     trend_fig.add_trace(go.Scatter(
-        x=hist_df["date"], y=hist_df["rainfall_mm"],
-        name="Rainfall (Historical)", mode="lines"
+        x=hist_df["date"], y=hist_df["rainfall_mm"], name="Rainfall (Historical)", mode="lines"
     ))
     trend_fig.add_trace(go.Scatter(
-        x=forecast_df["date"], y=forecast_df["rainfall_mm"],
-        name="Rainfall (Forecast)", mode="lines", line=dict(dash="dash")
+        x=forecast_df["date"], y=forecast_df["rainfall_mm"], name="Rainfall (Forecast)", mode="lines", line=dict(dash="dash")
     ))
     trend_fig.add_trace(go.Scatter(
-        x=hist_df["date"], y=hist_df["temperature_c"],
-        name="Temperature (Historical)", mode="lines", yaxis="y2"
+        x=hist_df["date"], y=hist_df["temperature_c"], name="Temperature (Historical)", mode="lines", yaxis="y2"
     ))
     trend_fig.add_trace(go.Scatter(
-        x=forecast_df["date"], y=forecast_df["temperature_c"],
-        name="Temperature (Forecast)", mode="lines",
-        line=dict(dash="dash"), yaxis="y2"
+        x=forecast_df["date"], y=forecast_df["temperature_c"], name="Temperature (Forecast)", mode="lines", line=dict(dash="dash"), yaxis="y2"
     ))
-
     trend_fig.update_layout(
+        xaxis_title="Date",
         yaxis=dict(title="Rainfall (mm)"),
         yaxis2=dict(title="Temperature (°C)", overlaying="y", side="right"),
         legend=dict(orientation="h"),
         height=450
     )
-
-    st.plotly_chart(trend_fig, use_container_width=True)
-
-    # =========================================================
-    # 8. TIME WINDOWS (3 / 6 / 12 MONTHS)
-    # =========================================================
-    st.markdown("## 🌡️ Temperature & Humidity Trends")
-
-    windows = add_time_windows(hist_df)
-    for label, wdf in windows.items():
-        st.markdown(f"**Last {label.upper()}**")
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.plotly_chart(px.line(wdf, x="date", y="temperature_c"), use_container_width=True)
-        with c2:
-            st.plotly_chart(px.line(wdf, x="date", y="humidity_pct"), use_container_width=True)
+    st.plotly_chart(trend_fig, use_container_width=True, key="trend_fig")
 
     # =========================================================
-    # 9. DAMAGE RISK TRENDS — HISTORY VS FORECAST
+    # 9. DAMAGE RISK TRENDS
     # =========================================================
-    st.markdown("## 📉 Damage Risk Trends")
-
     risk_fig = go.Figure()
-    for col, label in [
+    for col, label_ in [
         ("water_damage_prob", "Water Damage"),
         ("mold_prob", "Mold"),
         ("roof_storm_prob", "Storm / Roof"),
         ("freeze_burst_prob", "Freeze / Pipe Burst"),
     ]:
         risk_fig.add_trace(go.Scatter(
-            x=hist_df["date"], y=hist_df[col],
-            name=f"{label} (History)", mode="lines"
+            x=hist_df["date"], y=hist_df[col], name=f"{label_} (History)", mode="lines"
         ))
         risk_fig.add_trace(go.Scatter(
-            x=forecast_df["date"], y=forecast_df[col],
-            name=f"{label} (Forecast)", mode="lines", line=dict(dash="dash")
+            x=forecast_df["date"], y=forecast_df[col], name=f"{label_} (Forecast)", mode="lines", line=dict(dash="dash")
         ))
-
-    risk_fig.update_layout(yaxis=dict(range=[0, 1]), height=450)
-    st.plotly_chart(risk_fig, use_container_width=True)
-
-    # =========================================================
-    # 10. EXECUTIVE SEASONAL SUMMARY (AI-STYLE)
-    # =========================================================
-    st.markdown("## 🧠 Executive Seasonal Summary")
-
-    top_risk = max(demand, key=demand.get)
-    avg_rain_delta = forecast_df["rainfall_mm"].mean() - hist_df["rainfall_mm"].mean()
-    avg_temp_delta = forecast_df["temperature_c"].mean() - hist_df["temperature_c"].mean()
-
-    st.markdown(f"- 📍 **Location:** {selected}, {country}")
-    st.markdown(f"- 🔥 **Season Score:** {season_score}")
-    st.markdown(f"- 🚨 **Top Risk Driver:** **{top_risk}** ({int(demand[top_risk]*100)}%)")
+    risk_fig.update_layout(yaxis=dict(range=[0,1]), legend=dict(orientation="h"), height=450)
+    st.plotly_chart(risk_fig, use_container_width=True, key="risk_fig")
 
     # =========================================================
-    # 11. WEATHER CHARTS (SUPPORTING)
+    # 10. WEATHER CHARTS — HISTORICAL
     # =========================================================
-    st.markdown("## 📈 Weather Detail")
-
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(px.line(hist_df, x="date", y="rainfall_mm"), use_container_width=True)
+        st.plotly_chart(
+            px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
+            use_container_width=True,
+            key="hist_rainfall"
+        )
     with c2:
-        st.plotly_chart(px.line(hist_df, x="date", y="temperature_c"), use_container_width=True)
+        st.plotly_chart(
+            px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
+            use_container_width=True,
+            key="hist_temp"
+        )
 
     # =========================================================
-    # 12–16. STRATEGIC OUTLOOK (MERGED & UPGRADED)
+    # 11. EXECUTIVE SEASONAL INSIGHTS
     # =========================================================
-    st.markdown("## 🎯 Strategic Outlook")
+    st.subheader("🧠 Executive Seasonal Insights")
+    insights = generate_seasonal_insights(leads_df, hist_df)
+    if not insights:
+        st.info("No significant seasonal signals detected for the selected period.")
+    else:
+        for i, insight in enumerate(insights):
+            st.info(insight, icon="💡")
+
+    # =========================================================
+    # 12. SUMMARY METRICS & NARRATIVE
+    # =========================================================
+    summary = {
+        "avg_rain_hist": hist_df["rainfall_mm"].mean(),
+        "avg_rain_forecast": forecast_df["rainfall_mm"].mean(),
+        "avg_temp_hist": hist_df["temperature_c"].mean(),
+        "avg_temp_forecast": forecast_df["temperature_c"].mean(),
+        "avg_water_risk": forecast_df["water_damage_prob"].mean(),
+        "avg_mold_risk": forecast_df["mold_prob"].mean(),
+        "avg_storm_risk": forecast_df["roof_storm_prob"].mean(),
+        "avg_freeze_risk": forecast_df["freeze_burst_prob"].mean(),
+    }
+
+    st.markdown("## 📝 Narrative Analysis")
+    notes = []
+    if summary["avg_rain_forecast"] > summary["avg_rain_hist"] * 1.15:
+        notes.append("🌧️ Rainfall is trending above seasonal norms — water intrusion risk rising.")
+    elif summary["avg_rain_forecast"] < summary["avg_rain_hist"] * 0.85:
+        notes.append("🌤️ Rainfall below normal — flood exposure reduced.")
+    else:
+        notes.append("🌦️ Rainfall is seasonally stable.")
+
+    if summary["avg_temp_forecast"] > summary["avg_temp_hist"] + 2:
+        notes.append("🔥 Warmer temperatures may elevate mold risk.")
+    elif summary["avg_temp_forecast"] < summary["avg_temp_hist"] - 2:
+        notes.append("❄️ Colder temperatures increase freeze/pipe burst risk.")
+    else:
+        notes.append("🌡️ Temperatures remain within seasonal norms.")
+
+    for n in notes:
+        st.info(n)
+
+    # =========================================================
+    # 13. DAMAGE RISK OUTLOOK & RECOMMENDATIONS
+    # =========================================================
+    st.markdown("## 🧠 Damage Risk & Recommendations")
+    risk_notes = []
+    if summary["avg_water_risk"] > 0.55:
+        risk_notes.append("💧 High likelihood of water damage events.")
+    if summary["avg_mold_risk"] > 0.45:
+        risk_notes.append("🦠 Elevated mold growth risk.")
+    if summary["avg_storm_risk"] > 0.4:
+        risk_notes.append("🌪️ Storm-related roof damage risk.")
+    if summary["avg_freeze_risk"] > 0.3:
+        risk_notes.append("❄️ Freeze/pipe burst risk present.")
+    if not risk_notes:
+        risk_notes.append("🟢 Overall weather-driven damage risk is low.")
+    for r in risk_notes:
+        st.warning(r)
 
     if season_score >= 0.6:
-        st.error("🔥 **Peak Season** — Increase staffing, pre-stage equipment, aggressively scale ads.")
+        st.error("🔥 Peak Season — increase staffing, pre-stage equipment, boost emergency marketing.")
     elif season_score >= 0.4:
-        st.warning("⚠️ **Elevated Activity** — Maintain flexible scheduling and targeted marketing.")
+        st.warning("⚠️ Elevated Activity — flexible scheduling and monitor leads closely.")
     else:
-        st.success("🟢 **Low / Stable Season** — Focus on SEO, branding, and internal optimization.")
+        st.success("🟢 Low / Normal Season — focus on branding, SEO, and internal optimization.")
 
     # =========================================================
-    # 17. EXPECTED LEADS & STAFFING
+    # 14. EXPECTED LEADS & STAFFING
     # =========================================================
     BASE_MONTHLY_LEADS = 40
-    expected_leads = int(BASE_MONTHLY_LEADS * (0.6 + season_score) * forecast_months)
+    expected_total_leads = int(BASE_MONTHLY_LEADS * (0.6 + season_score) * forecast_months)
+    st.markdown("## 🔢 Expected Lead Volume")
+    st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
+    techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
+    st.metric("Recommended Technicians", techs)
 
-    st.markdown("## 🔢 Expected Workload")
-    st.metric("Projected Jobs", expected_leads)
-
-    technicians_needed = max(1, int(np.ceil(expected_leads / (18 * forecast_months))))
-    st.metric("Recommended Technicians", technicians_needed)
 
 
 # ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
