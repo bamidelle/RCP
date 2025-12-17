@@ -2965,13 +2965,13 @@ def page_competitor_intelligence():
     st.divider()
 
     def market_pressure_score(df):
-    return round(
-        (
-            df["Velocity (7d)"].mean() * 0.4 +
-            df["Strength Score"].mean() * 60
-        ),
-        1
-    )
+        return round(
+            (
+                df["Velocity (7d)"].mean() * 0.4 +
+                df["Strength Score"].mean() * 60
+            ),
+            1
+        )
 
     pressure = market_pressure_score(df)
 
