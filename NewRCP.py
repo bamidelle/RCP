@@ -914,6 +914,87 @@ def get_leads_df():
     finally:
         s.close()
 
+
+def get_jobs_for_period(start_dt, end_dt):
+    df = get_leads_df()  # existing function
+
+    if df.empty:
+        return df
+
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+    df = df[(df["created_at"] >= start_dt) & (df["created_at"] <= end_dt)]
+
+    return df
+
+def compute_job_volume_metrics(df):
+    if df.empty:
+        return {}
+
+    return {
+        "total_jobs": len(df),
+        "jobs_per_day": round(len(df) / max(df["created_at"].dt.date.nunique(), 1), 2),
+        "job_types": df["job_type"].value_counts().to_dict(),
+        "lead_sources": df["lead_source"].value_counts().to_dict(),
+    }
+
+def compute_revenue_metrics(df):
+    if df.empty or "revenue" not in df.columns:
+        return {}
+
+    total_revenue = df["revenue"].sum()
+
+    return {
+        "total_revenue": total_revenue,
+        "avg_revenue_per_job": round(total_revenue / max(len(df), 1), 2),
+        "revenue_by_job_type": df.groupby("job_type")["revenue"].sum().to_dict(),
+        "revenue_concentration": round(
+            df.groupby("job_type")["revenue"].sum().max() / max(total_revenue, 1), 2
+        )
+    }
+def compute_efficiency_metrics(df):
+    if df.empty:
+        return {}
+
+    return {
+        "high_volume_low_value_jobs": df.groupby("job_type")
+            .agg(count=("id", "count"), revenue=("revenue", "sum"))
+            .query("count > 3 and revenue < revenue.mean()")
+            .index.tolist()
+    }
+
+def generate_synthetic_signals(df):
+    signals = []
+
+    if df.empty:
+        return signals
+
+    rev = df["revenue"].sum()
+    jobs = len(df)
+
+    if jobs > 0 and rev / jobs < df["revenue"].median():
+        signals.append("⚠️ Job volume is high but revenue quality is declining.")
+
+    top_job = df["job_type"].value_counts().idxmax()
+    if df["job_type"].value_counts()[top_job] / jobs > 0.6:
+        signals.append(f"⚠️ Revenue risk: Over-dependence on {top_job} jobs.")
+
+    return signals
+
+
+def compute_business_intelligence(range_key, custom_start=None, custom_end=None):
+    start, end = resolve_time_window(range_key, custom_start, custom_end)
+    df = get_jobs_for_period(start, end)
+
+    return {
+        "window": (start, end),
+        "volume": compute_job_volume_metrics(df),
+        "revenue": compute_revenue_metrics(df),
+        "efficiency": compute_efficiency_metrics(df),
+        "signals": generate_synthetic_signals(df),
+        "raw_df": df
+    }
+
+
 def add_time_windows(df, date_col="date"):
     df[date_col] = pd.to_datetime(df[date_col])
     now = df[date_col].max()
@@ -1031,8 +1112,30 @@ def classify_tech_status(ts):
         return "🟡 Idle"
     else:
         return "🔴 Offline"
+#-----------TIME WINDOW--------------
 
+from datetime import datetime, timedelta
 
+def resolve_time_window(range_key: str, custom_start=None, custom_end=None):
+    now = datetime.utcnow()
+
+    if range_key == "daily":
+        return now - timedelta(days=1), now
+    if range_key == "weekly":
+        return now - timedelta(days=7), now
+    if range_key == "30d":
+        return now - timedelta(days=30), now
+    if range_key == "90d":
+        return now - timedelta(days=90), now
+    if range_key == "6m":
+        return now - timedelta(days=180), now
+    if range_key == "12m":
+        return now - timedelta(days=365), now
+    if range_key == "custom" and custom_start and custom_end:
+        return custom_start, custom_end
+
+    # fallback
+    return now - timedelta(days=30), now
 
 
 
@@ -2018,7 +2121,128 @@ def page_analytics():
     else:
         st.info("No overdue leads currently.")
         
-STATUS_COLORS = {
+
+def page_business_intelligence():
+    st.markdown("## 🧠 Business Intelligence")
+    st.markdown(
+        "_A time-aware executive view of job volume, revenue quality, efficiency, and risk._"
+    )
+
+    # -----------------------------
+    # TIME WINDOW CONTROLS
+    # -----------------------------
+    col1, col2 = st.columns([2, 3])
+
+    with col1:
+        range_key = st.selectbox(
+            "Time Range",
+            ["daily", "weekly", "30d", "90d", "6m", "12m", "custom"],
+            index=2
+        )
+
+    with col2:
+        custom_start, custom_end = None, None
+        if range_key == "custom":
+            custom_start = st.date_input("Start date")
+            custom_end = st.date_input("End date")
+
+    data = compute_business_intelligence(
+        range_key,
+        custom_start,
+        custom_end
+    )
+
+    df = data.get("raw_df")
+
+    if df is None or df.empty:
+        st.warning("No jobs found for this period.")
+        return
+
+    # -----------------------------
+    # JOB VOLUME & MIX
+    # -----------------------------
+    st.markdown("### 📊 Job Volume & Mix")
+
+    v = data.get("volume", {})
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Jobs", v.get("total_jobs", 0))
+    c2.metric("Jobs / Day", v.get("jobs_per_day", 0))
+    c3.metric("Lead Sources", len(v.get("lead_sources", {})))
+
+    if v.get("job_types"):
+        st.plotly_chart(
+            px.bar(
+                x=list(v["job_types"].keys()),
+                y=list(v["job_types"].values()),
+                labels={"x": "Job Type", "y": "Count"},
+                title="Jobs by Type"
+            ),
+            use_container_width=True
+        )
+
+    # -----------------------------
+    # REVENUE INTELLIGENCE
+    # -----------------------------
+    st.markdown("### 💰 Revenue Intelligence")
+
+    r = data.get("revenue", {})
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Revenue", f"${r.get('total_revenue', 0):,.0f}")
+    c2.metric("Avg / Job", f"${r.get('avg_revenue_per_job', 0):,.0f}")
+    c3.metric(
+        "Revenue Risk",
+        f"{int(r.get('revenue_concentration', 0) * 100)}% Top Dependency"
+    )
+
+    if r.get("revenue_by_job_type"):
+        st.plotly_chart(
+            px.pie(
+                names=list(r["revenue_by_job_type"].keys()),
+                values=list(r["revenue_by_job_type"].values()),
+                title="Revenue Share by Job Type"
+            ),
+            use_container_width=True
+        )
+
+    # -----------------------------
+    # EFFICIENCY & LEVERAGE
+    # -----------------------------
+    st.markdown("### ⚙️ Efficiency & Leverage")
+
+    ineff = data.get("efficiency", {}).get("high_volume_low_value_jobs", [])
+
+    if ineff:
+        st.warning(
+            "⚠️ High-effort, low-return job types detected: "
+            + ", ".join(ineff)
+        )
+    else:
+        st.success("No major efficiency leaks detected in this period.")
+
+    # -----------------------------
+    # EXECUTIVE SIGNALS
+    # -----------------------------
+    st.markdown("### 🧠 Executive Signals")
+
+    signals = data.get("signals", [])
+
+    if not signals:
+        st.info("No abnormal signals detected. Business activity is within normal range.")
+    else:
+        for s in signals:
+            st.error(s)
+
+    # -----------------------------
+    # RAW DATA
+    # -----------------------------
+    with st.expander("📄 View Underlying Jobs Data"):
+        st.dataframe(df, use_container_width=True)
+
+
+
+    STATUS_COLORS = {
     "live": "green",
     "recent": "orange",
     "offline": "red",
@@ -3078,6 +3302,8 @@ elif page == "Competitor Intelligence":
     page_competitor_intelligence()
 elif page == "CPA & ROI":
     page_cpa_roi()
+elif page == "Business Intelligence":
+    page_business_intelligence()
 elif page == "AI Recommendations":
     page_ai_recommendations()
 elif page == "ML (internal)":
