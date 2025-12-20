@@ -927,58 +927,65 @@ def get_jobs_for_period(start_dt, end_dt):
     return df
 
 def compute_job_volume_metrics(df):
-    if df.empty:
-        return {}
-
     return {
         "total_jobs": len(df),
-        "jobs_per_day": round(len(df) / max(df["created_at"].dt.date.nunique(), 1), 2),
-        "job_types": df["damage_type"].value_counts().to_dict() if "damage_type" in df else {},
-        "lead_sources": df["lead_source"].value_counts().to_dict(),
+        "job_types": safe_col(df, "job_type").value_counts().to_dict(),
+        "lead_sources": safe_col(df, "lead_source").value_counts().to_dict(),
     }
+
+
 
 def compute_revenue_metrics(df):
-    if df.empty or "revenue" not in df.columns:
-        return {}
+    revenue_col = safe_col(df, "estimated_value", default_dtype=float).fillna(0)
 
-    total_revenue = df["revenue"].sum()
+    total_revenue = revenue_col.sum()
+
+    revenue_per_job = (
+        total_revenue / len(df)
+        if len(df) > 0 else 0
+    )
 
     return {
-        "total_revenue": total_revenue,
-        "avg_revenue_per_job": round(total_revenue / max(len(df), 1), 2),
-        "revenue_by_job_type": df.groupby("job_type")["revenue"].sum().to_dict(),
-        "revenue_concentration": round(
-            df.groupby("job_type")["revenue"].sum().max() / max(total_revenue, 1), 2
-        )
+        "total_revenue": float(total_revenue),
+        "revenue_per_job": float(revenue_per_job),
     }
+
 def compute_efficiency_metrics(df):
-    if df.empty:
-        return {}
+    revenue_col = safe_col(df, "estimated_value", default_dtype=float).fillna(0)
+
+    jobs = len(df)
+    total_revenue = revenue_col.sum()
 
     return {
-        "high_volume_low_value_jobs": df.groupby("job_type")
-            .agg(count=("id", "count"), revenue=("revenue", "sum"))
-            .query("count > 3 and revenue < revenue.mean()")
-            .index.tolist()
+        "jobs": jobs,
+        "revenue_per_job": (
+            total_revenue / jobs if jobs > 0 else 0
+        ),
     }
+
 
 def generate_synthetic_signals(df):
     signals = []
 
-    if df.empty:
+    revenue_col = safe_col(df, "estimated_value", default_dtype=float).fillna(0)
+    job_type_col = safe_col(df, "job_type")
+
+    if len(df) == 0:
+        signals.append("🧊 No job activity detected in this period.")
         return signals
 
-    rev = df["revenue"].sum()
-    jobs = len(df)
+    avg_revenue = revenue_col.mean()
 
-    if jobs > 0 and rev / jobs < df["revenue"].median():
-        signals.append("⚠️ Job volume is high but revenue quality is declining.")
+    if avg_revenue < 500:
+        signals.append("⚠️ High job volume but low average revenue per job.")
 
-    top_job = df["job_type"].value_counts().idxmax()
-    if df["job_type"].value_counts()[top_job] / jobs > 0.6:
-        signals.append(f"⚠️ Revenue risk: Over-dependence on {top_job} jobs.")
+    dominant_job = job_type_col.value_counts().idxmax() if not job_type_col.dropna().empty else None
+
+    if dominant_job:
+        signals.append(f"🎯 Revenue is highly concentrated in '{dominant_job}' jobs.")
 
     return signals
+
 
 def seasonal_baseline(all_jobs, start_date, end_date):
     same_months = list(range(start_date.month, end_date.month + 1))
