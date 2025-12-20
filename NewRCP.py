@@ -933,7 +933,7 @@ def compute_job_volume_metrics(df):
     return {
         "total_jobs": len(df),
         "jobs_per_day": round(len(df) / max(df["created_at"].dt.date.nunique(), 1), 2),
-        "job_types": df["job_type"].value_counts().to_dict(),
+        "job_types": df["damage_type"].value_counts().to_dict() if "damage_type" in df else {},
         "lead_sources": df["lead_source"].value_counts().to_dict(),
     }
 
@@ -1001,6 +1001,10 @@ def shift_period(start, end):
     delta = end - start
     return start - delta, end - delta
 
+# ⬇️⬇️⬇️ PASTE IT RIGHT HERE ⬇️⬇️⬇️
+def safe_col(df, col):
+    return df[col] if col in df.columns else pd.Series(dtype=object)
+    
 def analyze_job_types(df):
     if df.empty:
         return {}
