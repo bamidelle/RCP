@@ -980,19 +980,184 @@ def generate_synthetic_signals(df):
 
     return signals
 
+def seasonal_baseline(all_jobs, start_date, end_date):
+    same_months = list(range(start_date.month, end_date.month + 1))
+
+    hist = all_jobs[
+        all_jobs["created_at"].dt.month.isin(same_months)
+    ]
+
+    if hist.empty:
+        return None
+
+    return {
+        "avg_jobs": hist.groupby(hist["created_at"].dt.year).size().mean(),
+        "avg_revenue": hist.groupby(hist["created_at"].dt.year)["estimated_value"].sum().mean(),
+        "avg_rev_per_job": hist["estimated_value"].mean()
+    }
+
+
+def shift_period(start, end):
+    delta = end - start
+    return start - delta, end - delta
+
+def analyze_job_types(df):
+    if df.empty:
+        return {}
+
+    grouped = df.groupby("damage_type").agg(
+        jobs=("id", "count"),
+        revenue=("estimated_value", "sum"),
+        avg_revenue=("estimated_value", "mean"),
+        revenue_std=("estimated_value", "std")
+    ).reset_index()
+
+    total_jobs = grouped["jobs"].sum()
+    total_revenue = grouped["revenue"].sum()
+
+    grouped["job_share"] = grouped["jobs"] / total_jobs
+    grouped["revenue_share"] = grouped["revenue"] / total_revenue
+    grouped["volatility"] = grouped["revenue_std"].fillna(0)
+
+    insights = []
+
+    for _, r in grouped.iterrows():
+        if r["job_share"] > 0.45:
+            insights.append(f"⚠️ Over-dependence on **{r['damage_type']}** jobs")
+
+        if r["job_share"] > 0.3 and r["avg_revenue"] < grouped["avg_revenue"].mean():
+            insights.append(
+                f"💸 **{r['damage_type']}** jobs are high-volume but low-value"
+            )
+
+        if r["volatility"] > grouped["volatility"].mean() * 1.5:
+            insights.append(
+                f"📉 **{r['damage_type']}** revenue is highly volatile"
+            )
+
+    return {
+        "table": grouped.sort_values("revenue", ascending=False),
+        "insights": insights
+    }
+
+def generate_executive_narrative(data):
+    lines = []
+
+    volume = data["volume"]
+    revenue = data["revenue"]
+    efficiency = data["efficiency"]
+
+    # Volume insight
+    if volume["trend"] > 0:
+        lines.append(
+            f"Job volume increased by {volume['trend']:.1f}% compared to the previous period, indicating rising demand."
+        )
+    elif volume["trend"] < 0:
+        lines.append(
+            f"Job volume declined by {abs(volume['trend']):.1f}%, signaling reduced intake."
+        )
+
+    # Revenue insight
+    if revenue["trend"] > 0:
+        lines.append(
+            f"Revenue grew by {revenue['trend']:.1f}%, suggesting improved deal size or job mix."
+        )
+    elif revenue["trend"] < 0:
+        lines.append(
+            f"Revenue fell by {abs(revenue['trend']):.1f}%, despite ongoing job activity."
+        )
+
+    # Efficiency insight
+    if efficiency["trend"] < -10:
+        lines.append(
+            "Revenue efficiency is declining — more jobs are generating less revenue per job."
+        )
+    elif efficiency["trend"] > 10:
+        lines.append(
+            "Revenue efficiency improved significantly, indicating better job quality or pricing."
+        )
+
+    if not lines:
+        lines.append("Business performance remained largely stable during this period.")
+
+    return lines
+
+
 
 def compute_business_intelligence(range_key, custom_start=None, custom_end=None):
+    # -----------------------------
+    # Current Period
+    # -----------------------------
     start, end = resolve_time_window(range_key, custom_start, custom_end)
     df = get_jobs_for_period(start, end)
 
-    return {
+    # -----------------------------
+    # Previous Period (Same Length)
+    # -----------------------------
+    prev_start, prev_end = shift_period(start, end)
+    prev_df = get_jobs_for_period(prev_start, prev_end)
+
+    # -----------------------------
+    # Metrics (Current)
+    # -----------------------------
+    volume = compute_job_volume_metrics(df)
+    revenue = compute_revenue_metrics(df)
+    efficiency = compute_efficiency_metrics(df)
+
+    # -----------------------------
+    # Metrics (Previous)
+    # -----------------------------
+    prev_volume = compute_job_volume_metrics(prev_df)
+    prev_revenue = compute_revenue_metrics(prev_df)
+    prev_efficiency = compute_efficiency_metrics(prev_df)
+
+    # -----------------------------
+    # Trends / Deltas (%)
+    # -----------------------------
+    volume["trend"] = pct_change(
+        volume.get("total_jobs", 0),
+        prev_volume.get("total_jobs", 0)
+    )
+
+    revenue["trend"] = pct_change(
+        revenue.get("total_revenue", 0),
+        prev_revenue.get("total_revenue", 0)
+    )
+
+    efficiency["trend"] = pct_change(
+        efficiency.get("revenue_per_job", 0),
+        prev_efficiency.get("revenue_per_job", 0)
+    )
+
+    # -----------------------------
+    # Synthetic Signals
+    # -----------------------------
+    signals = generate_synthetic_signals(df)
+
+    # -----------------------------
+    # Final Output Object
+    # -----------------------------
+    output = {
         "window": (start, end),
-        "volume": compute_job_volume_metrics(df),
-        "revenue": compute_revenue_metrics(df),
-        "efficiency": compute_efficiency_metrics(df),
-        "signals": generate_synthetic_signals(df),
-        "raw_df": df
+        "previous_window": (prev_start, prev_end),
+        "volume": volume,
+        "revenue": revenue,
+        "efficiency": efficiency,
+        "signals": signals,
+        "raw_df": df,
+        "prev_df": prev_df,
     }
+
+    # -----------------------------
+    # STEP G-2️⃣ — Narrative Engine Feed
+    # -----------------------------
+    output["executive_narrative"] = generate_executive_narrative(output)
+
+    return output
+
+
+
+
 
 
 def add_time_windows(df, date_col="date"):
@@ -2085,7 +2250,59 @@ def page_analytics():
     if df.empty:
         st.info("No leads to analyze.")
         return
-    # Donut: pipeline stages
+    # =========================================================
+    # TIME RANGE SELECTION
+    # =========================================================
+    range_key = st.selectbox(
+        "Select Time Window",
+        [
+            "Today",
+            "Last 7 Days",
+            "Last 30 Days",
+            "Last 90 Days",
+            "Last 6 Months",
+            "Last 12 Months",
+            "Custom"
+        ],
+        index=2
+    )
+    
+    custom_start = custom_end = None
+    if range_key == "Custom":
+        c1, c2 = st.columns(2)
+        with c1:
+            custom_start = st.date_input("Start Date")
+        with c2:
+            custom_end = st.date_input("End Date")
+    
+    # =========================================================
+    # 🧠 BUSINESS INTELLIGENCE ENGINE
+    # =========================================================
+    intelligence = compute_business_intelligence(
+        range_key,
+        custom_start,
+        custom_end
+    )
+
+    # =========================================================
+    # 🧠 EXECUTIVE SUMMARY (AUTO-GENERATED)
+    # =========================================================
+    st.markdown("## 🧠 Executive Summary")
+    
+    for line in intelligence.get("executive_narrative", []):
+        st.info(line)
+    st.markdown("---")
+
+
+    if df.empty:
+        st.info("No leads to analyze.")
+        return
+    
+    st.subheader("Job Volume")
+    st.metric("Total Jobs", intelligence["volume"]["total_jobs"])
+    st.metric("Job Trend vs Previous Period", f"{intelligence['volume']['trend']*100:.1f}%")
+
+    #----------- Donut: pipeline stages-----------------
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
     pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
     fig = px.pie(pie_df, names="stage", values="count", hole=0.45, color="stage")
@@ -2121,12 +2338,166 @@ def page_analytics():
     else:
         st.info("No overdue leads currently.")
         
+def compute_business_health_score(df, prev_df):
+    if df.empty:
+        return {"score": 0, "breakdown": {}}
+
+    # ---- Volume Momentum ----
+    vol_now = len(df)
+    vol_prev = len(prev_df) if not prev_df.empty else vol_now
+    volume_score = min(1, vol_now / max(vol_prev, 1))
+
+    # ---- Revenue Quality ----
+    rev_now = df["estimated_value"].sum()
+    rev_prev = prev_df["estimated_value"].sum() if not prev_df.empty else rev_now
+    revenue_score = min(1, rev_now / max(rev_prev, 1))
+
+    # ---- Mix Stability ----
+    mix = df.groupby("damage_type")["estimated_value"].sum()
+    mix_share = mix / mix.sum()
+    mix_score = 1 - mix_share.max()  # higher = more diversified
+
+    # ---- Efficiency ----
+    efficiency_now = rev_now / max(vol_now, 1)
+    efficiency_prev = (
+        rev_prev / max(vol_prev, 1) if not prev_df.empty else efficiency_now
+    )
+    efficiency_score = min(1, efficiency_now / max(efficiency_prev, 1))
+
+    # ---- Weighted Total ----
+    score = round(
+        (
+            volume_score * 0.25
+            + revenue_score * 0.30
+            + mix_score * 0.20
+            + efficiency_score * 0.25
+        ) * 100,
+        1,
+    )
+
+    return {
+        "score": score,
+        "breakdown": {
+            "Volume Momentum": round(volume_score * 100, 1),
+            "Revenue Quality": round(revenue_score * 100, 1),
+            "Mix Stability": round(mix_score * 100, 1),
+            "Efficiency": round(efficiency_score * 100, 1),
+        },
+    }
+
+def generate_executive_narrative(data):
+    lines = []
+
+    vol = data["volume"]
+    rev = data["revenue"]
+    eff = data["efficiency"]
+    mix = data["mix"]
+    health = data["health"]["score"]
+
+    # --- Volume ---
+    if vol["trend"] > 0:
+        lines.append(
+            f"Job volume increased by {vol['trend']:.1f}%, indicating rising demand."
+        )
+    elif vol["trend"] < 0:
+        lines.append(
+            f"Job volume declined by {abs(vol['trend']):.1f}%, signaling reduced intake."
+        )
+
+    # --- Revenue ---
+    if rev["trend"] > 0:
+        lines.append(
+            f"Total revenue grew {rev['trend']:.1f}%, suggesting stronger deal values or mix."
+        )
+    elif rev["trend"] < 0:
+        lines.append(
+            f"Revenue dropped {abs(rev['trend']):.1f}% despite active operations."
+        )
+
+    # --- Efficiency ---
+    if eff["trend"] < -10:
+        lines.append(
+            "Efficiency is deteriorating — more jobs are producing less revenue per job."
+        )
+    elif eff["trend"] > 10:
+        lines.append(
+            "Revenue efficiency improved significantly, indicating better job quality."
+        )
+
+    # --- Mix Risk ---
+    if mix["dominant_share"] > 0.55:
+        lines.append(
+            f"Revenue is heavily concentrated in {mix['dominant_type']}, increasing dependency risk."
+        )
+
+    # --- Health Summary ---
+    if health >= 75:
+        lines.append("Overall business health is strong and scaling efficiently.")
+    elif health >= 55:
+        lines.append("Business health is stable but showing early pressure signals.")
+    else:
+        lines.append("Business health is weakening and requires strategic intervention.")
+
+    return lines
+
 
 def page_business_intelligence():
-    st.markdown("## 🧠 Business Intelligence")
-    st.markdown(
-        "_A time-aware executive view of job volume, revenue quality, efficiency, and risk._"
-    )
+    # -----------------------------
+    # 🧠 EXECUTIVE BUSINESS HEALTH
+    # -----------------------------
+    st.markdown("## 🧠 Business Health Score")
+    
+    health = data.get("health")
+    
+    if health:
+        st.metric(
+            "Overall Business Health",
+            f"{health['score']} / 100",
+            help="Composite score of volume, revenue quality, mix stability, and efficiency"
+        )
+    
+        cols = st.columns(4)
+        for i, (k, v) in enumerate(health.get("breakdown", {}).items()):
+            cols[i].metric(k, f"{v}%")
+    else:
+        st.info("Business health score not available for this period.")
+    
+    # -----------------------------
+    # 🧠 HEALTH SCORE INTERPRETATION
+    # -----------------------------
+    if health and "score" in health:
+        if health["score"] >= 75:
+            st.success("🟢 Business is strong and scaling efficiently.")
+        elif health["score"] >= 55:
+            st.warning("🟡 Business is stable but showing early pressure.")
+        else:
+            st.error("🔴 Business health is deteriorating. Immediate review recommended.")
+
+    
+    st.markdown("### 🔄 Period-over-Period Change")
+    
+    comp = data["comparison"]
+    
+    c1, c2, c3 = st.columns(3)
+    
+    def fmt(p):
+        if p is None:
+            return "N/A"
+        return f"{p*100:+.1f}%"
+    
+    c1.metric("Jobs vs Last Period", fmt(comp["jobs_change_pct"]))
+    c2.metric("Revenue vs Last Period", fmt(comp["revenue_change_pct"]))
+    c3.metric("Avg Revenue / Job", fmt(comp["avg_rev_change_pct"]))
+    
+    
+    st.markdown("### 🌦️ Seasonal Context")
+    
+    if data.get("seasonal"):
+        for s in data["seasonal"]:
+            st.warning(s)
+    else:
+        st.success("🟢 Performance is within expected seasonal range")
+    
 
     # -----------------------------
     # TIME WINDOW CONTROLS
@@ -2205,6 +2576,52 @@ def page_business_intelligence():
             ),
             use_container_width=True
         )
+    # -----------------------------
+    # JOB TYPE INTELLIGENCE
+    # -----------------------------
+    st.markdown("### 🧩 Job Type Intelligence")
+
+    jt = data["job_types"]
+    
+    if jt:
+        st.dataframe(
+            jt["table"][
+                ["damage_type", "jobs", "job_share", "revenue", "revenue_share", "avg_revenue"]
+            ],
+            use_container_width=True
+        )
+    
+        c1, c2 = st.columns(2)
+    
+        with c1:
+            st.plotly_chart(
+                px.pie(
+                    jt["table"],
+                    names="damage_type",
+                    values="jobs",
+                    title="Job Volume Distribution"
+                ),
+                use_container_width=True
+            )
+    
+        with c2:
+            st.plotly_chart(
+                px.pie(
+                    jt["table"],
+                    names="damage_type",
+                    values="revenue",
+                    title="Revenue Distribution by Job Type"
+                ),
+                use_container_width=True
+            )
+    
+        if jt["insights"]:
+            st.markdown("#### ⚠️ Job Type Signals")
+            for i in jt["insights"]:
+                st.warning(i)
+    else:
+        st.info("No job type data available for this period.")
+
 
     # -----------------------------
     # EFFICIENCY & LEVERAGE
@@ -3079,6 +3496,13 @@ def page_seasonal_trends():
 
     for n in notes:
         st.info(n)
+
+    # =========================================================
+    # ✅ 12a. EXECUTIVE NARRATIVE (INSERT HERE)
+    # =========================================================
+    st.markdown("## 🧠 Executive Summary")
+    for line in data["executive_narrative"]:
+        st.info(line)
 
     # =========================================================
     # 13. DAMAGE RISK OUTLOOK & RECOMMENDATIONS
