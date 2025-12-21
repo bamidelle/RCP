@@ -2510,7 +2510,10 @@ def generate_executive_narrative(data):
 
     if peak_month:
         narrative.append({
-            "text": f"Seasonal analysis indicates peak operational activity around {peak_month}."
+            "text": f"Seasonal analysis indicates peak operational activity around {peak_month}, aligning with historical demand patterns.",
+            "confidence": 80
+        })
+
 
 
 
