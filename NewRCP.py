@@ -1607,12 +1607,11 @@ with st.sidebar:
         "Analytics",
         "CPA & ROI",
         "ML (internal)",
-        "Technician Mobile",
-        "Technician Map Tracking",   # << added this 
+
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
-        "Competitor Intelligence",
+        
         "Settings",
         "Exports"
     ], 
