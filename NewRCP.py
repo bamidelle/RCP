@@ -1074,6 +1074,30 @@ def pct_change(current, previous):
         return 0
 
 
+def generate_executive_narrative(data):
+    narrative = []
+    risk_flags = []
+
+    volume = data.get("volume", {})
+    revenue = data.get("revenue", {})
+    efficiency = data.get("efficiency", {})
+
+    # build narrative lines as dicts
+    narrative.append({
+        "text": "...",
+        "confidence": 85
+    })
+
+    health_score = 82
+
+    return {
+        "lines": narrative,
+        "risk_flags": risk_flags,
+        "health_score": health_score,
+        "version": "G-hardened-v1"
+    }
+
+
 def compute_business_intelligence(range_key, custom_start=None, custom_end=None):
     # -----------------------------
     # Current Period
