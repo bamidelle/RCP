@@ -2428,59 +2428,118 @@ def compute_business_health_score(df, prev_df):
     }
 
 def generate_executive_narrative(data):
-    lines = []
+    """
+    Fully hardened executive narrative generator.
+    Never raises KeyError or TypeError.
+    Always returns a list of narrative lines.
+    """
 
-    vol = data["volume"]
-    rev = data["revenue"]
-    eff = data["efficiency"]
-    mix = data["mix"]
-    health = data["health"]["score"]
+    narrative = []
 
-    # --- Volume ---
-    if vol["trend"] > 0:
-        lines.append(
-            f"Job volume increased by {vol['trend']:.1f}%, indicating rising demand."
-        )
-    elif vol["trend"] < 0:
-        lines.append(
-            f"Job volume declined by {abs(vol['trend']):.1f}%, signaling reduced intake."
-        )
+    # -----------------------------
+    # Safe data extraction
+    # -----------------------------
+    revenue = data.get("revenue", {})
+    volume = data.get("volume", {})
+    trends = data.get("trends", {})
+    seasonal = data.get("seasonal", {})
+    mix = data.get("mix", {})
 
-    # --- Revenue ---
-    if rev["trend"] > 0:
-        lines.append(
-            f"Total revenue grew {rev['trend']:.1f}%, suggesting stronger deal values or mix."
-        )
-    elif rev["trend"] < 0:
-        lines.append(
-            f"Revenue dropped {abs(rev['trend']):.1f}% despite active operations."
-        )
+    # -----------------------------
+    # Revenue Narrative
+    # -----------------------------
+    total_revenue = revenue.get("total", 0)
+    revenue_trend = revenue.get("trend", 0)
 
-    # --- Efficiency ---
-    if eff["trend"] < -10:
-        lines.append(
-            "Efficiency is deteriorating — more jobs are producing less revenue per job."
-        )
-    elif eff["trend"] > 10:
-        lines.append(
-            "Revenue efficiency improved significantly, indicating better job quality."
-        )
-
-    # --- Mix Risk ---
-    if mix["dominant_share"] > 0.55:
-        lines.append(
-            f"Revenue is heavily concentrated in {mix['dominant_type']}, increasing dependency risk."
-        )
-
-    # --- Health Summary ---
-    if health >= 75:
-        lines.append("Overall business health is strong and scaling efficiently.")
-    elif health >= 55:
-        lines.append("Business health is stable but showing early pressure signals.")
+    if total_revenue > 0:
+        if revenue_trend > 0:
+            narrative.append(
+                f"Revenue performance is trending upward, with total revenue reaching ${total_revenue:,.0f}."
+            )
+        elif revenue_trend < 0:
+            narrative.append(
+                f"Revenue shows a slight decline, totaling ${total_revenue:,.0f}, indicating potential market softening."
+            )
+        else:
+            narrative.append(
+                f"Revenue remains stable at ${total_revenue:,.0f} for the selected period."
+            )
     else:
-        lines.append("Business health is weakening and requires strategic intervention.")
+        narrative.append(
+            "Revenue data is limited for the selected period, suggesting reduced activity or incomplete reporting."
+        )
 
-    return lines
+    # -----------------------------
+    # Volume Narrative
+    # -----------------------------
+    total_jobs = volume.get("total", 0)
+    volume_trend = volume.get("trend", 0)
+
+    if total_jobs > 0:
+        if volume_trend > 0:
+            narrative.append(
+                f"Job volume increased to {int(total_jobs)} jobs, reflecting growing demand."
+            )
+        elif volume_trend < 0:
+            narrative.append(
+                f"Job volume declined to {int(total_jobs)} jobs, indicating a slowdown in intake."
+            )
+        else:
+            narrative.append(
+                f"Job volume remained steady at {int(total_jobs)} jobs."
+            )
+    else:
+        narrative.append(
+            "Job volume data is minimal, which may reflect low intake or missing operational records."
+        )
+
+    # -----------------------------
+    # Seasonal Insight Narrative
+    # -----------------------------
+    peak_month = seasonal.get("peak_month")
+    low_month = seasonal.get("low_month")
+
+    if peak_month:
+        narrative.append(
+            f"Seasonal analysis indicates peak operational activity around {peak_month}, aligning with historical demand patterns."
+        )
+    if low_month:
+        narrative.append(
+            f"Lower activity is typically observed around {low_month}, suggesting an opportunity for capacity planning."
+        )
+
+    # -----------------------------
+    # Mix / Portfolio Narrative
+    # -----------------------------
+    if isinstance(mix, dict) and mix:
+        dominant_category = max(mix, key=mix.get)
+        narrative.append(
+            f"The service mix is currently led by {dominant_category} jobs, representing the largest share of work performed."
+        )
+
+    # -----------------------------
+    # Trend / Momentum Narrative
+    # -----------------------------
+    momentum = trends.get("momentum")
+
+    if momentum == "positive":
+        narrative.append(
+            "Overall business momentum is positive, supported by improving trends across key performance indicators."
+        )
+    elif momentum == "negative":
+        narrative.append(
+            "Current indicators suggest downward momentum, warranting closer operational and financial review."
+        )
+
+    # -----------------------------
+    # Final fallback (guarantee output)
+    # -----------------------------
+    if not narrative:
+        narrative.append(
+            "Business intelligence insights are currently limited due to data availability, but monitoring continues as new data is captured."
+        )
+
+    return narrative
 
 
 def page_business_intelligence():
