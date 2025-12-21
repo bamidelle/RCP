@@ -3742,7 +3742,6 @@ def page_seasonal_trends():
         """
     <em>
     Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations for the property damage industry only. Get:
-    <br><br>
     • <strong>Seasonal & Historical Weather Analysis</strong> → Identifies recurring weather-driven risk patterns that affect property damage volume<br>
     • <strong>Damage Risk Forecasting</strong> → Predicts surge periods and exposure levels to enable proactive planning<br>
     • <strong>Weather-to-Business Impact Mapping</strong> → Explains how weather trends influence claims, leads, and operational costs<br>
