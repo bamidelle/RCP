@@ -3739,15 +3739,19 @@ def page_seasonal_trends():
 
     st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
     st.markdown(
-        "<em>Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations for The Property Pamage Industry Only. Get: Seasonal & Historical Weather Analysis → Identifies recurring weather-driven risk patterns that affect property damage volume
-
-Damage Risk Forecasting → Predicts surge periods and exposure levels to enable proactive planning
-
-Weather-to-Business Impact Mapping → Explains how weather trends influence claims, leads, and operational costs
-
-Strategic Recommendations Engine → Provides time-based guidance for staffing, marketing, and operational decisions.</em>",
+        """
+    <em>
+    Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations for the property damage industry only. Get:
+    <br><br>
+    • <strong>Seasonal & Historical Weather Analysis</strong> → Identifies recurring weather-driven risk patterns that affect property damage volume<br>
+    • <strong>Damage Risk Forecasting</strong> → Predicts surge periods and exposure levels to enable proactive planning<br>
+    • <strong>Weather-to-Business Impact Mapping</strong> → Explains how weather trends influence claims, leads, and operational costs<br>
+    • <strong>Strategic Recommendations Engine</strong> → Provides time-based guidance for staffing, marketing, and operational decisions
+    </em>
+        """,
         unsafe_allow_html=True
     )
+
 
     # =========================================================
     # 1. LOCATION SELECTION
