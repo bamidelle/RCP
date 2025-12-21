@@ -2810,6 +2810,8 @@ def page_executive_intelligence():
     for change in intelligence.get("what_changed", []):
         st.write("•", change)
 
+    st.write("DEBUG TYPE:", type(intelligence.get("executive_narrative")))
+    st.write("DEBUG CONTENT:", intelligence.get("executive_narrative"))
 
 def page_business_intelligence():
     # -----------------------------
