@@ -2290,9 +2290,23 @@ def page_analytics():
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
     
-    for line in intelligence.get("executive_narrative", []):
-        st.info(line)
-    st.markdown("---")
+    # Display executive narrative
+    for line in intelligence.get("lines", []):
+        st.info(f"{line['text']} (Confidence: {line['confidence']}%)")
+    
+    # Display risk flags
+    risk_flags = intelligence.get("risk_flags", [])
+    if risk_flags:
+        st.warning(" | ".join(risk_flags))
+    
+    # Display narrative health
+    health = intelligence.get("health_score", 0)
+    st.metric("Narrative Health", f"{health} / 100")
+    
+    # Display BI version
+    version = intelligence.get("version", "Unknown")
+    st.caption(f"BI Narrative Version: {version}")
+
 
 
     if df.empty:
