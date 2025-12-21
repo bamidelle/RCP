@@ -1100,6 +1100,17 @@ def generate_executive_narrative(data):
 
     return lines
 
+def pct_change(current, previous):
+    """
+    Safe percentage change calculation.
+    Returns 0 if previous is zero or missing.
+    """
+    try:
+        if previous in (0, None):
+            return 0
+        return ((current - previous) / previous) * 100
+    except Exception:
+        return 0
 
 
 def compute_business_intelligence(range_key, custom_start=None, custom_end=None):
