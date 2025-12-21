@@ -7,8 +7,7 @@ TITAN Backend - Single-file Streamlit app
 - Internal ML training & scoring (no user tuning)
 - Pipeline dashboard, Analytics, CPA/ROI, Exports/Imports, Alerts, SLA, Priority scoring, Audit trail
 """
-import streamlit as st
-st.sidebar.error("🔥 NewRCP.py is executing")
+
 
 
 import os
@@ -1639,13 +1638,10 @@ with st.sidebar:
         "Pipeline Board",
         "Analytics",
         "CPA & ROI",
-        "ML (internal)",
-
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
         "Executive Intelligence",
-        
         "Settings",
         "Exports"
     ], 
