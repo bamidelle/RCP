@@ -1008,20 +1008,15 @@ def shift_period(start, end):
     delta = end - start
     return start - delta, end - delta
 
-def safe_col(df, col, default_dtype=float):
-    """
-    Always returns a Pandas Series.
-    If column is missing, returns a zero-filled Series.
-    """
-    if col in df.columns:
-        return df[col]
-
-    # Return safe empty Series aligned to df
-    return pd.Series(
-        [0] * len(df),
-        index=df.index,
-        dtype=default_dtype
-    )
+def safe_col(df, col, default_dtype=None):
+    if col not in df.columns:
+        if default_dtype:
+            return pd.Series(dtype=default_dtype)
+        return pd.Series()
+    s = df[col]
+    if default_dtype:
+        s = pd.to_numeric(s, errors="coerce")
+    return s
 
     
 def analyze_job_types(df):
