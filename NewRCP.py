@@ -2247,7 +2247,6 @@ def page_pipeline_board():
 # Analytics page (donut + SLA line + overdue table)
 def page_analytics():
     st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
-    st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
     df = leads_df.copy()
     if df.empty:
         st.info("No leads to analyze.")
@@ -2304,7 +2303,7 @@ def page_analytics():
     st.metric("Total Jobs", intelligence["volume"]["total_jobs"])
     st.metric("Job Trend vs Previous Period", f"{intelligence['volume']['trend']*100:.1f}%")
 
-
+    st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
     #----------- Donut: pipeline stages-----------------
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
     pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
