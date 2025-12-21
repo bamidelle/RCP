@@ -2291,9 +2291,11 @@ def page_analytics():
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
     
-    for line in intelligence.get("executive_narrative", []):
-        st.info(line)
-    st.markdown("---")
+    # Use the new hardened function keys
+    exec_narrative = intelligence.get("lines", [])
+    for line in exec_narrative:
+        st.info(f"{line['text']} (Confidence: {line['confidence']}%)")
+
 
 
     if df.empty:
