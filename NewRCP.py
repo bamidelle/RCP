@@ -2295,6 +2295,25 @@ def page_analytics():
     exec_narrative = intelligence.get("lines", [])
     for line in exec_narrative:
         st.info(f"{line['text']} (Confidence: {line['confidence']}%)")
+    # -----------------------------
+    # Display risk flags
+    # -----------------------------
+    risk_flags = intelligence.get("risk_flags", [])
+    if risk_flags:
+        st.warning(" | ".join(risk_flags))
+    
+    # -----------------------------
+    # Display narrative health
+    # -----------------------------
+    health = intelligence.get("health_score", 0)
+    st.metric("Narrative Health", f"{health} / 100")
+    
+    # -----------------------------
+    # Display BI version
+    # -----------------------------
+    version = intelligence.get("version", "Unknown")
+    st.caption(f"BI Narrative Version: {version}")
+
 
 
 
