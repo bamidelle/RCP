@@ -2096,7 +2096,7 @@ def page_pipeline_board():
     st.subheader("🧱 Seasonal Damage Type Distribution")
     
     if "created_at" not in leads_df.columns:
-        st.warning("⚠️ Seasonal analysis unavailable: missing created_at data.")
+        st.warning("⚠️ Seasonal analysis unavailable: missing created_at data, Please add new Leads.")
         return
 
     leads_df = leads_df.copy()
