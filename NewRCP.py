@@ -2067,7 +2067,11 @@ def page_lead_capture():
         contact_phone = st.text_input("Contact phone")
         contact_email = st.text_input("Contact email")
         property_address = st.text_input("Property address")
-        damage_type = st.selectbox("Damage type", ["water","fire","mold","contents","reconstruction","other"])
+        damage_type = st.text_input(
+    "Job / Service Type",
+    placeholder="e.g. Water Damage, HVAC Repair, Security Patrol, IT Support"
+)
+
         assigned_to = st.text_input("Assigned to (username)")
         estimated_value = st.number_input("Estimated value (USD)", min_value=0.0, value=0.0, step=100.0)
         ad_cost = st.number_input("Cost to acquire lead (USD)", min_value=0.0, value=0.0, step=1.0)
