@@ -1153,6 +1153,12 @@ def compute_business_intelligence(range_key, custom_start=None, custom_end=None)
     output["strategic_signals"] = generate_strategic_signals(output)
     
     # -----------------------------
+    # STEP K️⃣ — Business Risk Score
+    # -----------------------------
+    output["business_risk_score"] = compute_business_risk_score(output)
+
+    
+    # -----------------------------
     # STEP J️⃣ — What Changed & Why (Comparison)
     # -----------------------------
     if prev_df is not None and not prev_df.empty:
@@ -1636,6 +1642,7 @@ with st.sidebar:
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
+        "Executive Intelligence",
         
         "Settings",
         "Exports"
@@ -2341,6 +2348,65 @@ def page_analytics():
     st.metric("Total Jobs", intelligence["volume"]["total_jobs"])
     st.metric("Job Trend vs Previous Period", f"{intelligence['volume']['trend']*100:.1f}%")
 
+
+    st.markdown("## 🧠 Executive Intelligence")
+    
+    # -----------------------------
+    # Strategic Signals (I)
+    # -----------------------------
+    signals = intelligence.get("strategic_signals", [])
+    if signals:
+        cols = st.columns(len(signals))
+        for col, sig in zip(cols, signals):
+            col.metric(
+                label=f"{sig['icon']} {sig['label']}",
+                value=""
+            )
+            col.caption(sig["message"])
+    
+    # -----------------------------
+    # Revenue Leakage Warnings (H)
+    # -----------------------------
+    leakage = intelligence.get("revenue_leakage", [])
+    for issue in leakage:
+        st.warning(issue)
+    
+    # -----------------------------
+    # Business Risk Score (K)
+    # -----------------------------
+    risk = intelligence.get("business_risk_score", 0)
+    st.metric("⚠️ Business Risk Score", f"{risk} / 100")
+    
+    # -----------------------------
+    # Executive Narrative (G)
+    # -----------------------------
+    narrative = intelligence.get("executive_narrative", {})
+    for line in narrative.get("lines", []):
+        confidence = line.get("confidence", 0)
+    
+        if confidence >= 80:
+            st.success(line["text"])
+        elif confidence >= 50:
+            st.info(line["text"])
+        else:
+            st.warning(line["text"])
+    
+    # Narrative Metadata
+    st.caption(
+        f"Narrative Health: {narrative.get('health_score', 0)} / 100 · "
+        f"BI Version: {narrative.get('version', 'Unknown')}"
+    )
+    
+    # -----------------------------
+    # What Changed & Why (J)
+    # -----------------------------
+    changes = intelligence.get("what_changed", [])
+    if changes:
+        st.markdown("### 🔍 What Changed & Why")
+        for change in changes:
+            st.write("•", change)
+
+    
     st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
     #----------- Donut: pipeline stages-----------------
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
@@ -2622,6 +2688,37 @@ def generate_strategic_signals(data):
 
     return alerts
 
+def compute_business_risk_score(data):
+    """
+    Computes an overall business risk score (0–100).
+    Higher = more risk.
+    """
+
+    score = 0
+
+    revenue = data.get("revenue", {})
+    volume = data.get("volume", {})
+    efficiency = data.get("efficiency", {})
+    leakage = data.get("revenue_leakage", [])
+
+    # Revenue decline
+    if revenue.get("trend", 0) < 0:
+        score += 25
+
+    # Volume decline
+    if volume.get("trend", 0) < 0:
+        score += 20
+
+    # Efficiency erosion
+    if efficiency.get("trend", 0) < -10:
+        score += 20
+
+    # Silent leakage signals
+    score += len(leakage) * 15
+
+    return min(score, 100)
+
+
 def explain_what_changed(current, previous):
     """
     Compares two BI snapshots and explains key changes.
@@ -2655,6 +2752,41 @@ def explain_what_changed(current, previous):
 
     return explanations
 
+def page_executive_intelligence():
+    st.title("📊 Executive Intelligence Overview")
+
+    intelligence = compute_business_intelligence(
+        st.session_state.get("range_key"),
+        st.session_state.get("custom_start"),
+        st.session_state.get("custom_end")
+    )
+
+    # Risk at the top
+    st.metric(
+        "Overall Business Risk",
+        f"{intelligence.get('business_risk_score', 0)} / 100"
+    )
+
+    # Strategic Signals
+    st.markdown("## 🚨 Strategic Signals")
+    for sig in intelligence.get("strategic_signals", []):
+        st.write(f"{sig['icon']} **{sig['label']}** — {sig['message']}")
+
+    # Executive Narrative
+    st.markdown("## 🧠 Executive Summary")
+    narrative = intelligence.get("executive_narrative", {})
+    for line in narrative.get("lines", []):
+        st.write("•", line["text"])
+
+    # Revenue Leakage
+    st.markdown("## 💸 Revenue Leakage Risks")
+    for issue in intelligence.get("revenue_leakage", []):
+        st.write("•", issue)
+
+    # Change Analysis
+    st.markdown("## 🔄 Period-over-Period Changes")
+    for change in intelligence.get("what_changed", []):
+        st.write("•", change)
 
 
 def page_business_intelligence():
@@ -3938,6 +4070,8 @@ elif page == "Analytics":
     page_analytics()
 elif page == "Seasonal Trends":
     page_seasonal_trends()
+elif page == "Executive Intelligence":
+    page_executive_intelligence()
 elif page == "Competitor Intelligence":
     page_competitor_intelligence()
 elif page == "CPA & ROI":
