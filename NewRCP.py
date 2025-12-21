@@ -1136,13 +1136,38 @@ def compute_business_intelligence(range_key, custom_start=None, custom_end=None)
         "raw_df": df,
         "prev_df": prev_df,
     }
-
+    
     # -----------------------------
-    # STEP G-2️⃣ — Narrative Engine Feed
+    # STEP G️⃣ — Executive Narrative Engine
     # -----------------------------
     output["executive_narrative"] = generate_executive_narrative(output)
-
+    
+    # -----------------------------
+    # STEP H️⃣ — Revenue Leakage Detection
+    # -----------------------------
+    output["revenue_leakage"] = detect_revenue_leakage(output)
+    
+    # -----------------------------
+    # STEP I️⃣ — Strategic Signals Engine
+    # -----------------------------
+    output["strategic_signals"] = generate_strategic_signals(output)
+    
+    # -----------------------------
+    # STEP J️⃣ — What Changed & Why (Comparison)
+    # -----------------------------
+    if prev_df is not None and not prev_df.empty:
+        previous_snapshot = {
+            "volume": prev_volume,
+            "revenue": prev_revenue,
+            "efficiency": prev_efficiency,
+        }
+        output["what_changed"] = explain_what_changed(
+            output,
+            previous_snapshot
+        )
+    
     return output
+    
 
 
 
@@ -2528,6 +2553,107 @@ def generate_executive_narrative(data):
         })
 
 
+def detect_revenue_leakage(data):
+    """
+    Detects silent revenue decline scenarios.
+    Returns a list of leakage signals.
+    """
+
+    signals = []
+
+    revenue = data.get("revenue", {})
+    volume = data.get("volume", {})
+    efficiency = data.get("efficiency", {})
+
+    rev_trend = revenue.get("trend", 0)
+    vol_trend = volume.get("trend", 0)
+    eff_trend = efficiency.get("trend", 0)
+
+    # Busy but earning less
+    if vol_trend >= 0 and rev_trend < 0:
+        signals.append(
+            "Revenue is declining despite stable or increasing job volume — potential pricing or scope leakage."
+        )
+
+    # Efficiency erosion
+    if eff_trend < -10:
+        signals.append(
+            "Revenue efficiency is dropping significantly, indicating jobs are generating less value."
+        )
+
+    return signals
+
+def generate_strategic_signals(data):
+    """
+    Generates high-level strategic alerts.
+    Returns list of dicts: {icon, label, message}
+    """
+
+    alerts = []
+
+    revenue = data.get("revenue", {})
+    volume = data.get("volume", {})
+    trends = data.get("trends", {})
+
+    rev_trend = revenue.get("trend", 0)
+    vol_trend = volume.get("trend", 0)
+    momentum = trends.get("momentum")
+
+    if rev_trend < 0 and vol_trend < 0:
+        alerts.append({
+            "icon": "⚠️",
+            "label": "Contraction Risk",
+            "message": "Both revenue and job volume are declining."
+        })
+
+    if rev_trend > 10 and momentum == "positive":
+        alerts.append({
+            "icon": "🔥",
+            "label": "Growth Window",
+            "message": "Strong revenue growth supported by positive momentum."
+        })
+
+    if abs(rev_trend) < 3 and abs(vol_trend) < 3:
+        alerts.append({
+            "icon": "🧊",
+            "label": "Stagnation",
+            "message": "Business activity appears flat with limited movement."
+        })
+
+    return alerts
+
+def explain_what_changed(current, previous):
+    """
+    Compares two BI snapshots and explains key changes.
+    Returns human-readable change explanations.
+    """
+
+    explanations = []
+
+    def compare(metric, label):
+        cur = current.get(metric, {}).get("total", 0)
+        prev = previous.get(metric, {}).get("total", 0)
+
+        if prev == 0:
+            return
+
+        change_pct = ((cur - prev) / prev) * 100
+
+        if abs(change_pct) >= 10:
+            direction = "increased" if change_pct > 0 else "decreased"
+            explanations.append(
+                f"{label} {direction} by {abs(change_pct):.1f}% compared to the previous period."
+            )
+
+    compare("revenue", "Revenue")
+    compare("volume", "Job volume")
+
+    if not explanations:
+        explanations.append(
+            "No significant changes detected compared to the previous period."
+        )
+
+    return explanations
 
 
 
