@@ -2291,30 +2291,9 @@ def page_analytics():
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
     
-    # Use the new hardened function keys
-    exec_narrative = intelligence.get("lines", [])
-    for line in exec_narrative:
-        st.info(f"{line['text']} (Confidence: {line['confidence']}%)")
-    # -----------------------------
-    # Display risk flags
-    # -----------------------------
-    risk_flags = intelligence.get("risk_flags", [])
-    if risk_flags:
-        st.warning(" | ".join(risk_flags))
-    
-    # -----------------------------
-    # Display narrative health
-    # -----------------------------
-    health = intelligence.get("health_score", 0)
-    st.metric("Narrative Health", f"{health} / 100")
-    
-    # -----------------------------
-    # Display BI version
-    # -----------------------------
-    version = intelligence.get("version", "Unknown")
-    st.caption(f"BI Narrative Version: {version}")
-
-
+    for line in intelligence.get("executive_narrative", []):
+        st.info(line)
+    st.markdown("---")
 
 
     if df.empty:
@@ -2324,6 +2303,7 @@ def page_analytics():
     st.subheader("Job Volume")
     st.metric("Total Jobs", intelligence["volume"]["total_jobs"])
     st.metric("Job Trend vs Previous Period", f"{intelligence['volume']['trend']*100:.1f}%")
+
 
     #----------- Donut: pipeline stages-----------------
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
