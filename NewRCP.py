@@ -1058,47 +1058,7 @@ def analyze_job_types(df):
         "insights": insights
     }
 
-def generate_executive_narrative(data):
-    lines = []
 
-    volume = data["volume"]
-    revenue = data["revenue"]
-    efficiency = data["efficiency"]
-
-    # Volume insight
-    if volume["trend"] > 0:
-        lines.append(
-            f"Job volume increased by {volume['trend']:.1f}% compared to the previous period, indicating rising demand."
-        )
-    elif volume["trend"] < 0:
-        lines.append(
-            f"Job volume declined by {abs(volume['trend']):.1f}%, signaling reduced intake."
-        )
-
-    # Revenue insight
-    if revenue["trend"] > 0:
-        lines.append(
-            f"Revenue grew by {revenue['trend']:.1f}%, suggesting improved deal size or job mix."
-        )
-    elif revenue["trend"] < 0:
-        lines.append(
-            f"Revenue fell by {abs(revenue['trend']):.1f}%, despite ongoing job activity."
-        )
-
-    # Efficiency insight
-    if efficiency["trend"] < -10:
-        lines.append(
-            "Revenue efficiency is declining — more jobs are generating less revenue per job."
-        )
-    elif efficiency["trend"] > 10:
-        lines.append(
-            "Revenue efficiency improved significantly, indicating better job quality or pricing."
-        )
-
-    if not lines:
-        lines.append("Business performance remained largely stable during this period.")
-
-    return lines
 
 def pct_change(current, previous):
     """
@@ -2429,12 +2389,21 @@ def compute_business_health_score(df, prev_df):
 
 def generate_executive_narrative(data):
     """
-    Fully hardened executive narrative generator.
-    Never raises KeyError or TypeError.
-    Always returns a list of narrative lines.
+    Hardened Executive Narrative Generator with:
+    - Confidence scoring
+    - Risk flags
+    - Narrative health indicator
+    - Versioning based on BI data completeness
+    Returns a dict with:
+      'lines': list of narrative dicts {'text':..., 'confidence':...}
+      'risk_flags': list of strings
+      'health_score': float (0-100)
+      'version': str
     """
 
     narrative = []
+    risk_flags = []
+    health_score = 100  # Start at 100 and deduct for missing/incomplete data
 
     # -----------------------------
     # Safe data extraction
@@ -2446,100 +2415,103 @@ def generate_executive_narrative(data):
     mix = data.get("mix", {})
 
     # -----------------------------
+    # Determine version based on data completeness
+    # -----------------------------
+    total_keys = ["revenue", "volume", "trends", "seasonal", "mix"]
+    available_keys = sum(1 for k in total_keys if data.get(k))
+    if available_keys == len(total_keys):
+        version = "Full BI"
+    elif available_keys >= 3:
+        version = "Partial BI"
+    else:
+        version = "Minimal BI"
+        health_score -= 40  # penalty for sparse data
+
+    # -----------------------------
+    # Helper function for confidence
+    # -----------------------------
+    def confidence_for_metric(metric_value, max_score=100):
+        """Assign confidence based on data validity"""
+        if metric_value is None or metric_value == 0:
+            return 40  # low confidence
+        elif metric_value < 0:
+            return 60
+        else:
+            return max_score
+
+    # -----------------------------
     # Revenue Narrative
     # -----------------------------
     total_revenue = revenue.get("total", 0)
     revenue_trend = revenue.get("trend", 0)
 
+    rev_conf = confidence_for_metric(total_revenue)
     if total_revenue > 0:
         if revenue_trend > 0:
-            narrative.append(
-                f"Revenue performance is trending upward, with total revenue reaching ${total_revenue:,.0f}."
-            )
+            narrative.append({
+                "text": f"Revenue performance is trending upward, with total revenue reaching ${total_revenue:,.0f}.",
+                "confidence": rev_conf
+            })
         elif revenue_trend < 0:
-            narrative.append(
-                f"Revenue shows a slight decline, totaling ${total_revenue:,.0f}, indicating potential market softening."
-            )
+            narrative.append({
+                "text": f"Revenue shows a slight decline, totaling ${total_revenue:,.0f}, indicating potential market softening.",
+                "confidence": rev_conf
+            })
+            risk_flags.append("Revenue declining")
         else:
-            narrative.append(
-                f"Revenue remains stable at ${total_revenue:,.0f} for the selected period."
-            )
+            narrative.append({
+                "text": f"Revenue remains stable at ${total_revenue:,.0f} for the selected period.",
+                "confidence": rev_conf
+            })
     else:
-        narrative.append(
-            "Revenue data is limited for the selected period, suggesting reduced activity or incomplete reporting."
-        )
+        narrative.append({
+            "text": "Revenue data is limited for the selected period, suggesting reduced activity or incomplete reporting.",
+            "confidence": rev_conf
+        })
+        health_score -= 20
 
     # -----------------------------
     # Volume Narrative
     # -----------------------------
     total_jobs = volume.get("total", 0)
     volume_trend = volume.get("trend", 0)
+    vol_conf = confidence_for_metric(total_jobs)
 
     if total_jobs > 0:
         if volume_trend > 0:
-            narrative.append(
-                f"Job volume increased to {int(total_jobs)} jobs, reflecting growing demand."
-            )
+            narrative.append({
+                "text": f"Job volume increased to {int(total_jobs)} jobs, reflecting growing demand.",
+                "confidence": vol_conf
+            })
         elif volume_trend < 0:
-            narrative.append(
-                f"Job volume declined to {int(total_jobs)} jobs, indicating a slowdown in intake."
-            )
+            narrative.append({
+                "text": f"Job volume declined to {int(total_jobs)} jobs, indicating a slowdown in intake.",
+                "confidence": vol_conf
+            })
+            risk_flags.append("Volume declining")
         else:
-            narrative.append(
-                f"Job volume remained steady at {int(total_jobs)} jobs."
-            )
+            narrative.append({
+                "text": f"Job volume remained steady at {int(total_jobs)} jobs.",
+                "confidence": vol_conf
+            })
     else:
-        narrative.append(
-            "Job volume data is minimal, which may reflect low intake or missing operational records."
-        )
+        narrative.append({
+            "text": "Job volume data is minimal, which may reflect low intake or missing operational records.",
+            "confidence": vol_conf
+        })
+        health_score -= 20
 
     # -----------------------------
     # Seasonal Insight Narrative
     # -----------------------------
     peak_month = seasonal.get("peak_month")
     low_month = seasonal.get("low_month")
+    seasonal_conf = 80 if peak_month or low_month else 40
 
     if peak_month:
-        narrative.append(
-            f"Seasonal analysis indicates peak operational activity around {peak_month}, aligning with historical demand patterns."
-        )
-    if low_month:
-        narrative.append(
-            f"Lower activity is typically observed around {low_month}, suggesting an opportunity for capacity planning."
-        )
+        narrative.append({
+            "text": f"Seasonal analysis indicates peak operational activity around {
 
-    # -----------------------------
-    # Mix / Portfolio Narrative
-    # -----------------------------
-    if isinstance(mix, dict) and mix:
-        dominant_category = max(mix, key=mix.get)
-        narrative.append(
-            f"The service mix is currently led by {dominant_category} jobs, representing the largest share of work performed."
-        )
-
-    # -----------------------------
-    # Trend / Momentum Narrative
-    # -----------------------------
-    momentum = trends.get("momentum")
-
-    if momentum == "positive":
-        narrative.append(
-            "Overall business momentum is positive, supported by improving trends across key performance indicators."
-        )
-    elif momentum == "negative":
-        narrative.append(
-            "Current indicators suggest downward momentum, warranting closer operational and financial review."
-        )
-
-    # -----------------------------
-    # Final fallback (guarantee output)
-    # -----------------------------
-    if not narrative:
-        narrative.append(
-            "Business intelligence insights are currently limited due to data availability, but monitoring continues as new data is captured."
-        )
-
-    return narrative
 
 
 def page_business_intelligence():
