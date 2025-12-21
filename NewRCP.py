@@ -1008,9 +1008,21 @@ def shift_period(start, end):
     delta = end - start
     return start - delta, end - delta
 
-# ⬇️⬇️⬇️ PASTE IT RIGHT HERE ⬇️⬇️⬇️
-def safe_col(df, col):
-    return df[col] if col in df.columns else pd.Series(dtype=object)
+def safe_col(df, col, default_dtype=float):
+    """
+    Always returns a Pandas Series.
+    If column is missing, returns a zero-filled Series.
+    """
+    if col in df.columns:
+        return df[col]
+
+    # Return safe empty Series aligned to df
+    return pd.Series(
+        [0] * len(df),
+        index=df.index,
+        dtype=default_dtype
+    )
+
     
 def analyze_job_types(df):
     if df.empty:
