@@ -2095,7 +2095,20 @@ def page_pipeline_board():
 
     st.subheader("🧱 Seasonal Damage Type Distribution")
     
-    leads_df["month"] = pd.to_datetime(leads_df["created_at"]).dt.month_name()
+    if "created_at" not in leads_df.columns:
+    st.warning("⚠️ Seasonal analysis unavailable: missing created_at data.")
+    return
+
+    leads_df = leads_df.copy()
+    leads_df["created_at"] = pd.to_datetime(leads_df["created_at"], errors="coerce")
+    leads_df = leads_df.dropna(subset=["created_at"])
+    
+    if leads_df.empty:
+        st.warning("⚠️ No valid dates available for seasonal analysis.")
+        return
+    
+    leads_df["month"] = leads_df["created_at"].dt.month_name()
+
     
     damage_month = (
         leads_df
