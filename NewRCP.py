@@ -2671,6 +2671,28 @@ def detect_revenue_leakage(data):
 
     return signals
 
+def is_executive_insight_ready(intelligence):
+    """
+    Determines whether there is sufficient data
+    to display Executive Intelligence insights.
+    """
+
+    narrative = intelligence.get("executive_narrative", {})
+    narrative_lines = narrative.get("lines", [])
+
+    leakage = intelligence.get("revenue_leakage", [])
+    alerts = intelligence.get("strategic_alerts", [])
+    changes = intelligence.get("change_explanations", [])
+
+    return any([
+        len(narrative_lines) > 0,
+        len(leakage) > 0,
+        len(alerts) > 0,
+        len(changes) > 0,
+    ])
+
+
+
 def generate_strategic_signals(data):
     """
     Generates high-level strategic alerts.
@@ -2809,6 +2831,44 @@ def page_executive_intelligence():
     st.markdown("## 🔄 Period-over-Period Changes")
     for change in intelligence.get("what_changed", []):
         st.write("•", change)
+    # ---------------------------------
+    # Executive Data Readiness Gate
+    # ---------------------------------
+    if not is_executive_insight_ready(intelligence):
+        st.markdown("## 🧠 Executive Intelligence")
+    
+        st.info(
+            "Not enough data is available yet to generate reliable executive-level insights.\n\n"
+            "This system only surfaces intelligence when confidence thresholds are met — "
+            "no speculation, no guesswork."
+        )
+    
+        st.markdown("### What’s missing")
+        missing = []
+    
+        if not intelligence.get("executive_narrative", {}).get("lines"):
+            missing.append("• Trend-based executive narrative")
+    
+        if not intelligence.get("revenue_leakage"):
+            missing.append("• Revenue leakage indicators")
+    
+        if not intelligence.get("strategic_alerts"):
+            missing.append("• Strategic signals (growth, contraction, stagnation)")
+    
+        if not intelligence.get("change_explanations"):
+            missing.append("• Period-over-period change explanations")
+    
+        for item in missing:
+            st.write(item)
+    
+        st.markdown("### What to do next")
+        st.write("• Continue logging jobs and revenue")
+        st.write("• Expand the selected date range")
+        st.write("• Ensure historical comparison periods exist")
+    
+        st.caption("Executive Intelligence activates automatically once sufficient data is available.")
+        return
+
 
 def generate_executive_narrative(data):
     narrative = []
