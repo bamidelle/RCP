@@ -1665,7 +1665,6 @@ with st.sidebar:
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
-        "Executive Intelligence",
         "Settings",
         "Exports"
     ], 
@@ -2343,73 +2342,55 @@ def page_analytics():
     )
 
     # =========================================================
-    # 🧠 EXECUTIVE SUMMARY (AUTO-GENERATED)
+    # 🧠 EXECUTIVE SUMMARY (CPA & ROI STYLE)
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
     
-    # Display executive narrative
-    for line in intelligence.get("lines", []):
-        st.info(f"{line['text']} (Confidence: {line['confidence']}%)")
+    # --- Top KPI Row (CPA-style cards) ---
+    k1, k2, k3, k4 = st.columns(4)
     
-    # Display risk flags
-    risk_flags = intelligence.get("risk_flags", [])
-    if risk_flags:
-        st.warning(" | ".join(risk_flags))
+    k1.metric(
+        "Total Jobs",
+        intelligence["volume"]["total_jobs"],
+        f"{intelligence['volume']['trend']*100:.1f}%"
+    )
     
-    # Display narrative health
-    health = intelligence.get("health_score", 0)
-    st.metric("Narrative Health", f"{health} / 100")
+    k2.metric(
+        "Total Revenue",
+        f"${intelligence['revenue']['total_revenue']:,.0f}",
+        f"{intelligence['revenue']['trend']*100:.1f}%"
+    )
     
-    # Display BI version
-    version = intelligence.get("version", "Unknown")
-    st.caption(f"BI Narrative Version: {version}")
-
-
-
-    if df.empty:
-        st.info("No leads to analyze.")
-        return
+    k3.metric(
+        "Revenue / Job",
+        f"${intelligence['efficiency']['revenue_per_job']:,.0f}",
+        f"{intelligence['efficiency']['trend']*100:.1f}%"
+    )
     
-    st.subheader("Job Volume")
-    st.metric("Total Jobs", intelligence["volume"]["total_jobs"])
-    st.metric("Job Trend vs Previous Period", f"{intelligence['volume']['trend']*100:.1f}%")
-
-
-    st.markdown("## 🧠 Executive Intelligence")
+    k4.metric(
+        "Business Health",
+        f"{intelligence.get('health_score', 0)} / 100"
+    )
     
-    # -----------------------------
-    # Strategic Signals (I)
-    # -----------------------------
+    # =========================================================
+    # 🚨 STRATEGIC SIGNALS (CPA-style alert cards)
+    # =========================================================
     signals = intelligence.get("strategic_signals", [])
     if signals:
+        st.markdown("### 🚨 Strategic Signals")
         cols = st.columns(len(signals))
         for col, sig in zip(cols, signals):
-            col.metric(
-                label=f"{sig['icon']} {sig['label']}",
-                value=""
-            )
+            col.metric(f"{sig['icon']} {sig['label']}", "")
             col.caption(sig["message"])
     
-    # -----------------------------
-    # Revenue Leakage Warnings (H)
-    # -----------------------------
-    leakage = intelligence.get("revenue_leakage", [])
-    for issue in leakage:
-        st.warning(issue)
+    # =========================================================
+    # 🧠 EXECUTIVE NARRATIVE (Clean, structured)
+    # =========================================================
+    st.markdown("### 🧠 Executive Interpretation")
     
-    # -----------------------------
-    # Business Risk Score (K)
-    # -----------------------------
-    risk = intelligence.get("business_risk_score", 0)
-    st.metric("⚠️ Business Risk Score", f"{risk} / 100")
-    
-    # -----------------------------
-    # Executive Narrative (G)
-    # -----------------------------
     narrative = intelligence.get("executive_narrative", {})
     for line in narrative.get("lines", []):
         confidence = line.get("confidence", 0)
-    
         if confidence >= 80:
             st.success(line["text"])
         elif confidence >= 50:
@@ -2417,20 +2398,32 @@ def page_analytics():
         else:
             st.warning(line["text"])
     
-    # Narrative Metadata
     st.caption(
         f"Narrative Health: {narrative.get('health_score', 0)} / 100 · "
         f"BI Version: {narrative.get('version', 'Unknown')}"
     )
     
-    # -----------------------------
-    # What Changed & Why (J)
-    # -----------------------------
+    # =========================================================
+    # ⚠️ RISKS & LEAKAGE (Same style as CPA warnings)
+    # =========================================================
+    leakage = intelligence.get("revenue_leakage", [])
+    if leakage:
+        st.markdown("### ⚠️ Revenue Leakage & Risk")
+        for issue in leakage:
+            st.warning(issue)
+    
+    risk = intelligence.get("business_risk_score", 0)
+    st.metric("Business Risk Score", f"{risk} / 100")
+    
+    # =========================================================
+    # 🔍 WHAT CHANGED & WHY
+    # =========================================================
     changes = intelligence.get("what_changed", [])
     if changes:
         st.markdown("### 🔍 What Changed & Why")
         for change in changes:
             st.write("•", change)
+
 
     
     st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
