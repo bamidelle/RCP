@@ -2433,10 +2433,7 @@ def page_analytics():
         else:
             st.warning(line["text"])
     
-    st.caption(
-        f"Narrative Health: {narrative.get('health_score', 0)} / 100 · "
-        f"BI Version: {narrative.get('version', 'Unknown')}"
-    )
+
     
         
     health = narrative.get("health_score", 0)
