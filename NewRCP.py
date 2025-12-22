@@ -771,7 +771,7 @@ def page_tasks():
     tasks_df = get_tasks_for_user(tech_username)
 
     if tasks_df.empty:
-        st.info("No tasks assigned.")
+        st.info("No task assigned to a Technician yet! To assign job task to a technician, go to: "Settings" at the Navigation Menu, then click on the "Technician Management".")
         return
 
     for _, row in tasks_df.iterrows():
@@ -3560,7 +3560,7 @@ def page_technician_mobile():
     st.markdown("### 🧾 My Tasks")
     tasks = get_tasks_for_user(tech)
     if tasks.empty:
-        st.info("No tasks assigned.")
+        st.info("No task assigned to a Technician yet! To assign job task to a technician, go to: "Settings" at the Navigation Menu, then click on the "Technician Management".")
     else:
         for _, t in tasks.iterrows():
             st.checkbox(
