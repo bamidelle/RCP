@@ -3563,7 +3563,7 @@ def page_technician_mobile():
     st.markdown("### 🧾 My Tasks")
     tasks = get_tasks_for_user(tech)
     if tasks.empty:
-        st.info("No task assigned to a Technician yet! To assign job task to a technician, go to: "Settings" at the Navigation Menu, then click on the "Technician Management".")
+        st.info("No task assigned to a Technician yet! To assign job task to a technician, go to: SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT")
     else:
         for _, t in tasks.iterrows():
             st.checkbox(
