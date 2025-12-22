@@ -2931,10 +2931,12 @@ def page_executive_intelligence():
     
     # Display Narrative Health metric once
     if bi_allowed:
-        st.metric("Narrative Health", f"{health} / 100")
+        st.metric("Business Risk Score", f"{risk} / 100")
     else:
-        st.metric("Narrative Health", "🔒 Locked")
+        st.metric("Business Risk Score", "🔒 Locked")
+        st.caption("Upgrade to unlock Business Intelligence")
     
+        
     # Revenue Leakage
 
     st.markdown("## 💸 Revenue Leakage Risks")
