@@ -227,6 +227,46 @@ st.markdown("""
 
 # =============================================================
 
+# =========================================================
+# 🔐 PRICING PLANS & FEATURE ACCESS
+# =========================================================
+
+PLANS = {
+    "starter": {
+        "analytics_intelligence": False,
+        "seasonal_trends": False,
+        "advanced_seasonal": False,
+        "ai_recommendations": False,
+        "exports": False,
+        "history_months": 3
+    },
+    "pro": {
+        "analytics_intelligence": True,
+        "seasonal_trends": True,
+        "advanced_seasonal": False,
+        "ai_recommendations": True,
+        "exports": False,
+        "history_months": 12
+    },
+    "business": {
+        "analytics_intelligence": True,
+        "seasonal_trends": True,
+        "advanced_seasonal": True,
+        "ai_recommendations": True,
+        "exports": True,
+        "history_months": 24
+    },
+    "enterprise": {
+        "analytics_intelligence": True,
+        "seasonal_trends": True,
+        "advanced_seasonal": True,
+        "ai_recommendations": True,
+        "exports": True,
+        "history_months": 999
+    }
+}
+
+
 
 # ----------------------
 # CONFIG
@@ -1051,6 +1091,13 @@ def safe_col(df, col, default_dtype=None):
     if default_dtype:
         s = pd.to_numeric(s, errors="coerce")
     return s
+
+def get_current_plan():
+    return st.session_state.get("plan", "starter")
+
+def has_access(feature_key: str) -> bool:
+    plan = get_current_plan()
+    return PLANS.get(plan, {}).get(feature_key, False)
 
     
 def analyze_job_types(df):
@@ -2368,11 +2415,15 @@ def page_analytics():
     # =========================================================
     # 🧠 BUSINESS INTELLIGENCE ENGINE
     # =========================================================
-    intelligence = compute_business_intelligence(
-        range_key,
-        custom_start,
-        custom_end
-    )
+    if has_access("analytics_intelligence"):
+        intelligence = compute_business_intelligence(
+            range_key,
+            custom_start,
+            custom_end
+        )
+    else:
+        intelligence = {}
+
 
     # =========================================================
     # 🧠 EXECUTIVE SUMMARY (CPA & ROI STYLE)
@@ -3144,8 +3195,12 @@ def page_business_intelligence():
     with st.expander("📄 View Underlying Jobs Data"):
         st.dataframe(df, use_container_width=True)
 
+    st.write("Current plan:", get_current_plan())
+    st.write("Has analytics access:", has_access("analytics_intelligence"))
 
 
+
+    
     STATUS_COLORS = {
     "live": "green",
     "recent": "orange",
