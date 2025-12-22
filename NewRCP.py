@@ -2416,7 +2416,7 @@ def page_analytics():
                 <div class="kpi-caption">{sig['message']}</div>
             </div>
             """, unsafe_allow_html=True)
-    ["message"]
+    
         
     st.markdown("### 🧠 Executive Interpretation")
     
@@ -2444,13 +2444,6 @@ def page_analytics():
     <div class="kpi-card">
         <div class="kpi-label">Narrative Health</div>
         <div class="kpi-value green">{health} / 100</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    c2.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-label">BI Version</div>
-        <div class="kpi-value blue">{version}</div>
     </div>
     """, unsafe_allow_html=True)
     
