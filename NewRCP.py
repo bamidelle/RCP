@@ -2418,7 +2418,26 @@ def page_analytics():
             """, unsafe_allow_html=True)
     
         
+    # =========================================================
+    # 🧠 EXECUTIVE NARRATIVE (Clean, structured)
+    # =========================================================
     st.markdown("### 🧠 Executive Interpretation")
+    
+    narrative = intelligence.get("executive_narrative", {})
+    for line in narrative.get("lines", []):
+        confidence = line.get("confidence", 0)
+        if confidence >= 80:
+            st.success(line["text"])
+        elif confidence >= 50:
+            st.info(line["text"])
+        else:
+            st.warning(line["text"])
+    
+    st.caption(
+        f"Narrative Health: {narrative.get('health_score', 0)} / 100 · "
+        f"BI Version: {narrative.get('version', 'Unknown')}"
+    )
+    
         
     health = narrative.get("health_score", 0)
     version = narrative.get("version", "Unknown")
