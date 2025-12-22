@@ -2382,6 +2382,9 @@ def page_pipeline_board():
 
 # Analytics page (donut + SLA line + overdue table)
 def page_analytics():
+    st.write("Current plan:", get_current_plan())
+    st.write("Has analytics access:", has_access("analytics_intelligence"))
+
     st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
     df = leads_df.copy()
     if df.empty:
@@ -3371,9 +3374,6 @@ def page_ml_internal():
 
 # ---------- BEGIN BLOCK G: AI RECOMMENDATIONS PAGE ----------
 def page_ai_recommendations():
-    st.write("Current plan:", get_current_plan())
-    st.write("Has analytics access:", has_access("analytics_intelligence"))
-
     """AI Recommendations — cleaned, safe, and optimized."""
     import plotly.express as px
     from sqlalchemy import func
