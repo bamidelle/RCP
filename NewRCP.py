@@ -193,6 +193,36 @@ def fetch_forecast_weather(lat, lon, days):
     return df.dropna().reset_index(drop=True)
 # ---------- end weather helpers ----------
 
+st.markdown("""
+<style>
+.kpi-card {
+    background-color: #000000;
+    padding: 18px 20px;
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+    min-height: 110px;
+}
+.kpi-label {
+    color: #9ca3af;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+}
+.kpi-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+.kpi-caption {
+    color: #d1d5db;
+    font-size: 0.85rem;
+    margin-top: 6px;
+}
+.blue { color: #3b82f6; }
+.green { color: #22c55e; }
+.orange { color: #f97316; }
+.red { color: #ef4444; }
+.cyan { color: #06b6d4; }
+</style>
+""", unsafe_allow_html=True)
 
 
 # =============================================================
@@ -2372,25 +2402,23 @@ def page_analytics():
         f"{intelligence.get('health_score', 0)} / 100"
     )
     
-    # =========================================================
-    # 🚨 STRATEGIC SIGNALS — KPI CARD STYLE
-    # =========================================================
     signals = intelligence.get("strategic_signals", [])
     
     if signals:
         st.markdown("### 🚨 Strategic Signals")
         cols = st.columns(len(signals))
-        for col, sig in zip(cols, signals):
-            col.metric(
-                label=f"{sig['icon']} {sig['label']}",
-                value=sig.get("short", "Active")
-            )
-            col.caption(sig["message"])
     
-    # =========================================================
-    # 🧠 EXECUTIVE INTERPRETATION — KPI CARD STYLE
-    # =========================================================
-    st.markdown("### 🧠 Executive Interpretation")
+        for col, sig in zip(cols, signals):
+            col.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">{sig['icon']} {sig['label']}</div>
+                <div class="kpi-value cyan">{sig.get('short', 'Active')}</div>
+                <div class="kpi-caption">{sig['message']}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    ["message"])
+        
+        st.markdown("### 🧠 Executive Interpretation")
     
     narrative = intelligence.get("executive_narrative", {})
     lines = narrative.get("lines", [])
@@ -2398,39 +2426,43 @@ def page_analytics():
     if lines:
         cols = st.columns(min(3, len(lines)))
         for col, line in zip(cols, lines[:3]):
-            col.metric(
-                label="Insight",
-                value=line["text"][:42] + "…" if len(line["text"]) > 45 else line["text"]
-            )
-            col.caption(f"Confidence: {line.get('confidence', 0)}%")
+            col.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">Insight</div>
+                <div class="kpi-value blue">Interpretation</div>
+                <div class="kpi-caption">{line['text']}</div>
+            </div>
+            """, unsafe_allow_html=True)
     
-    # =========================================================
-    # 🧠 NARRATIVE HEALTH — KPI CARD
-    # =========================================================
+        
     health = narrative.get("health_score", 0)
     version = narrative.get("version", "Unknown")
     
     c1, c2 = st.columns(2)
     
-    c1.metric(
-        "Narrative Health",
-        f"{health} / 100"
-    )
+    c1.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-label">Narrative Health</div>
+        <div class="kpi-value green">{health} / 100</div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    c2.metric(
-        "BI Version",
-        version
-    )
+    c2.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-label">BI Version</div>
+        <div class="kpi-value blue">{version}</div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # =========================================================
-    # ⚠️ BUSINESS RISK SCORE — KPI CARD
-    # =========================================================
+        
     risk = intelligence.get("business_risk_score", 0)
     
-    st.metric(
-        "⚠️ Business Risk Score",
-        f"{risk} / 100"
-    )
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-label">⚠️ Business Risk Score</div>
+        <div class="kpi-value red">{risk} / 100</div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
     
