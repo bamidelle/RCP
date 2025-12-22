@@ -2373,56 +2373,64 @@ def page_analytics():
     )
     
     # =========================================================
-    # 🚨 STRATEGIC SIGNALS (CPA-style alert cards)
+    # 🚨 STRATEGIC SIGNALS — KPI CARD STYLE
     # =========================================================
     signals = intelligence.get("strategic_signals", [])
+    
     if signals:
         st.markdown("### 🚨 Strategic Signals")
         cols = st.columns(len(signals))
         for col, sig in zip(cols, signals):
-            col.metric(f"{sig['icon']} {sig['label']}", "")
+            col.metric(
+                label=f"{sig['icon']} {sig['label']}",
+                value=sig.get("short", "Active")
+            )
             col.caption(sig["message"])
     
     # =========================================================
-    # 🧠 EXECUTIVE NARRATIVE (Clean, structured)
+    # 🧠 EXECUTIVE INTERPRETATION — KPI CARD STYLE
     # =========================================================
     st.markdown("### 🧠 Executive Interpretation")
     
     narrative = intelligence.get("executive_narrative", {})
-    for line in narrative.get("lines", []):
-        confidence = line.get("confidence", 0)
-        if confidence >= 80:
-            st.success(line["text"])
-        elif confidence >= 50:
-            st.info(line["text"])
-        else:
-            st.warning(line["text"])
+    lines = narrative.get("lines", [])
     
-    st.caption(
-        f"Narrative Health: {narrative.get('health_score', 0)} / 100 · "
-        f"BI Version: {narrative.get('version', 'Unknown')}"
+    if lines:
+        cols = st.columns(min(3, len(lines)))
+        for col, line in zip(cols, lines[:3]):
+            col.metric(
+                label="Insight",
+                value=line["text"][:42] + "…" if len(line["text"]) > 45 else line["text"]
+            )
+            col.caption(f"Confidence: {line.get('confidence', 0)}%")
+    
+    # =========================================================
+    # 🧠 NARRATIVE HEALTH — KPI CARD
+    # =========================================================
+    health = narrative.get("health_score", 0)
+    version = narrative.get("version", "Unknown")
+    
+    c1, c2 = st.columns(2)
+    
+    c1.metric(
+        "Narrative Health",
+        f"{health} / 100"
+    )
+    
+    c2.metric(
+        "BI Version",
+        version
     )
     
     # =========================================================
-    # ⚠️ RISKS & LEAKAGE (Same style as CPA warnings)
+    # ⚠️ BUSINESS RISK SCORE — KPI CARD
     # =========================================================
-    leakage = intelligence.get("revenue_leakage", [])
-    if leakage:
-        st.markdown("### ⚠️ Revenue Leakage & Risk")
-        for issue in leakage:
-            st.warning(issue)
-    
     risk = intelligence.get("business_risk_score", 0)
-    st.metric("Business Risk Score", f"{risk} / 100")
     
-    # =========================================================
-    # 🔍 WHAT CHANGED & WHY
-    # =========================================================
-    changes = intelligence.get("what_changed", [])
-    if changes:
-        st.markdown("### 🔍 What Changed & Why")
-        for change in changes:
-            st.write("•", change)
+    st.metric(
+        "⚠️ Business Risk Score",
+        f"{risk} / 100"
+    )
 
 
     
