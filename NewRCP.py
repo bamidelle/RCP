@@ -2416,7 +2416,7 @@ def page_analytics():
                 <div class="kpi-caption">{sig['message']}</div>
             </div>
             """, unsafe_allow_html=True)
-    ["message"])
+    ["message"]
         
         st.markdown("### 🧠 Executive Interpretation")
     
