@@ -2419,21 +2419,6 @@ def page_analytics():
     
         
     st.markdown("### 🧠 Executive Interpretation")
-    
-    narrative = intelligence.get("executive_narrative", {})
-    lines = narrative.get("lines", [])
-    
-    if lines:
-        cols = st.columns(min(3, len(lines)))
-        for col, line in zip(cols, lines[:3]):
-            col.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">Insight</div>
-                <div class="kpi-value blue">Interpretation</div>
-                <div class="kpi-caption">{line['text']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    
         
     health = narrative.get("health_score", 0)
     version = narrative.get("version", "Unknown")
