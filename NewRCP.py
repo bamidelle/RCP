@@ -2431,7 +2431,9 @@ def page_analytics():
     # =========================================================
     # 🧠 BUSINESS INTELLIGENCE ENGINE
     # =========================================================
-    if has_access("analytics_intelligence"):
+    bi_allowed = has_access("analytics_intelligence")
+    
+    if bi_allowed:
         intelligence = compute_business_intelligence(
             range_key,
             custom_start,
@@ -2439,6 +2441,7 @@ def page_analytics():
         )
     else:
         intelligence = {}
+
 
 
     # =========================================================
