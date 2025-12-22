@@ -2190,9 +2190,9 @@ def page_lead_capture():
         contact_email = st.text_input("Contact email")
         property_address = st.text_input("Property address")
         damage_type = st.text_input(
-    "Job / Service Type",
-    placeholder="e.g. Water Damage, HVAC Repair, Security Patrol, IT Support"
-)
+            "Job / Service Type",
+            placeholder="e.g. Water Damage, HVAC Repair, Security Patrol, IT Support"
+        )
 
         assigned_to = st.text_input("Assigned to (username)")
         estimated_value = st.number_input("Estimated value (USD)", min_value=0.0, value=0.0, step=100.0)
@@ -2200,50 +2200,52 @@ def page_lead_capture():
         sla_hours = st.number_input("SLA hours (first response)", min_value=1, value=DEFAULT_SLA_HOURS, step=1)
         notes = st.text_area("Notes")
         submitted = st.form_submit_button("Create / Update Lead")
+        
         if submitted:
-        try:
-            # ==============================
-            # PLAN LIMIT ENFORCEMENT (PASTE HERE)
-            # ==============================
-            plan = get_current_plan()
-            limit = PLANS.get(plan, {}).get("max_leads_per_month")
-    
-            if limit is not None:
-                current_count = count_leads_this_month()
-                if current_count >= limit:
-                    st.error(
-                        f"🚫 You’ve reached your monthly lead limit "
-                        f"({current_count}/{limit}). Upgrade to add more leads."
-                    )
-                    return
-        # ==============================
-        # END PLAN CHECK
-        # ==============================
+            try:
+                # ==============================
+                # PLAN LIMIT ENFORCEMENT (PASTE HERE)
+                # ==============================
+                plan = get_current_plan()
+                limit = PLANS.get(plan, {}).get("max_leads_per_month")
 
-        upsert_lead_record({
-            "lead_id": lead_id.strip(),
-            "created_at": datetime.utcnow(),
-            "source": source,
-            "source_details": source_details,
-            "contact_name": contact_name,
-            "contact_phone": contact_phone,
-            "contact_email": contact_email,
-            "property_address": property_address,
-            "damage_type": damage_type,
-            "assigned_to": assigned_to or None,
-            "estimated_value": float(estimated_value or 0.0),
-            "ad_cost": float(ad_cost or 0.0),
-            "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
-            "sla_entered_at": datetime.utcnow(),
-            "notes": notes
-        }, actor="admin")
+                if limit is not None:
+                    current_count = count_leads_this_month()
+                    if current_count >= limit:
+                        st.error(
+                            f"🚫 You’ve reached your monthly lead limit "
+                            f"({current_count}/{limit}). Upgrade to add more leads."
+                        )
+                        return
+                # ==============================
+                # END PLAN CHECK
+                # ==============================
 
-        st.success(f"Lead {lead_id} saved.")
-        st.rerun()
+                upsert_lead_record({
+                    "lead_id": lead_id.strip(),
+                    "created_at": datetime.utcnow(),
+                    "source": source,
+                    "source_details": source_details,
+                    "contact_name": contact_name,
+                    "contact_phone": contact_phone,
+                    "contact_email": contact_email,
+                    "property_address": property_address,
+                    "damage_type": damage_type,
+                    "assigned_to": assigned_to or None,
+                    "estimated_value": float(estimated_value or 0.0),
+                    "ad_cost": float(ad_cost or 0.0),
+                    "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
+                    "sla_entered_at": datetime.utcnow(),
+                    "notes": notes
+                }, actor="admin")
 
-    except Exception as e:
-        st.error("Failed to save lead: " + str(e))
-        st.write(traceback.format_exc())
+                st.success(f"Lead {lead_id} saved.")
+                st.rerun()
+
+            except Exception as e:
+                st.error("Failed to save lead: " + str(e))
+                st.write(traceback.format_exc())
+
 
 # Pipeline Board 
 # =============================
