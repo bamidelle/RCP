@@ -2405,7 +2405,7 @@ def page_analytics():
     signals = intelligence.get("strategic_signals", [])
     
     if signals:
-    st.markdown("### 🚨 Strategic Signals")
+        st.markdown("### 🚨 Strategic Signals")
         cols = st.columns(len(signals))
     
         for col, sig in zip(cols, signals):
