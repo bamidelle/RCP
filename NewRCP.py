@@ -3195,8 +3195,7 @@ def page_business_intelligence():
     with st.expander("📄 View Underlying Jobs Data"):
         st.dataframe(df, use_container_width=True)
 
-st.write("Current plan:", get_current_plan())
-st.write("Has analytics access:", has_access("analytics_intelligence"))
+    
 
 
 
@@ -3372,6 +3371,9 @@ def page_ml_internal():
 
 # ---------- BEGIN BLOCK G: AI RECOMMENDATIONS PAGE ----------
 def page_ai_recommendations():
+    st.write("Current plan:", get_current_plan())
+    st.write("Has analytics access:", has_access("analytics_intelligence"))
+
     """AI Recommendations — cleaned, safe, and optimized."""
     import plotly.express as px
     from sqlalchemy import func
