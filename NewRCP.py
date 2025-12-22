@@ -772,7 +772,7 @@ def page_tasks():
 
     if tasks_df.empty:
         st.info(
-    '⚠️ No task assigned to a Technician yet! To assign a job task to a technician, go to: "Settings" at the Navigation Menu, then click on the "Technician Management".'
+    "⚠️ No task assigned to a Technician yet! To assign a job task to a technician, go to: SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
 )
 
         return
