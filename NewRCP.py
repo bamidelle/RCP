@@ -1118,9 +1118,8 @@ def count_leads_this_month():
 
 
 def get_current_plan():
-    if is_trial_active():
-        return "trial"
     return st.session_state.get("plan", "starter")
+
 
 
 def has_access(feature_key: str) -> bool:
