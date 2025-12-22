@@ -2382,10 +2382,15 @@ def page_pipeline_board():
 
 # Analytics page (donut + SLA line + overdue table)
 def page_analytics():
-    st.write("Current plan:", get_current_plan())
-    st.write("Has analytics access:", has_access("analytics_intelligence"))
-
     st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
+
+        # 🔒 Plan Access Gate
+    if not has_access("analytics_intelligence"):
+        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
+        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
+        return
+
+    
     df = leads_df.copy()
     if df.empty:
         st.info("No leads to analyze.")
