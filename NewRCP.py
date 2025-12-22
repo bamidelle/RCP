@@ -2405,7 +2405,7 @@ def page_analytics():
     signals = intelligence.get("strategic_signals", [])
     
     if signals:
-        st.markdown("### 🚨 Strategic Signals")
+    st.markdown("### 🚨 Strategic Signals")
         cols = st.columns(len(signals))
     
         for col, sig in zip(cols, signals):
@@ -2418,7 +2418,7 @@ def page_analytics():
             """, unsafe_allow_html=True)
     ["message"]
         
-        st.markdown("### 🧠 Executive Interpretation")
+    st.markdown("### 🧠 Executive Interpretation")
     
     narrative = intelligence.get("executive_narrative", {})
     lines = narrative.get("lines", [])
