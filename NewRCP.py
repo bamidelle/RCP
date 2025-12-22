@@ -3195,8 +3195,8 @@ def page_business_intelligence():
     with st.expander("📄 View Underlying Jobs Data"):
         st.dataframe(df, use_container_width=True)
 
-    st.write("Current plan:", get_current_plan())
-    st.write("Has analytics access:", has_access("analytics_intelligence"))
+st.write("Current plan:", get_current_plan())
+st.write("Has analytics access:", has_access("analytics_intelligence"))
 
 
 
