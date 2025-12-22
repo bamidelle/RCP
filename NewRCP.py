@@ -233,31 +233,27 @@ st.markdown("""
 # =========================================================
 
 PLANS = {
-    "trial": {
-        "analytics_intelligence": True,
-        "seasonal_trends": True,
-        "ai_recommendations": True,
-        "exports": False,
-    },
     "starter": {
-        "analytics_intelligence": False,
-        "seasonal_trends": False,
-        "ai_recommendations": False,
-        "exports": False,
+        "analytics": False,
+        "business_intelligence": False,
+        "max_leads_per_month": 50,
+        "max_users": 1,
     },
     "pro": {
-        "analytics_intelligence": True,
-        "seasonal_trends": True,
-        "ai_recommendations": False,
-        "exports": True,
+        "analytics": True,
+        "business_intelligence": True,
+        "max_leads_per_month": 300,
+        "max_users": 5,
     },
     "business": {
-        "analytics_intelligence": True,
-        "seasonal_trends": True,
-        "ai_recommendations": True,
-        "exports": True,
+        "analytics": True,
+        "business_intelligence": True,
+        "max_leads_per_month": 2000,
+        "max_users": 10,
     },
+    "enterprise": {"max_leads_per_month": None},
 }
+
 
 
 
@@ -278,6 +274,17 @@ COMFORTAA_IMPORT = "https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;
 
 # KPI colors (numbers)
 KPI_COLORS = ["#2563eb", "#0ea5a4", "#a855f7", "#f97316", "#ef4444", "#6d28d9", "#22c55e"]
+
+
+#-----------------------
+# STRIPE DUMMY TEST
+#-----------------------
+STRIPE_ENABLED = False  # turn ON later
+STRIPE_PLANS = {
+    "starter": None,
+    "pro": "price_test_pro",
+    "business": "price_test_business",
+}
 
 
 # ----------------------
@@ -303,6 +310,12 @@ class User(Base):
     full_name = Column(String, default="")
     role = Column(String, default="Admin")  # Admin by default for backend
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    plan = Column(String, default="starter")
+    trial_ends_at = Column(DateTime, nullable=True)
+    subscription_status = Column(String, default="trial")  
+    # trial | active | expired | canceled
+
 
 
 class Lead(Base):
@@ -1097,6 +1110,13 @@ def is_trial_active(days=14):
         return False
     return (datetime.utcnow() - start).days < days
 
+def count_leads_this_month():
+    start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0)
+    end = datetime.utcnow()
+    df = leads_to_df(start, end)
+    return len(df)
+
+
 def get_current_plan():
     if is_trial_active():
         return "trial"
@@ -1568,6 +1588,8 @@ def get_leads_for_task_dropdown():
         s.close()
 
 
+from datetime import datetime, timedelta
+
 def add_user(username: str, full_name: str = "", role: str = "Admin"):
     s = get_session()
     try:
@@ -1575,16 +1597,29 @@ def add_user(username: str, full_name: str = "", role: str = "Admin"):
         if existing:
             existing.full_name = full_name
             existing.role = role
-            s.add(existing); s.commit()
+            s.add(existing)
+            s.commit()
             return existing.username
+
+        # ✅ Create new user
         u = User(username=username, full_name=full_name, role=role)
-        s.add(u); s.commit()
+
+        # ✅ APPLY TRIAL LOGIC IMMEDIATELY AFTER CREATION
+        if not u.trial_ends_at:
+            u.trial_ends_at = datetime.utcnow() + timedelta(days=14)
+            u.plan = "starter"
+            u.subscription_status = "trial"
+
+        s.add(u)
+        s.commit()
         return u.username
+
     except Exception:
         s.rollback()
         raise
     finally:
         s.close()
+
 
 
 # ----------------------
@@ -2166,38 +2201,49 @@ def page_lead_capture():
         notes = st.text_area("Notes")
         submitted = st.form_submit_button("Create / Update Lead")
         if submitted:
-            try:
-                upsert_lead_record({
-                    "lead_id": lead_id.strip(),
-                    "created_at": datetime.utcnow(),
-                    "source": source,
-                    "source_details": source_details,
-                    "contact_name": contact_name,
-                    "contact_phone": contact_phone,
-                    "contact_email": contact_email,
-                    "property_address": property_address,
-                    "damage_type": damage_type,
-                    "assigned_to": assigned_to or None,
-                    "estimated_value": float(estimated_value or 0.0),
-                    "ad_cost": float(ad_cost or 0.0),
-                    "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
-                    "sla_entered_at": datetime.utcnow(),
-                    "notes": notes
-                }, actor="admin")
-                st.success(f"Lead {lead_id} saved.")
-                st.rerun()
-            except Exception as e:
-                st.error("Failed to save lead: " + str(e))
-                st.write(traceback.format_exc())
+        try:
+            # ==============================
+            # PLAN LIMIT ENFORCEMENT (PASTE HERE)
+            # ==============================
+            plan = get_current_plan()
+            limit = PLANS.get(plan, {}).get("max_leads_per_month")
+    
+            if limit is not None:
+                current_count = count_leads_this_month()
+                if current_count >= limit:
+                    st.error(
+                        f"🚫 You’ve reached your monthly lead limit "
+                        f"({current_count}/{limit}). Upgrade to add more leads."
+                    )
+                    return
+        # ==============================
+        # END PLAN CHECK
+        # ==============================
 
+        upsert_lead_record({
+            "lead_id": lead_id.strip(),
+            "created_at": datetime.utcnow(),
+            "source": source,
+            "source_details": source_details,
+            "contact_name": contact_name,
+            "contact_phone": contact_phone,
+            "contact_email": contact_email,
+            "property_address": property_address,
+            "damage_type": damage_type,
+            "assigned_to": assigned_to or None,
+            "estimated_value": float(estimated_value or 0.0),
+            "ad_cost": float(ad_cost or 0.0),
+            "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
+            "sla_entered_at": datetime.utcnow(),
+            "notes": notes
+        }, actor="admin")
 
-    st.markdown("---")
-    st.subheader("Recent leads")
-    df = leads_to_df(None, None)
-    if df.empty:
-        st.info("No leads yet.")
-    else:
-        st.dataframe(df.sort_values("created_at", ascending=False).head(50))
+        st.success(f"Lead {lead_id} saved.")
+        st.rerun()
+
+    except Exception as e:
+        st.error("Failed to save lead: " + str(e))
+        st.write(traceback.format_exc())
 
 # Pipeline Board 
 # =============================
