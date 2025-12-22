@@ -19,7 +19,8 @@ from streamlit_folium import st_folium
 import pandas as pd
 import numpy as np
 import plotly.express as px
-
+from datetime import datetime
+import streamlit as st
 import joblib
 from sqlalchemy import (
     create_engine,
@@ -232,39 +233,32 @@ st.markdown("""
 # =========================================================
 
 PLANS = {
+    "trial": {
+        "analytics_intelligence": True,
+        "seasonal_trends": True,
+        "ai_recommendations": True,
+        "exports": False,
+    },
     "starter": {
         "analytics_intelligence": False,
         "seasonal_trends": False,
-        "advanced_seasonal": False,
         "ai_recommendations": False,
         "exports": False,
-        "history_months": 3
     },
     "pro": {
         "analytics_intelligence": True,
         "seasonal_trends": True,
-        "advanced_seasonal": False,
-        "ai_recommendations": True,
-        "exports": False,
-        "history_months": 12
+        "ai_recommendations": False,
+        "exports": True,
     },
     "business": {
         "analytics_intelligence": True,
         "seasonal_trends": True,
-        "advanced_seasonal": True,
         "ai_recommendations": True,
         "exports": True,
-        "history_months": 24
     },
-    "enterprise": {
-        "analytics_intelligence": True,
-        "seasonal_trends": True,
-        "advanced_seasonal": True,
-        "ai_recommendations": True,
-        "exports": True,
-        "history_months": 999
-    }
 }
+
 
 
 
@@ -1092,8 +1086,22 @@ def safe_col(df, col, default_dtype=None):
         s = pd.to_numeric(s, errors="coerce")
     return s
 
+def init_trial():
+    if "trial_start" not in st.session_state:
+        st.session_state["trial_start"] = datetime.utcnow()
+        st.session_state["plan"] = "trial"
+
+def is_trial_active(days=14):
+    start = st.session_state.get("trial_start")
+    if not start:
+        return False
+    return (datetime.utcnow() - start).days < days
+
 def get_current_plan():
+    if is_trial_active():
+        return "trial"
     return st.session_state.get("plan", "starter")
+
 
 def has_access(feature_key: str) -> bool:
     plan = get_current_plan()
@@ -2909,13 +2917,23 @@ def page_executive_intelligence():
     for sig in intelligence.get("strategic_signals", []):
         st.write(f"{sig['icon']} **{sig['label']}** — {sig['message']}")
 
-    # Executive Narrative
+    
+    # 🧠 Executive Summary
+    bi_allowed = has_access("analytics_intelligence")
+    
     st.markdown("## 🧠 Executive Summary")
     narrative = intelligence.get("executive_narrative", {})
     for line in narrative.get("lines", []):
         st.write("•", line["text"])
-
+    
+    # Display Narrative Health metric once
+    if bi_allowed:
+        st.metric("Narrative Health", f"{health} / 100")
+    else:
+        st.metric("Narrative Health", "🔒 Locked")
+    
     # Revenue Leakage
+
     st.markdown("## 💸 Revenue Leakage Risks")
     for issue in intelligence.get("revenue_leakage", []):
         st.write("•", issue)
@@ -3386,6 +3404,12 @@ def page_ai_recommendations():
 
     st.markdown("<div class='header'>🤖 AI Recommendations</div>", unsafe_allow_html=True)
     st.markdown("<em>Heuristic recommendations and quick diagnostics for the pipeline.</em>", unsafe_allow_html=True)
+        # 🔒 Plan Access Gate
+    if not has_access("analytics_intelligence"):
+        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
+        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
+        return
+
 
 
     # Load leads defensively
@@ -3703,6 +3727,12 @@ def page_technician_mobile():
 # Exports page
 def page_exports():
     st.markdown("<div class='header'>📤 Exports & Imports</div>", unsafe_allow_html=True)
+    # 🔒 Plan Access Gate
+    if not has_access("analytics_intelligence"):
+        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
+        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
+        return
+
     st.markdown("<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>", unsafe_allow_html=True)
     df = leads_to_df(None, None)
     if not df.empty:
@@ -3830,6 +3860,12 @@ def page_seasonal_trends():
     import streamlit as st
 
     st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
+        # 🔒 Plan Access Gate
+    if not has_access("analytics_intelligence"):
+        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
+        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
+        return
+
     st.markdown(
         """
     <em>
