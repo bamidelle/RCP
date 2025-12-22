@@ -771,7 +771,8 @@ def page_tasks():
     tasks_df = get_tasks_for_user(tech_username)
 
     if tasks_df.empty:
-        st.info("No task assigned to a Technician yet! To assign job task to a technician, go to: "Settings" at the Navigation Menu, then click on the "Technician Management".")
+        st.info('⚠️ No task assigned to a Technician yet! To assign a job task to a technician, go to: "Settings" at the Navigation Menu, then click on the "Technician Management".')
+
         return
 
     for _, row in tasks_df.iterrows():
