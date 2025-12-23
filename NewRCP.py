@@ -487,52 +487,56 @@ safe_create_tables()
 def safe_migrate():
     try:
         inspector = inspect(engine)
-        if "leads" in inspector.get_table_names():
-            existing = [c['name'] for c in inspector.get_columns("leads")]
+
+        if "users" in inspector.get_table_names():
+            existing = [c["name"] for c in inspector.get_columns("users")]
             desired = {
-                "score": "FLOAT",
-                "ad_cost": "FLOAT",
-                "source_details": "TEXT",
-                "contact_name": "TEXT",
-                "assigned_to": "TEXT",
+                "plan": "TEXT",
+                "trial_ends_at": "DATETIME",
+                "subscription_status": "TEXT",
             }
-            conn = engine.connect()
-            for col, typ in desired.items():
-                if col not in existing:
-                    try:
-                        conn.execute(f"ALTER TABLE leads ADD COLUMN {col} {typ}")
-                    except Exception:
-                        pass
-            conn.close()
-    except Exception:
-        pass
+
+            with engine.begin() as conn:
+                for col, typ in desired.items():
+                    if col not in existing:
+                        conn.execute(
+                            text(f"ALTER TABLE users ADD COLUMN {col} {typ}")
+                        )
+
+    except Exception as e:
+        print("⚠️ User migration skipped:", e)
+
+safe_migrate()
+
 
 
 from sqlalchemy import inspect, text
 
 def safe_migrate_new_tables():
-    """Add missing columns and create tables safely."""
+    """Add missing columns and ensure tables exist (SAFE)."""
     try:
         inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
 
-        # ---- technicians.status column ----
-        if "technicians" in inspector.get_table_names():
+        # ---- technicians.status ----
+        if "technicians" in existing_tables:
             cols = [c["name"] for c in inspector.get_columns("technicians")]
             if "status" not in cols:
-                with engine.connect() as conn:
+                with engine.begin() as conn:
                     conn.execute(
                         text(
                             "ALTER TABLE technicians "
                             "ADD COLUMN status VARCHAR DEFAULT 'available'"
                         )
                     )
-                    conn.commit()
 
-        # ---- create missing tables ----
-        Base.metadata.create_all(engine)
+        # ---- users table ----
+        if "users" not in existing_tables:
+            Base.metadata.tables["users"].create(bind=engine)
 
     except Exception as e:
-        print(f"Safe migration failed: {e}")
+        print("⚠️ Safe migration failed:", e)
+
 
 # Call migration
 safe_migrate_new_tables()
@@ -1568,23 +1572,32 @@ def delete_lead_record(lead_id: str, actor="admin"):
 
 
 def get_users_df():
-    s = get_session()
     try:
-        users = s.query(User).all()
-        rows = []
-        for u in users:
-            rows.append({
+        with SessionLocal() as s:
+            users = s.query(User).all()
+
+        if not users:
+            return pd.DataFrame(columns=[
+                "username", "full_name", "role",
+                "plan", "subscription_status", "created_at"
+            ])
+
+        return pd.DataFrame([
+            {
                 "username": u.username,
                 "full_name": u.full_name,
                 "role": u.role,
                 "plan": getattr(u, "plan", "starter"),
                 "subscription_status": getattr(u, "subscription_status", "trial"),
-                "trial_ends_at": getattr(u, "trial_ends_at", None),
-                "created_at": getattr(u, "created_at", None),
-            })
-        return pd.DataFrame(rows)
-    finally:
-        s.close()
+                "created_at": u.created_at,
+            }
+            for u in users
+        ])
+
+    except Exception as e:
+        st.error("Failed to load users")
+        st.code(str(e))
+        return pd.DataFrame()
 
 def get_leads_for_task_dropdown():
     """
