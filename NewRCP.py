@@ -290,12 +290,14 @@ STRIPE_PLANS = {
 # ----------------------
 # DB SETUP
 # ----------------------
-DB_PATH = os.path.join(os.getcwd(), DB_FILE)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, DB_FILE)
 ENGINE_URL = f"sqlite:///{DB_PATH}"
 
-
-# SQLAlchemy engine and session factory
-engine = create_engine(ENGINE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(
+    ENGINE_URL,
+    connect_args={"check_same_thread": False}
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 Base = declarative_base()
 
@@ -453,6 +455,7 @@ class CompetitorAlert(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 # ---------- END BLOCK A2 ----------
+Base.metadata.create_all(bind=engine)
 
 # ---------- END BLOCK A ----------
 
@@ -462,6 +465,8 @@ class CompetitorAlert(Base):
 # Create tables if missing
 from sqlalchemy import inspect
 
+inspector = inspect(engine)
+st.write("DB tables:", inspector.get_table_names())
 
 def safe_create_tables():
     inspector = inspect(engine)
