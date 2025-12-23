@@ -466,7 +466,7 @@ Base.metadata.create_all(bind=engine)
 from sqlalchemy import inspect
 
 inspector = inspect(engine)
-st.write("DB tables:", inspector.get_table_names())
+
 
 def safe_create_tables():
     inspector = inspect(engine)
