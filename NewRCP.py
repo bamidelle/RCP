@@ -262,7 +262,7 @@ PLANS = {
 # CONFIG
 # ----------------------
 APP_TITLE = "ReCapture Pro"
-DB_FILE = "titan_backend.db"   # stored in app working directory
+DB_FILE =    # stored in app working directory
 MODEL_FILE = "titan_model.joblib"
 PIPELINE_STAGES = [
     "New", "Contacted", "Inspection Scheduled", "Inspection Completed",
