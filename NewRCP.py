@@ -517,8 +517,15 @@ def safe_migrate_new_tables():
                 conn.execute(text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'"))
                 conn.commit()
 
-        # Create any missing tables
-        Base.metadata.create_all(bind=engine)
+#------------- Create any missing tables-----------
+    from sqlalchemy import inspect
+    
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+    
+    if "users" not in existing_tables:
+        Base.metadata.create_all(engine)
+
     except Exception as e:
         print(f"Safe migration failed: {e}")
 
@@ -1558,11 +1565,22 @@ def delete_lead_record(lead_id: str, actor="admin"):
 def get_users_df():
     s = get_session()
     try:
-        users = s.query(User).order_by(User.created_at.desc()).all()
-        data = [{"id":u.id, "username":u.username, "full_name":u.full_name, "role":u.role, "created_at":u.created_at} for u in users]
-        return pd.DataFrame(data)
+        users = s.query(User).all()
+        rows = []
+        for u in users:
+            rows.append({
+                "username": u.username,
+                "full_name": u.full_name,
+                "role": u.role,
+                "plan": getattr(u, "plan", "starter"),
+                "subscription_status": getattr(u, "subscription_status", "trial"),
+                "trial_ends_at": getattr(u, "trial_ends_at", None),
+                "created_at": getattr(u, "created_at", None),
+            })
+        return pd.DataFrame(rows)
     finally:
         s.close()
+
 def get_leads_for_task_dropdown():
     """
     Returns DataFrame of leads for task assignment dropdown
