@@ -513,29 +513,23 @@ safe_migrate()
 from sqlalchemy import inspect, text
 
 def safe_migrate_new_tables():
-    """Add missing columns and ensure tables exist (SAFE)."""
     try:
         inspector = inspect(engine)
-        existing_tables = inspector.get_table_names()
 
-        # ---- technicians.status ----
-        if "technicians" in existing_tables:
+        # Create missing tables
+        Base.metadata.create_all(engine)
+
+        # Safe column additions
+        if "technicians" in inspector.get_table_names():
             cols = [c["name"] for c in inspector.get_columns("technicians")]
             if "status" not in cols:
                 with engine.begin() as conn:
                     conn.execute(
-                        text(
-                            "ALTER TABLE technicians "
-                            "ADD COLUMN status VARCHAR DEFAULT 'available'"
-                        )
+                        text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'")
                     )
-
-        # ---- users table ----
-        if "users" not in existing_tables:
-            Base.metadata.tables["users"].create(bind=engine)
-
     except Exception as e:
-        print("⚠️ Safe migration failed:", e)
+        print("Safe migration skipped:", e)
+
 
 
 # Call migration
@@ -1134,9 +1128,18 @@ def count_leads_this_month():
 
 
 def get_current_plan():
-    if is_trial_active():
-        return "trial"
-    return st.session_state.get("plan", "starter")
+    user = st.session_state.get("current_user")
+    if not user:
+        return "starter"
+
+    # Trial logic
+    if user.subscription_status == "trial":
+        if user.trial_ends_at and datetime.utcnow() > user.trial_ends_at:
+            return "starter"  # fallback after trial
+        return user.plan
+
+    return user.plan
+
 
 
 
@@ -2485,7 +2488,8 @@ def page_analytics():
         return
 
     
-    df = leads_df.copy()
+    df = leads_to_df(start, end)
+
     if df.empty:
         st.info("No leads to analyze.")
         return
@@ -3646,20 +3650,46 @@ def page_settings():
     st.markdown("<div class='header'>⚙️ Settings & User Management</div>", unsafe_allow_html=True)
     st.markdown("<em>Add team users, set roles for role-based integration later.</em>", unsafe_allow_html=True)
     st.subheader("Users")
-    users_df = get_users_df()
-    with st.form("add_user_form"):
-        uname = st.text_input("Username (unique)")
-        fname = st.text_input("Full name")
-        role = st.selectbox("Role", ["Admin","Estimator","Adjuster","Tech","Viewer"], index=0)
-        if st.form_submit_button("Add / Update User"):
-            if not uname:
-                st.error("Username required")
-            else:
-                add_user(uname.strip(), full_name=fname.strip(), role=role)
-                st.success("User saved")
-                st.rerun()
-    if not users_df.empty:
-        st.dataframe(users_df)
+    st.subheader("Users")
+
+with st.form("create_user_form"):
+    st.markdown("### ➕ Add User")
+
+    new_username = st.text_input("Username")
+    new_full_name = st.text_input("Full name")
+    new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
+
+    submitted = st.form_submit_button("Create User")
+
+    if submitted:
+        if not new_username:
+            st.error("Username is required")
+        else:
+            with SessionLocal() as s:
+                exists = s.query(User).filter(User.username == new_username).first()
+                if exists:
+                    st.error("User already exists")
+                else:
+                    user = User(
+                        username=new_username.strip(),
+                        full_name=new_full_name.strip(),
+                        role=new_role,
+                        plan="pro",
+                        subscription_status="trial",
+                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                    )
+                    s.add(user)
+                    s.commit()
+                    st.success("User created successfully")
+                    st.rerun()
+
+# ---- Display Users ----
+users_df = get_users_df()
+if not users_df.empty:
+    st.dataframe(users_df)
+else:
+    st.info("No users yet.")
+
     st.markdown("---")
     st.markdown("## 👷 Technician Management")
     
