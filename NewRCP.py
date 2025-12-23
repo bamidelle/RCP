@@ -510,21 +510,20 @@ def safe_migrate_new_tables():
     try:
         inspector = inspect(engine)
 
-        # Check if "status" column exists in "technicians"
-        cols = [c["name"] for c in inspector.get_columns("technicians")]
-        if "status" not in cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'"))
-                conn.commit()
+        # ---- technicians.status column ----
+        if "technicians" in inspector.get_table_names():
+            cols = [c["name"] for c in inspector.get_columns("technicians")]
+            if "status" not in cols:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE technicians "
+                            "ADD COLUMN status VARCHAR DEFAULT 'available'"
+                        )
+                    )
+                    conn.commit()
 
-#------------- Create any missing tables-----------
-    
-    
-    
-    inspector = inspect(engine)
-    existing_tables = inspector.get_table_names()
-    
-    if "users" not in existing_tables:
+        # ---- create missing tables ----
         Base.metadata.create_all(engine)
 
     except Exception as e:
