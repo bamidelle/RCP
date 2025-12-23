@@ -41,7 +41,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
-
+from sqlalchemy import inspect
 
 
 
@@ -518,7 +518,7 @@ def safe_migrate_new_tables():
                 conn.commit()
 
 #------------- Create any missing tables-----------
-    from sqlalchemy import inspect
+    
     
     inspector = inspect(engine)
     existing_tables = inspector.get_table_names()
