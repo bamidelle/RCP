@@ -520,7 +520,7 @@ def safe_migrate_new_tables():
 #------------- Create any missing tables-----------
     
     
-    try:
+    
     inspector = inspect(engine)
     existing_tables = inspector.get_table_names()
     
