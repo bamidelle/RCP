@@ -313,7 +313,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
 
     # PRIMARY IDENTITY
-    email = Column(String, unique=True, nullable=False)
+    email = Column(String, unique=True, nullable=False, index=True)
     email_verified = Column(Boolean, default=False)
 
     # OPTIONAL / INTERNAL
@@ -1683,47 +1683,38 @@ def get_leads_for_task_dropdown():
 
 from datetime import datetime, timedelta
 
-def add_user(
-    email: str,
-    username: str | None = None,
-    full_name: str = "",
-    role: str = "Admin",
-):
-    s = get_session()
-    try:
-        email = email.strip().lower()
-        username = username.strip() if username else email
+def add_user(email, username=None, full_name=None, role="Staff"):
+    # --- HARD BACKEND VALIDATION ---
+    if not email:
+        raise ValueError("Email is required")
 
-        # 1️⃣ Check by EMAIL first (primary identity)
+    email = email.strip().lower()
+
+    if not is_valid_email(email):
+        raise ValueError("Invalid email format")
+
+    with SessionLocal() as s:
+        # --- UNIQUENESS CHECK ---
         existing = s.query(User).filter(User.email == email).first()
         if existing:
-            existing.full_name = full_name
-            existing.role = role
-            existing.username = username
-            s.add(existing)
-            s.commit()
-            return existing.username
+            raise ValueError("A user with this email already exists")
 
-        # 2️⃣ Create new user
-        u = User(
+        user = User(
             email=email,
-            username=username,
+            username=username or email,
             full_name=full_name,
             role=role,
-            plan="starter",
-            subscription_status="trial",
-            trial_ends_at=datetime.utcnow() + timedelta(days=14),
         )
 
-        s.add(u)
-        s.commit()
-        return u.username
+        s.add(user)
 
-    except Exception:
-        s.rollback()
-        raise
-    finally:
-        s.close()
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            raise ValueError("Email already exists")
+
+        return user
 
 
 
