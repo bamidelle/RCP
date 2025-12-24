@@ -45,7 +45,9 @@ from sklearn.model_selection import train_test_split
 
 from sqlalchemy import inspect
 
-
+import uuid
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import relationship
 
 
 
@@ -328,8 +330,23 @@ class User(Base):
     trial_ends_at = Column(DateTime, nullable=True)
     subscription_status = Column(String, default="trial")
 
+    # =========================
+    # ACCOUNT STATUS (NEW)
+    # =========================
+    is_active = Column(Boolean, default=True)
+    last_login_at = Column(DateTime, nullable=True)
 
 
+class LoginToken(Base):
+    __tablename__ = "login_tokens"
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+
+    user = relationship("User")
 
 class Lead(Base):
     __tablename__ = "leads"
@@ -518,6 +535,76 @@ def safe_migrate():
         print("⚠️ User migration skipped:", e)
 
 safe_migrate()
+
+def create_login_token(user, minutes=15):
+    token = secrets.token_urlsafe(32)
+
+    login_token = LoginToken(
+        token=token,
+        user_id=user.id,
+        expires_at=datetime.utcnow() + timedelta(minutes=minutes),
+    )
+
+    with SessionLocal() as s:
+        s.add(login_token)
+        s.commit()
+
+    return token
+
+def verify_login_token(token: str):
+    with SessionLocal() as s:
+        login_token = (
+            s.query(LoginToken)
+            .filter(
+                LoginToken.token == token,
+                LoginToken.used == False,
+                LoginToken.expires_at > datetime.utcnow(),
+            )
+            .first()
+        )
+
+        if not login_token:
+            return None
+
+        login_token.used = True
+        login_token.user.last_login_at = datetime.utcnow()
+        s.commit()
+
+        return login_token.user
+
+from datetime import datetime
+
+def verify_login_token(token: str):
+    with SessionLocal() as s:
+        login_token = (
+            s.query(LoginToken)
+            .filter(
+                LoginToken.token == token,
+                LoginToken.used == False,
+                LoginToken.expires_at > datetime.utcnow(),
+            )
+            .first()
+        )
+
+        if not login_token:
+            return None
+
+        login_token.used = True
+        login_token.user.last_login_at = datetime.utcnow()
+        s.commit()
+
+        return login_token.user
+
+
+def login_user(user):
+    st.session_state["user_id"] = user.id
+    st.session_state["user_role"] = user.role
+    st.session_state["user_email"] = user.email
+
+
+def logout_user():
+    st.session_state.clear()
+
 
 
 
