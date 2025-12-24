@@ -3705,32 +3705,32 @@ def page_settings():
     st.subheader("Users")
 
     with st.form("create_user_form"):
-    st.markdown("### ➕ Add User")
-
-    email = st.text_input("Email (required)")
-    username = st.text_input("Username (optional)")
-    new_full_name = st.text_input("Full name")
-    new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
-
-    submitted = st.form_submit_button("Create User")
-
-    if submitted:
-        # --- HARD VALIDATION ---
-        if not email:
-            st.error("Email is required")
-        else:
-            try:
-                add_user(
-                    email=email,
-                    username=username,
-                    full_name=new_full_name,
-                    role=new_role,
-                )
-                st.success("User created successfully")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Failed to create user: {e}")
-            rerun()
+        st.markdown("### ➕ Add User")
+    
+        email = st.text_input("Email (required)")
+        username = st.text_input("Username (optional)")
+        new_full_name = st.text_input("Full name")
+        new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
+    
+        submitted = st.form_submit_button("Create User")
+    
+        if submitted:
+            # --- HARD VALIDATION ---
+            if not email:
+                st.error("Email is required")
+            else:
+                try:
+                    add_user(
+                        email=email,
+                        username=username,
+                        full_name=new_full_name,
+                        role=new_role,
+                    )
+                    st.success("User created successfully")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to create user: {e}")
+                rerun()
 
         
     
