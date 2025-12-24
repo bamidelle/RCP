@@ -616,43 +616,33 @@ def safe_migrate_new_tables():
     try:
         inspector = inspect(engine)
 
-        # -----------------------------
-        # 1. CREATE MISSING TABLES
-        # -----------------------------
+        # Ensure tables exist
         Base.metadata.create_all(engine)
 
-        # -----------------------------
-        # 2. TECHNICIANS TABLE
-        # -----------------------------
-        if "technicians" in inspector.get_table_names():
-            tech_cols = [c["name"] for c in inspector.get_columns("technicians")]
-            if "status" not in tech_cols:
-                with engine.begin() as conn:
-                    conn.execute(
-                        text(
-                            "ALTER TABLE technicians "
-                            "ADD COLUMN status VARCHAR DEFAULT 'available'"
-                        )
-                    )
+        with engine.begin() as conn:
 
-        # -----------------------------
-        # 3. USERS EMAIL MIGRATION ✅
-        # -----------------------------
-        if "users" in inspector.get_table_names():
-            user_cols = [c["name"] for c in inspector.get_columns("users")]
+            # ---- USERS TABLE ----
+            if "users" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("users")]
 
-            with engine.begin() as conn:
-                if "email" not in user_cols:
-                    conn.execute(
-                        text("ALTER TABLE users ADD COLUMN email VARCHAR")
-                    )
+                if "email" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR"))
 
-                if "email_verified" not in user_cols:
+                if "email_verified" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0"))
+
+                if "is_active" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"))
+
+                if "last_login_at" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+
+            # ---- TECHNICIANS TABLE ----
+            if "technicians" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("technicians")]
+                if "status" not in cols:
                     conn.execute(
-                        text(
-                            "ALTER TABLE users "
-                            "ADD COLUMN email_verified BOOLEAN DEFAULT 0"
-                        )
+                        text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'")
                     )
 
     except Exception as e:
