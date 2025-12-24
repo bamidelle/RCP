@@ -3652,78 +3652,78 @@ def page_settings():
     st.subheader("Users")
     st.subheader("Users")
 
-with st.form("create_user_form"):
-    st.markdown("### ➕ Add User")
-
-    new_username = st.text_input("Username")
-    new_full_name = st.text_input("Full name")
-    new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
-
-    submitted = st.form_submit_button("Create User")
-
-    if submitted:
-        if not new_username:
-            st.error("Username is required")
-        else:
-            with SessionLocal() as s:
-                exists = s.query(User).filter(User.username == new_username).first()
-                if exists:
-                    st.error("User already exists")
-                else:
-                    user = User(
-                        username=new_username.strip(),
-                        full_name=new_full_name.strip(),
-                        role=new_role,
-                        plan="pro",
-                        subscription_status="trial",
-                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                    )
-                    s.add(user)
-                    s.commit()
-                    st.success("User created successfully")
-                    st.rerun()
-
-# ---- Display Users ----
-users_df = get_users_df()
-if not users_df.empty:
-    st.dataframe(users_df)
-else:
-    st.info("No users yet.")
-
-    st.markdown("---")
-    st.markdown("## 👷 Technician Management")
+    with st.form("create_user_form"):
+        st.markdown("### ➕ Add User")
     
-    with st.expander("➕ Add Technician", expanded=False):
-        col1, col2 = st.columns(2)
+        new_username = st.text_input("Username")
+        new_full_name = st.text_input("Full name")
+        new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
     
-        with col1:
-            tech_username = st.text_input("Username (unique)")
-            tech_name = st.text_input("Full Name")
-            tech_phone = st.text_input("Phone Number")
+        submitted = st.form_submit_button("Create User")
     
-        with col2:
-            tech_role = st.selectbox(
-                "Specialization",
-                ["Estimator", "Restoration Tech", "Inspector", "Adjuster", "Other"]
-            )
-            tech_active = st.checkbox("Active", value=True)
-    
-        if st.button("Save Technician"):
-            if not tech_username:
+        if submitted:
+            if not new_username:
                 st.error("Username is required")
             else:
-                try:
-                    add_technician(
-                        tech_username.strip(),
-                        full_name=tech_name.strip(),
-                        phone=tech_phone.strip(),
-                        specialization=tech_role,
-                        active=tech_active
-                    )
-                    st.success("✅ Technician saved")
-                    st.experimental_rerun()
-                except Exception as e:
-                    st.error("Failed to save technician: " + str(e))
+                with SessionLocal() as s:
+                    exists = s.query(User).filter(User.username == new_username).first()
+                    if exists:
+                        st.error("User already exists")
+                    else:
+                        user = User(
+                            username=new_username.strip(),
+                            full_name=new_full_name.strip(),
+                            role=new_role,
+                            plan="pro",
+                            subscription_status="trial",
+                            trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                        )
+                        s.add(user)
+                        s.commit()
+                        st.success("User created successfully")
+                        st.rerun()
+    
+    # ---- Display Users ----
+    users_df = get_users_df()
+    if not users_df.empty:
+        st.dataframe(users_df)
+    else:
+        st.info("No users yet.")
+    
+        st.markdown("---")
+        st.markdown("## 👷 Technician Management")
+        
+        with st.expander("➕ Add Technician", expanded=False):
+            col1, col2 = st.columns(2)
+        
+            with col1:
+                tech_username = st.text_input("Username (unique)")
+                tech_name = st.text_input("Full Name")
+                tech_phone = st.text_input("Phone Number")
+        
+            with col2:
+                tech_role = st.selectbox(
+                    "Specialization",
+                    ["Estimator", "Restoration Tech", "Inspector", "Adjuster", "Other"]
+                )
+                tech_active = st.checkbox("Active", value=True)
+        
+            if st.button("Save Technician"):
+                if not tech_username:
+                    st.error("Username is required")
+                else:
+                    try:
+                        add_technician(
+                            tech_username.strip(),
+                            full_name=tech_name.strip(),
+                            phone=tech_phone.strip(),
+                            specialization=tech_role,
+                            active=tech_active
+                        )
+                        st.success("✅ Technician saved")
+                        st.experimental_rerun()
+                    except Exception as e:
+                        st.error("Failed to save technician: " + str(e))
     
     st.markdown("### 📋 Existing Technicians")
     
