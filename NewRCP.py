@@ -22,6 +22,8 @@ import plotly.express as px
 from datetime import datetime
 import streamlit as st
 import joblib
+import re
+
 from sqlalchemy import (
     create_engine,
     Column,
@@ -1523,6 +1525,14 @@ def resolve_time_window(range_key: str, custom_start=None, custom_end=None):
 # ---------- END BLOCK C ----------
 
 
+
+
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+def is_valid_email(email: str) -> bool:
+    if not email:
+        return False
+    return bool(EMAIL_REGEX.match(email.strip().lower()))
 
 
 def upsert_lead_record(payload: dict, actor="admin"):
@@ -3701,20 +3711,43 @@ def page_ai_recommendations():
 
 
 # Settings page: user & role management, weights (priority), audit trail
+# -------------------------
+# Settings Page
+# -------------------------
 def page_settings():
+
+    # =========================
+    # Invite User (Trial)
+    # =========================
     st.markdown("### 📧 Invite User")
-    
-    invite_email = st.text_input("Invite email")
-    invite_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
-    
+
+    invite_email = st.text_input("Email")
+    invite_role = st.selectbox(
+        "Role",
+        ["Admin", "Manager", "Staff"],
+        key="invite_role"
+    )
+
     if st.button("Send Invite"):
+
+        # --- HARD EMAIL VALIDATION (ENFORCED) ---
+        if not invite_email:
+            st.error("Email is required")
+            st.stop()
+
+        if not is_valid_email(invite_email):
+            st.error("Enter a valid email address")
+            st.stop()
+
+        # --- DB SAFE ZONE ---
         with SessionLocal() as s:
             exists = s.query(User).filter(User.email == invite_email).first()
+
             if exists:
                 st.error("User already exists")
             else:
                 user = User(
-                    username=invite_email,  # email as username
+                    username=invite_email,   # email as username
                     email=invite_email,
                     role=invite_role,
                     plan="starter",
@@ -3724,42 +3757,60 @@ def page_settings():
                 s.add(user)
                 s.commit()
                 st.success("Invite created (trial started)")
+                st.rerun()
 
+    # =========================
+    # Page Header
+    # =========================
+    st.markdown(
+        "<div class='header'>⚙️ Settings & User Management</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<em>Add team users, set roles for role-based integration later.</em>",
+        unsafe_allow_html=True
+    )
 
-    
-    st.markdown("<div class='header'>⚙️ Settings & User Management</div>", unsafe_allow_html=True)
-    st.markdown("<em>Add team users, set roles for role-based integration later.</em>", unsafe_allow_html=True)
     st.subheader("Users")
-    st.subheader("Users")
 
+    # =========================
+    # Add User (Internal)
+    # =========================
     with st.form("create_user_form"):
         st.markdown("### ➕ Add User")
-    
+
         email = st.text_input("Email (required)")
         username = st.text_input("Username (optional)")
         new_full_name = st.text_input("Full name")
-        new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
-    
+        new_role = st.selectbox(
+            "Role",
+            ["Admin", "Manager", "Staff"],
+            key="create_role"
+        )
+
         submitted = st.form_submit_button("Create User")
-    
+
         if submitted:
             # --- HARD VALIDATION ---
             if not email:
                 st.error("Email is required")
-            else:
-                try:
-                    add_user(
-                        email=email,
-                        username=username,
-                        full_name=new_full_name,
-                        role=new_role,
-                    )
-                    st.success("User created successfully")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to create user: {e}")
-                rerun()
+                st.stop()
 
+            if not is_valid_email(email):
+                st.error("Please enter a valid email address (example@domain.com)")
+                st.stop()
+
+            try:
+                add_user(
+                    email=email,
+                    username=username or email,
+                    full_name=new_full_name,
+                    role=new_role,
+                )
+                st.success("User created successfully")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to create user: {e}")
         
     
     # ---- Display Users ----
