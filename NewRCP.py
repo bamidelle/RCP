@@ -307,16 +307,25 @@ Base = declarative_base()
 # ----------------------
 class User(Base):
     __tablename__ = "users"
+
     id = Column(Integer, primary_key=True)
-    username = Column(String, unique=True, nullable=False)
+
+    # PRIMARY IDENTITY
+    email = Column(String, unique=True, nullable=False)
+    email_verified = Column(Boolean, default=False)
+
+    # OPTIONAL / INTERNAL
+    username = Column(String, unique=True, nullable=True)
     full_name = Column(String, default="")
-    role = Column(String, default="Admin")  # Admin by default for backend
+    role = Column(String, default="Admin")
+
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    # BILLING / ACCESS
     plan = Column(String, default="starter")
     trial_ends_at = Column(DateTime, nullable=True)
-    subscription_status = Column(String, default="trial")  
-    # trial | active | expired | canceled
+    subscription_status = Column(String, default="trial")
+
 
 
 
@@ -512,21 +521,51 @@ safe_migrate()
 
 from sqlalchemy import inspect, text
 
+from sqlalchemy import inspect, text
+
 def safe_migrate_new_tables():
     try:
         inspector = inspect(engine)
 
-        # Create missing tables
+        # -----------------------------
+        # 1. CREATE MISSING TABLES
+        # -----------------------------
         Base.metadata.create_all(engine)
 
-        # Safe column additions
+        # -----------------------------
+        # 2. TECHNICIANS TABLE
+        # -----------------------------
         if "technicians" in inspector.get_table_names():
-            cols = [c["name"] for c in inspector.get_columns("technicians")]
-            if "status" not in cols:
+            tech_cols = [c["name"] for c in inspector.get_columns("technicians")]
+            if "status" not in tech_cols:
                 with engine.begin() as conn:
                     conn.execute(
-                        text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'")
+                        text(
+                            "ALTER TABLE technicians "
+                            "ADD COLUMN status VARCHAR DEFAULT 'available'"
+                        )
                     )
+
+        # -----------------------------
+        # 3. USERS EMAIL MIGRATION ✅
+        # -----------------------------
+        if "users" in inspector.get_table_names():
+            user_cols = [c["name"] for c in inspector.get_columns("users")]
+
+            with engine.begin() as conn:
+                if "email" not in user_cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN email VARCHAR")
+                    )
+
+                if "email_verified" not in user_cols:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE users "
+                            "ADD COLUMN email_verified BOOLEAN DEFAULT 0"
+                        )
+                    )
+
     except Exception as e:
         print("Safe migration skipped:", e)
 
@@ -1631,25 +1670,37 @@ def get_leads_for_task_dropdown():
 
 from datetime import datetime, timedelta
 
-def add_user(username: str, full_name: str = "", role: str = "Admin"):
+def add_user(
+    email: str,
+    username: str | None = None,
+    full_name: str = "",
+    role: str = "Admin",
+):
     s = get_session()
     try:
-        existing = s.query(User).filter(User.username == username).first()
+        email = email.strip().lower()
+        username = username.strip() if username else email
+
+        # 1️⃣ Check by EMAIL first (primary identity)
+        existing = s.query(User).filter(User.email == email).first()
         if existing:
             existing.full_name = full_name
             existing.role = role
+            existing.username = username
             s.add(existing)
             s.commit()
             return existing.username
 
-        # ✅ Create new user
-        u = User(username=username, full_name=full_name, role=role)
-
-        # ✅ APPLY TRIAL LOGIC IMMEDIATELY AFTER CREATION
-        if not u.trial_ends_at:
-            u.trial_ends_at = datetime.utcnow() + timedelta(days=14)
-            u.plan = "starter"
-            u.subscription_status = "trial"
+        # 2️⃣ Create new user
+        u = User(
+            email=email,
+            username=username,
+            full_name=full_name,
+            role=role,
+            plan="starter",
+            subscription_status="trial",
+            trial_ends_at=datetime.utcnow() + timedelta(days=14),
+        )
 
         s.add(u)
         s.commit()
@@ -1660,6 +1711,7 @@ def add_user(username: str, full_name: str = "", role: str = "Admin"):
         raise
     finally:
         s.close()
+
 
 
 
@@ -3653,35 +3705,34 @@ def page_settings():
     st.subheader("Users")
 
     with st.form("create_user_form"):
-        st.markdown("### ➕ Add User")
-    
-        new_username = st.text_input("Username")
-        new_full_name = st.text_input("Full name")
-        new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
-    
-        submitted = st.form_submit_button("Create User")
-    
-        if submitted:
-            if not new_username:
-                st.error("Username is required")
-            else:
-                with SessionLocal() as s:
-                    exists = s.query(User).filter(User.username == new_username).first()
-                    if exists:
-                        st.error("User already exists")
-                    else:
-                        user = User(
-                            username=new_username.strip(),
-                            full_name=new_full_name.strip(),
-                            role=new_role,
-                            plan="pro",
-                            subscription_status="trial",
-                            trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                        )
-                        s.add(user)
-                        s.commit()
-                        st.success("User created successfully")
-                        st.rerun()
+    st.markdown("### ➕ Add User")
+
+    email = st.text_input("Email (required)")
+    username = st.text_input("Username (optional)")
+    new_full_name = st.text_input("Full name")
+    new_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
+
+    submitted = st.form_submit_button("Create User")
+
+    if submitted:
+        # --- HARD VALIDATION ---
+        if not email:
+            st.error("Email is required")
+        else:
+            try:
+                add_user(
+                    email=email,
+                    username=username,
+                    full_name=new_full_name,
+                    role=new_role,
+                )
+                st.success("User created successfully")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to create user: {e}")
+            rerun()
+
+        
     
     # ---- Display Users ----
     users_df = get_users_df()
