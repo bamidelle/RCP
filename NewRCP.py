@@ -1166,16 +1166,15 @@ def count_leads_this_month():
     return len(df)
 
 
+
 def get_current_plan():
-    user = st.session_state.get("current_user")
+    user = st.session_state.get("user")
     if not user:
         return "starter"
 
-    # Trial logic
     if user.subscription_status == "trial":
         if user.trial_ends_at and datetime.utcnow() > user.trial_ends_at:
-            return "starter"  # fallback after trial
-        return user.plan
+            return "expired"
 
     return user.plan
 
@@ -1183,9 +1182,13 @@ def get_current_plan():
 
 
 
+
 def has_access(feature_key: str) -> bool:
     plan = get_current_plan()
+    if plan == "expired":
+        return False
     return PLANS.get(plan, {}).get(feature_key, False)
+
 
     
 def analyze_job_types(df):
@@ -3699,6 +3702,31 @@ def page_ai_recommendations():
 
 # Settings page: user & role management, weights (priority), audit trail
 def page_settings():
+    st.markdown("### 📧 Invite User")
+    
+    invite_email = st.text_input("Invite email")
+    invite_role = st.selectbox("Role", ["Admin", "Manager", "Staff"])
+    
+    if st.button("Send Invite"):
+        with SessionLocal() as s:
+            exists = s.query(User).filter(User.email == invite_email).first()
+            if exists:
+                st.error("User already exists")
+            else:
+                user = User(
+                    username=invite_email,  # email as username
+                    email=invite_email,
+                    role=invite_role,
+                    plan="starter",
+                    subscription_status="trial",
+                    trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                )
+                s.add(user)
+                s.commit()
+                st.success("Invite created (trial started)")
+
+
+    
     st.markdown("<div class='header'>⚙️ Settings & User Management</div>", unsafe_allow_html=True)
     st.markdown("<em>Add team users, set roles for role-based integration later.</em>", unsafe_allow_html=True)
     st.subheader("Users")
