@@ -12,4 +12,5 @@ requests
 streamlit-extras
 streamlit-folium
 folium
+PyJWT
 
