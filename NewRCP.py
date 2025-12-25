@@ -667,6 +667,17 @@ def safe_migrate_new_tables():
 
                 if "last_login_at" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+                
+                #-------- Extension ------------------------------------------
+                if "invite_token_hash" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN invite_token_hash VARCHAR"))
+                
+                if "invite_expires_at" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN invite_expires_at DATETIME"))
+                
+                if "activated_at" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN activated_at DATETIME"))
+
 
             # ---- TECHNICIANS TABLE ----
             if "technicians" in inspector.get_table_names():
@@ -951,6 +962,42 @@ def decode_wp_token(token: str):
         
 def generate_invite_token():
     return secrets.token_urlsafe(32)
+
+
+
+def verify_invite_token(token: str) -> User:
+    try:
+        payload = jwt.decode(token, INVITE_SECRET, algorithms=["HS256"])
+        email = payload.get("email")
+
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+        with SessionLocal() as s:
+            user = (
+                s.query(User)
+                .filter(
+                    User.email == email,
+                    User.invite_token_hash == token_hash,
+                    User.invite_expires_at > datetime.utcnow(),
+                    User.activated_at.is_(None),
+                )
+                .first()
+            )
+
+            if not user:
+                raise ValueError("Invalid or expired invite")
+
+            # Activate user
+            user.is_active = True
+            user.activated_at = datetime.utcnow()
+            user.invite_token_hash = None
+            user.invite_expires_at = None
+
+            s.commit()
+            return user
+
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Invite expired")
 
 
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
@@ -1769,6 +1816,44 @@ def send_invite_email(email: str, invite_link: str):
         subject="You're invited to ReCapture Pro",
         html_body=html
     )
+
+
+
+def generate_invite_token(email: str) -> tuple[str, str]:
+    payload = {
+        "email": email,
+        "type": "invite",
+        "exp": datetime.utcnow() + timedelta(hours=INVITE_EXPIRY_HOURS),
+        "iat": datetime.utcnow(),
+    }
+
+    token = jwt.encode(payload, INVITE_SECRET, algorithm="HS256")
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    return token, token_hash
+
+
+def create_invite_user(email: str, role: str):
+    token, token_hash = generate_invite_token(email)
+
+    with SessionLocal() as s:
+        user = User(
+            email=email,
+            username=email,
+            role=role,
+            is_active=False,
+            invite_token_hash=token_hash,
+            invite_expires_at=datetime.utcnow() + timedelta(hours=INVITE_EXPIRY_HOURS),
+            plan="starter",
+            subscription_status="trial",
+            trial_ends_at=datetime.utcnow() + timedelta(days=14),
+        )
+        s.add(user)
+        s.commit()
+
+    return token
+
 
 # ---------- END BLOCK C ----------
 
@@ -4084,7 +4169,7 @@ def page_settings():
     )
 
     # ======================================================
-    # 📧 INVITE USER (TRIAL STARTS IMMEDIATELY)
+    # 📧 INVITE USER (EMAIL + EXPIRY TOKEN)
     # ======================================================
     st.markdown("### 📧 Invite User")
 
@@ -4107,29 +4192,25 @@ def page_settings():
                 st.error("Enter a valid email address (example@domain.com)")
                 st.stop()
 
-            with SessionLocal() as s:
-                exists = s.query(User).filter(User.email == invite_email).first()
-                if exists:
-                    st.error("User already exists")
-                else:
-                    user = User(
-                        username=invite_email,  # email as username
-                        email=invite_email.lower(),
-                        role=invite_role,
-                        plan="starter",
-                        subscription_status="trial",
-                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                        is_active=True,
-                    )
-                    s.add(user)
-                    s.commit()
-                    st.success("Invite created — trial started")
-                    st.rerun()
+            try:
+                # 🔐 CREATE EXPIRING INVITE TOKEN
+                token = create_invite_user(invite_email.lower(), invite_role)
+
+                invite_link = f"{FRONTEND_URL}/activate?token={token}"
+
+                # 📤 SEND EMAIL
+                send_invite_email(invite_email, invite_link)
+
+                st.success("Invite email sent successfully")
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Failed to send invite: {e}")
 
     st.markdown("---")
 
     # ======================================================
-    # ➕ ADD USER (INTERNAL / ADMIN)
+    # ➕ ADD USER (INTERNAL / ADMIN – IMMEDIATE ACCESS)
     # ======================================================
     st.markdown("### ➕ Add User")
 
@@ -4160,9 +4241,12 @@ def page_settings():
                     username=username.strip() if username else email.lower(),
                     full_name=full_name.strip(),
                     role=role,
+                    is_active=True,          # internal users are active immediately
+                    email_verified=True,
                 )
                 st.success("User created successfully")
                 st.rerun()
+
             except Exception as e:
                 st.error(f"Failed to create user: {e}")
 
@@ -4247,7 +4331,6 @@ def page_settings():
                     update_technician_status(row["username"], new_status)
                     st.success("Status updated")
                     st.rerun()
-
 
 
 
