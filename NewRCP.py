@@ -26,6 +26,9 @@ import joblib
 import secrets
 import uuid
 
+import smtplib
+from email.message import EmailMessage
+
 import re
 
 import jwt
@@ -1714,6 +1717,58 @@ def resolve_time_window(range_key: str, custom_start=None, custom_end=None):
     return now - timedelta(days=30), now
 
 
+
+# ----------------------
+# EMAIL CONFIG
+# ----------------------
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+EMAIL_FROM = os.getenv("EMAIL_FROM", SMTP_USER)
+
+
+
+
+def send_email(to_email: str, subject: str, html_body: str):
+    if not SMTP_HOST or not SMTP_USER or not SMTP_PASSWORD:
+        raise RuntimeError("SMTP is not configured")
+
+    msg = EmailMessage()
+    msg["From"] = EMAIL_FROM
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content("This email requires HTML support.")
+    msg.add_alternative(html_body, subtype="html")
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        server.send_message(msg)
+
+def send_invite_email(email: str, invite_link: str):
+    html = f"""
+    <div style="font-family: Arial, sans-serif;">
+        <h2>You're invited to ReCapture Pro</h2>
+        <p>You’ve been invited to join <strong>ReCapture Pro</strong>.</p>
+        <p>Your trial is ready. Click below to activate your account:</p>
+
+        <p>
+            <a href="{invite_link}"
+               style="background:#2563eb;color:#fff;padding:12px 18px;
+               text-decoration:none;border-radius:6px;">
+               Activate Account
+            </a>
+        </p>
+
+        <p>This link expires in 24 hours.</p>
+    </div>
+    """
+    send_email(
+        to_email=email,
+        subject="You're invited to ReCapture Pro",
+        html_body=html
+    )
 
 # ---------- END BLOCK C ----------
 
