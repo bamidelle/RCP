@@ -24,6 +24,9 @@ import streamlit as st
 import joblib
 import re
 
+import jwt
+from datetime import datetime, timedelta
+
 from sqlalchemy import (
     create_engine,
     Column,
@@ -888,6 +891,46 @@ def leads_to_df(start_date=None, end_date=None):
         return df.reset_index(drop=True)
     finally:
         s.close()
+
+# ----------------------
+# AUTH HELPERS
+# ----------------------
+
+def get_current_user():
+    """
+    Returns the currently authenticated user info from session state.
+    Safe to call anywhere.
+    """
+    if not st.session_state.get("authenticated"):
+        return None
+
+    return {
+        "email": st.session_state.get("user_email"),
+        "role": st.session_state.get("role", "Viewer"),
+        "plan": st.session_state.get("plan", "starter"),
+    }
+
+
+def require_auth():
+    """
+    Hard stop if user is not authenticated.
+    """
+    if not st.session_state.get("authenticated"):
+        st.warning("Please log in to continue.")
+        st.stop()
+
+require_auth()
+
+def decode_wp_token(token: str):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
+        return payload
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
 def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
     s = get_session()
@@ -3784,7 +3827,55 @@ def page_ai_recommendations():
 
     # End of page
 
+# ----------------------
+# WORDPRESS AUTH
+# ----------------------
 
+def wp_auth_bridge():
+    st.title("Authenticating...")
+
+    token = st.query_params.get("token")
+    if not token:
+        st.error("Missing authentication token")
+        st.stop()
+
+    payload = decode_wp_token(token)
+    if not payload:
+        st.error("Invalid or expired token")
+        st.stop()
+
+    email = payload.get("email")
+    name = payload.get("name", "")
+    role = payload.get("role", "Viewer")
+
+    if not email:
+        st.error("Invalid token payload")
+        st.stop()
+
+    # Create or update user
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(
+                email=email,
+                username=email.split("@")[0],
+                full_name=name,
+                role=role,
+                plan="starter",
+                subscription_status="trial",
+                trial_ends_at=datetime.utcnow() + timedelta(days=14),
+            )
+            s.add(user)
+        s.commit()
+
+    # Authenticate Streamlit session
+    st.session_state["authenticated"] = True
+    st.session_state["user_email"] = email
+    st.session_state["role"] = role
+    st.session_state["plan"] = user.plan
+
+    st.success("Login successful")
+    st.rerun()
 
 
 # Settings page: user & role management, weights (priority), audit trail
@@ -4631,6 +4722,9 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 
 # ---------- END BLOCK E ----------
 
+if "token" in st.query_params:
+    wp_auth_bridge()
+    st.stop()
 
 # ----------------------
 # Router (main)
