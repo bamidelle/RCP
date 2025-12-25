@@ -22,6 +22,10 @@ import plotly.express as px
 from datetime import datetime
 import streamlit as st
 import joblib
+
+import secrets
+import uuid
+
 import re
 
 import jwt
@@ -347,6 +351,18 @@ class User(Base):
     JWT_ALGO = "HS256"
     JWT_EXP_MINUTES = 15
 
+
+class UserInvite(Base):
+    __tablename__ = "user_invites"
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, nullable=False, index=True)
+    token = Column(String, unique=True, nullable=False)
+    role = Column(String, default="Staff")
+    invited_by = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    accepted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class LoginToken(Base):
@@ -929,6 +945,9 @@ def decode_wp_token(token: str):
         return None
     except jwt.InvalidTokenError:
         return None
+        
+def generate_invite_token():
+    return secrets.token_urlsafe(32)
 
 
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
@@ -1890,6 +1909,50 @@ def add_user(email, username=None, full_name=None, role="Staff"):
 
         return user
 
+
+def create_user_invite(email, role, invited_by):
+    token = generate_invite_token()
+    expires = datetime.utcnow() + timedelta(hours=48)
+
+    with SessionLocal() as s:
+        invite = UserInvite(
+            email=email.lower(),
+            token=token,
+            role=role,
+            invited_by=invited_by,
+            expires_at=expires
+        )
+        s.add(invite)
+        s.commit()
+
+    return token
+
+def accept_user_invite(token, username, full_name):
+    with SessionLocal() as s:
+        invite = s.query(UserInvite).filter(
+            UserInvite.token == token,
+            UserInvite.accepted == False,
+            UserInvite.expires_at > datetime.utcnow()
+        ).first()
+
+        if not invite:
+            return None, "Invalid or expired invite"
+
+        user = User(
+            email=invite.email,
+            username=username,
+            full_name=full_name,
+            role=invite.role,
+            plan="starter",
+            subscription_status="trial",
+            trial_ends_at=datetime.utcnow() + timedelta(days=14),
+        )
+
+        invite.accepted = True
+        s.add(user)
+        s.commit()
+
+        return user, None
 
 
 
@@ -3950,182 +4013,186 @@ def wp_auth_bridge():
     st.rerun()
 
 
-# Settings page: user & role management, weights (priority), audit trail
 # -------------------------
 # Settings Page
 # -------------------------
 def page_settings():
     require_role_access("settings")
-    st.markdown("<div class='header'>⚙️ Settings & User Management</div>", unsafe_allow_html=True)
 
-
-    # =========================
-    # Invite User (Trial)
-    # =========================
-    st.markdown("### 📧 Invite User")
-
-    invite_email = st.text_input("Email")
-    invite_role = st.selectbox(
-        "Role",
-        ["Admin", "Manager", "Staff"],
-        key="invite_role"
-    )
-
-    if st.button("Send Invite"):
-
-        # --- HARD EMAIL VALIDATION (ENFORCED) ---
-        if not invite_email:
-            st.error("Email is required")
-            st.stop()
-
-        if not is_valid_email(invite_email):
-            st.error("Enter a valid email address")
-            st.stop()
-
-        # --- DB SAFE ZONE ---
-        with SessionLocal() as s:
-            exists = s.query(User).filter(User.email == invite_email).first()
-
-            if exists:
-                st.error("User already exists")
-            else:
-                user = User(
-                    username=invite_email,   # email as username
-                    email=invite_email,
-                    role=invite_role,
-                    plan="starter",
-                    subscription_status="trial",
-                    trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                )
-                s.add(user)
-                s.commit()
-                st.success("Invite created (trial started)")
-                st.rerun()
-
-    # =========================
-    # Page Header
-    # =========================
     st.markdown(
         "<div class='header'>⚙️ Settings & User Management</div>",
         unsafe_allow_html=True
     )
     st.markdown(
-        "<em>Add team users, set roles for role-based integration later.</em>",
+        "<em>Add team users, invite users, manage roles and technicians.</em>",
         unsafe_allow_html=True
     )
 
-    st.subheader("Users")
+    # ======================================================
+    # 📧 INVITE USER (TRIAL STARTS IMMEDIATELY)
+    # ======================================================
+    st.markdown("### 📧 Invite User")
 
-    # =========================
-    # Add User (Internal)
-    # =========================
+    with st.form("invite_user_form"):
+        invite_email = st.text_input("Email (required)")
+        invite_role = st.selectbox(
+            "Role",
+            ["Admin", "Manager", "Staff"],
+            key="invite_role"
+        )
+
+        submitted_invite = st.form_submit_button("Send Invite")
+
+        if submitted_invite:
+            if not invite_email:
+                st.error("Email is required")
+                st.stop()
+
+            if not is_valid_email(invite_email):
+                st.error("Enter a valid email address (example@domain.com)")
+                st.stop()
+
+            with SessionLocal() as s:
+                exists = s.query(User).filter(User.email == invite_email).first()
+                if exists:
+                    st.error("User already exists")
+                else:
+                    user = User(
+                        username=invite_email,  # email as username
+                        email=invite_email.lower(),
+                        role=invite_role,
+                        plan="starter",
+                        subscription_status="trial",
+                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                        is_active=True,
+                    )
+                    s.add(user)
+                    s.commit()
+                    st.success("Invite created — trial started")
+                    st.rerun()
+
+    st.markdown("---")
+
+    # ======================================================
+    # ➕ ADD USER (INTERNAL / ADMIN)
+    # ======================================================
+    st.markdown("### ➕ Add User")
+
     with st.form("create_user_form"):
-        st.markdown("### ➕ Add User")
-
         email = st.text_input("Email (required)")
-        username = st.text_input("Username (optional)")
-        new_full_name = st.text_input("Full name")
-        new_role = st.selectbox(
+        username = st.text_input("Username (optional — defaults to email)")
+        full_name = st.text_input("Full Name")
+        role = st.selectbox(
             "Role",
             ["Admin", "Manager", "Staff"],
             key="create_role"
         )
 
-        submitted = st.form_submit_button("Create User")
+        submitted_create = st.form_submit_button("Create User")
 
-        if submitted:
-            # --- HARD VALIDATION ---
+        if submitted_create:
             if not email:
                 st.error("Email is required")
                 st.stop()
 
             if not is_valid_email(email):
-                st.error("Please enter a valid email address (example@domain.com)")
+                st.error("Please enter a valid email address")
                 st.stop()
 
             try:
                 add_user(
-                    email=email,
-                    username=username or email,
-                    full_name=new_full_name,
-                    role=new_role,
+                    email=email.lower(),
+                    username=username.strip() if username else email.lower(),
+                    full_name=full_name.strip(),
+                    role=role,
                 )
                 st.success("User created successfully")
                 st.rerun()
             except Exception as e:
                 st.error(f"Failed to create user: {e}")
-        
-    
-    # ---- Display Users ----
+
+    # ======================================================
+    # 👥 USERS TABLE
+    # ======================================================
+    st.markdown("### 👥 Existing Users")
+
     users_df = get_users_df()
-    if not users_df.empty:
-        st.dataframe(users_df)
-    else:
+    if users_df.empty:
         st.info("No users yet.")
-    
-        st.markdown("---")
-        st.markdown("## 👷 Technician Management")
-        
-        with st.expander("➕ Add Technician", expanded=False):
-            col1, col2 = st.columns(2)
-        
-            with col1:
-                tech_username = st.text_input("Username (unique)")
-                tech_name = st.text_input("Full Name")
-                tech_phone = st.text_input("Phone Number")
-        
-            with col2:
-                tech_role = st.selectbox(
-                    "Specialization",
-                    ["Estimator", "Restoration Tech", "Inspector", "Adjuster", "Other"]
-                )
-                tech_active = st.checkbox("Active", value=True)
-        
-            if st.button("Save Technician"):
-                if not tech_username:
-                    st.error("Username is required")
-                else:
-                    try:
-                        add_technician(
-                            tech_username.strip(),
-                            full_name=tech_name.strip(),
-                            phone=tech_phone.strip(),
-                            specialization=tech_role,
-                            active=tech_active
-                        )
-                        st.success("✅ Technician saved")
-                        st.experimental_rerun()
-                    except Exception as e:
-                        st.error("Failed to save technician: " + str(e))
-    
+    else:
+        st.dataframe(users_df, use_container_width=True)
+
+    st.markdown("---")
+
+    # ======================================================
+    # 👷 TECHNICIAN MANAGEMENT
+    # ======================================================
+    st.markdown("## 👷 Technician Management")
+
+    with st.expander("➕ Add Technician", expanded=False):
+        col1, col2 = st.columns(2)
+
+        with col1:
+            tech_username = st.text_input("Username (unique)")
+            tech_name = st.text_input("Full Name")
+            tech_phone = st.text_input("Phone Number")
+
+        with col2:
+            tech_role = st.selectbox(
+                "Specialization",
+                ["Estimator", "Restoration Tech", "Inspector", "Adjuster", "Other"]
+            )
+            tech_active = st.checkbox("Active", value=True)
+
+        if st.button("Save Technician"):
+            if not tech_username:
+                st.error("Username is required")
+            else:
+                try:
+                    add_technician(
+                        tech_username.strip(),
+                        full_name=tech_name.strip(),
+                        phone=tech_phone.strip(),
+                        specialization=tech_role,
+                        active=tech_active,
+                    )
+                    st.success("Technician saved")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to save technician: {e}")
+
     st.markdown("### 📋 Existing Technicians")
-    
+
     tech_df = get_technicians_df(active_only=False)
-    
     if tech_df.empty:
         st.info("No technicians added yet.")
     else:
         for _, row in tech_df.iterrows():
-            col1, col2, col3 = st.columns([3,2,2])
-    
-            with col1:
+            c1, c2, c3 = st.columns([3, 2, 2])
+
+            with c1:
                 st.write(f"👷 **{row['full_name']}** (`{row['username']}`)")
-    
-            with col2:
+
+            with c2:
                 new_status = st.selectbox(
                     "Status",
                     ["available", "assigned", "enroute", "onsite", "completed"],
-                    index=["available","assigned","enroute","onsite","completed"].index(
-                        row.get("status","available")
-                    ),
-                    key=f"status_{row['username']}"
+                    index=[
+                        "available",
+                        "assigned",
+                        "enroute",
+                        "onsite",
+                        "completed",
+                    ].index(row.get("status", "available")),
+                    key=f"status_{row['username']}",
                 )
-    
-            with col3:
+
+            with c3:
                 if st.button("Update", key=f"btn_{row['username']}"):
                     update_technician_status(row["username"], new_status)
                     st.success("Status updated")
                     st.rerun()
+
 
 
 
