@@ -1320,6 +1320,50 @@ def has_access(feature_key: str) -> bool:
         return False
     return PLANS.get(plan, {}).get(feature_key, False)
 
+# ----------------------
+# ROLE-BASED ACCESS CONTROL
+# ----------------------
+
+ROLE_PERMISSIONS = {
+    "Admin": {
+        "dashboard",
+        "lead_capture",
+        "pipeline",
+        "analytics",
+        "business_intelligence",
+        "competitor_intelligence",
+        "technicians",
+        "settings",
+    },
+    "Manager": {
+        "dashboard",
+        "lead_capture",
+        "pipeline",
+        "analytics",
+        "business_intelligence",
+        "technicians",
+    },
+    "Staff": {
+        "dashboard",
+        "lead_capture",
+        "pipeline",
+    },
+    "Viewer": {
+        "dashboard",
+        "pipeline",
+    },
+}
+
+def require_role_access(page_key: str):
+    user = get_current_user()
+    if not user:
+        st.error("Authentication required.")
+        st.stop()
+
+    allowed = ROLE_PERMISSIONS.get(user.role, set())
+    if page_key not in allowed:
+        st.warning("🚫 You do not have access to this page.")
+        st.stop()
 
     
 def analyze_job_types(df):
@@ -1998,27 +2042,46 @@ st.markdown(APP_CSS, unsafe_allow_html=True)
 
 
 # ----------------------
-# Sidebar controls (Admin backend - no front login)
+# WORDPRESS AUTH BRIDGE (GLOBAL)
+# ----------------------
+
+if "token" in st.query_params:
+    wp_auth_bridge()
+    st.stop()
+
+# ----------------------
+# NAVIGATION Side Bar Control
 # ----------------------
 with st.sidebar:
-    st.header("TITAN Backend (Admin)")
-    st.markdown("You are using the backend admin interface. User accounts and roles are managed in Settings.")
-    page = st.radio(
-    "Navigate", 
-    [
-        "Overview",
-        "Lead Capture",
-        "Pipeline Board",
-        "Analytics",
-        "CPA & ROI",
-        "Tasks",
-        "AI Recommendations",
-        "Seasonal Trends",
-        "Settings",
-        "Exports"
-    ], 
-    index=0
-)
+    st.header("ReCapture Pro")
+    
+    user = get_current_user()
+    role = user.role if user else "Viewer"
+
+    allowed_pages = ROLE_PERMISSIONS.get(role, set())
+
+    PAGE_MAP = {
+        "Overview": ("dashboard", page_dashboard),
+        "Lead Capture": ("lead_capture", page_lead_capture),
+        "Pipeline Board": ("pipeline", page_pipeline_board),
+        "Analytics": ("analytics", page_analytics),
+        "CPA & ROI": ("analytics", page_cpa_roi),
+        "Tasks": ("tasks", page_tasks),
+        "AI Recommendations": ("business_intelligence", page_ai_recommendations),
+        "Seasonal Trends": ("business_intelligence", page_seasonal_trends),
+        "Settings": ("settings", page_settings),
+        "Exports": ("exports", page_exports),
+    }
+
+    visible_pages = {
+        label: func
+        for label, (key, func) in PAGE_MAP.items()
+        if key in allowed_pages
+    }
+
+    choice = st.radio("Navigate", list(visible_pages.keys()))
+    visible_pages[choice]()
+
 
 
     st.markdown("---")
@@ -2405,6 +2468,7 @@ def page_overview():
 
 
 def page_lead_capture():
+    require_role_access("lead_capture")
     st.markdown("<div class='header'>📇 Lead Capture</div>", unsafe_allow_html=True)
     st.markdown("<em>Create or upsert a lead. All inputs are saved for reporting and CPA calculations.</em>", unsafe_allow_html=True)
     with st.form("lead_capture_form", clear_on_submit=True):
@@ -2480,6 +2544,7 @@ def page_lead_capture():
 # =============================
 
 def page_pipeline_board():
+    require_role_access("pipeline")
     st.markdown("<div class='header'>📊 Pipeline Intelligence Board</div>", unsafe_allow_html=True)
     st.markdown(
         "<em>Operational pipeline combining urgency, value, and stage visibility.</em>",
@@ -2664,6 +2729,7 @@ def page_pipeline_board():
 
 # Analytics page (donut + SLA line + overdue table)
 def page_analytics():
+    require_role_access("analytics")
     st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
 
         # 🔒 Plan Access Gate
@@ -3176,6 +3242,7 @@ def explain_what_changed(current, previous):
     return explanations
 
 def page_executive_intelligence():
+    require_role_access("intelligence")
     st.title("📊 Executive Intelligence Overview")
 
     intelligence = compute_business_intelligence(
@@ -3286,6 +3353,7 @@ def generate_executive_narrative(data):
 
 
 def page_business_intelligence():
+    require_role_access("business_intelligence")
     # -----------------------------
     # 🧠 EXECUTIVE BUSINESS HEALTH
     # -----------------------------
@@ -3569,6 +3637,7 @@ def page_technician_map_tracking():
 
 
 def page_technician_mobile():
+    require_role_access("technicians")
     st.markdown("## 📍 Technician Live Location")
 
     tech_username = st.text_input("Your technician username")
@@ -3883,6 +3952,9 @@ def wp_auth_bridge():
 # Settings Page
 # -------------------------
 def page_settings():
+    require_role_access("settings")
+    st.markdown("<div class='header'>⚙️ Settings & User Management</div>", unsafe_allow_html=True)
+
 
     # =========================
     # Invite User (Trial)
