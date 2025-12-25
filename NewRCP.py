@@ -337,6 +337,15 @@ class User(Base):
     last_login_at = Column(DateTime, nullable=True)
 
 
+    # ----------------------
+    # AUTH CONFIG
+    # ----------------------
+    JWT_SECRET = os.environ.get("JWT_SECRET", "CHANGE_ME_NOW")
+    JWT_ALGO = "HS256"
+    JWT_EXP_MINUTES = 15
+
+
+
 class LoginToken(Base):
     __tablename__ = "login_tokens"
 
