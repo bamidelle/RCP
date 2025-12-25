@@ -982,6 +982,7 @@ def get_tasks_for_user(username):
     finally:
         s.close()
 def page_tasks():
+    require_role_access("tasks")
     st.markdown("## ✅ Technician Tasks")
 
     techs = get_technicians_df(active_only=True)
@@ -3677,6 +3678,7 @@ def page_technician_mobile():
 
 # CPA & ROI page
 def page_cpa_roi():
+    require_role_access("analytics")
     st.markdown("<div class='header'>💰 CPA & ROI</div>", unsafe_allow_html=True)
     st.markdown("<em>Total Marketing Spend vs Conversions and ROI calculations.</em>", unsafe_allow_html=True)
     df = leads_df.copy()
@@ -3746,6 +3748,7 @@ def page_ml_internal():
 
 # ---------- BEGIN BLOCK G: AI RECOMMENDATIONS PAGE ----------
 def page_ai_recommendations():
+    require_role_access("business_intelligence")
     """AI Recommendations — cleaned, safe, and optimized."""
     import plotly.express as px
     from sqlalchemy import func
@@ -4217,6 +4220,7 @@ def page_technician_mobile():
 
 # Exports page
 def page_exports():
+    require_role_access("exports")
     st.markdown("<div class='header'>📤 Exports & Imports</div>", unsafe_allow_html=True)
     # 🔒 Plan Access Gate
     if not has_access("analytics_intelligence"):
@@ -4344,6 +4348,7 @@ def add_time_windows(hist_df):
 # SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
 # -------------------------------------------------------------
 def page_seasonal_trends():
+    require_role_access("business_intelligence")
     import numpy as np
     import pandas as pd
     import plotly.express as px
