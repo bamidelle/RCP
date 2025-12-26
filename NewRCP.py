@@ -942,17 +942,34 @@ def leads_to_df(start_date=None, end_date=None):
 
 def get_current_user():
     """
-    Returns the currently authenticated user info from session state.
-    Safe to call anywhere.
+    Resolves the currently authenticated user.
+    Enforces:
+    - account is active
+    - email is verified
     """
-    if not st.session_state.get("authenticated"):
+
+    user_id = st.session_state.get("user_id")
+    if not user_id:
         return None
 
-    return {
-        "email": st.session_state.get("user_email"),
-        "role": st.session_state.get("role", "Viewer"),
-        "plan": st.session_state.get("plan", "starter"),
-    }
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.id == user_id).first()
+
+        if not user:
+            st.session_state.clear()
+            st.error("User session invalid")
+            st.stop()
+
+        if not user.is_active:
+            st.error("Your account is inactive. Please contact an administrator.")
+            st.stop()
+
+        if not user.email_verified:
+            st.error("Please verify your email address before accessing the app.")
+            st.stop()
+
+        return user
+
 
 
 
@@ -1987,7 +2004,7 @@ def activate_user_from_token(token: str) -> bool:
         if user.activation_expires_at and user.activation_expires_at < datetime.utcnow():
             return False
 
-        # ✅ Activate user
+        # ✅ Activate user -ACTIVATION TOKEN 
         user.is_active = True
         user.email_verified = True
         user.subscription_status = "active"
@@ -4146,21 +4163,49 @@ def wp_auth_bridge():
         st.error("Invalid token payload")
         st.stop()
 
-    # Create or update user
     with SessionLocal() as s:
         user = s.query(User).filter(User.email == email).first()
+
+        # ----------------------------
+        # CREATE USER IF NOT EXISTS
+        # ----------------------------
         if not user:
             user = User(
-                email=email,
+                email=email.lower(),
                 username=email.split("@")[0],
                 full_name=name,
                 role=role,
                 plan="starter",
                 subscription_status="trial",
                 trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                email_verified=True,     # ✅ WP auth = verified
+                is_active=True,
             )
             s.add(user)
-        s.commit()
+            s.commit()
+
+        # ----------------------------
+        # STEP H — ENFORCEMENT
+        # ----------------------------
+        if not user.is_active:
+            st.error("Your account has been deactivated.")
+            st.stop()
+
+        if not user.email_verified:
+            st.error("Please verify your email address before accessing the app.")
+            st.stop()
+
+        # ----------------------------
+        # SESSION BINDING (CRITICAL)
+        # ----------------------------
+        st.session_state["user_id"] = user.id
+        st.session_state["role"] = user.role
+        st.session_state["plan"] = user.plan
+
+    st.success("Authentication successful")
+    st.query_params.clear()
+    st.rerun()
+
 
     # Authenticate Streamlit session
     st.session_state["authenticated"] = True
