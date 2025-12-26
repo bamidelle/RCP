@@ -354,6 +354,9 @@ class User(Base):
     JWT_ALGO = "HS256"
     JWT_EXP_MINUTES = 15
 
+    password_hash = Column(String, nullable=True)
+
+
 
 class UserInvite(Base):
     __tablename__ = "user_invites"
@@ -947,6 +950,10 @@ def leads_to_df(start_date=None, end_date=None):
     finally:
         s.close()
 
+def set_logged_in_user(user: User):
+    st.session_state["user_id"] = user.id
+
+    
 # ----------------------
 # AUTH HELPERS
 # ----------------------
@@ -4152,6 +4159,18 @@ def page_ai_recommendations():
 
 
     # End of page
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
+    deprecated="auto"
+)
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
 
 # ----------------------
 # WORDPRESS AUTH
@@ -4292,6 +4311,43 @@ def page_reset_password():
             st.error(str(e))
 
 request_password_reset("your@email.com")
+
+
+def authenticate_user(email: str, password: str):
+    with SessionLocal() as s:
+        user = s.query(User).filter(
+            User.email == email.lower(),
+            User.is_active == True
+        ).first()
+
+        if not user:
+            return None
+
+        if not user.password_hash:
+            return None
+
+        if not verify_password(password, user.password_hash):
+            return None
+
+        user.last_login_at = datetime.utcnow()
+        s.commit()
+
+        return user
+
+def page_login():
+    st.markdown("## 🔐 Login")
+
+    email = st.text_input("Email")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        user = authenticate_user(email, password)
+        if not user:
+            st.error("Invalid credentials or inactive account")
+        else:
+            set_logged_in_user(user)
+            st.success("Logged in successfully")
+            st.rerun()
 
 # -------------------------
 # Settings Page
@@ -5197,6 +5253,12 @@ with st.sidebar:
 
     choice = st.radio("Navigate", list(visible_pages.keys()))
     visible_pages[choice]()
+
+    if get_current_user():
+    if st.button("🚪 Logout"):
+        st.session_state.pop("user_id", None)
+        st.rerun()
+
 
 # ---------- END BLOCK E ----------
 
