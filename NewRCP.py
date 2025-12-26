@@ -2312,6 +2312,8 @@ if "token" in st.query_params:
     wp_auth_bridge()
     st.stop()
 
+def page_overview():
+    import plotly.express as px
 # ----------------------
 # NAVIGATION Side Bar Control
 # ----------------------
@@ -2460,8 +2462,7 @@ def alerts_ui():
 
 
 
-def page_overview():
-    import plotly.express as px
+
     st.markdown("<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>", unsafe_allow_html=True)
     st.markdown("<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>", unsafe_allow_html=True)
 
@@ -5079,51 +5080,9 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 
 # ---------- END BLOCK E ----------
 
-if "token" in st.query_params:
-    wp_auth_bridge()
-    st.stop()
 
 
 
-# ----------------------
-# Router (main)
-# ----------------------
-if page == "Overview":
-    page_overview()
-elif page == "Lead Capture":
-    page_lead_capture()
-elif page == "Pipeline Board":
-    page_pipeline_board()
-elif page == "Analytics":
-    page_analytics()
-elif page == "Seasonal Trends":
-    page_seasonal_trends()
-elif page == "Executive Intelligence":
-    page_executive_intelligence()
-elif page == "Competitor Intelligence":
-    page_competitor_intelligence()
-elif page == "CPA & ROI":
-    page_cpa_roi()
-elif page == "Business Intelligence":
-    page_business_intelligence()
-elif page == "AI Recommendations":
-    page_ai_recommendations()
-elif page == "ML (internal)":
-    page_ml_internal()
-elif page == "Technician Mobile":
-    page_technician_mobile()
-elif page == "Technician Map Tracking":
-    page_technician_map_tracking()
-elif page == "Technician Mobile":
-    page_technician_mobile()
-elif page == "Tasks":
-    page_tasks()
-elif page == "Settings":
-    page_settings()
-elif page == "Exports":
-    page_exports()
-else:
-    st.info("Page not implemented yet.")
 
 
 # Footer
