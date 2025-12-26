@@ -1402,7 +1402,7 @@ def has_access(feature_key: str) -> bool:
 
 ROLE_PERMISSIONS = {
     "Admin": {
-        "dashboard",
+        "overview",
         "lead_capture",
         "pipeline",
         "analytics",
@@ -1412,7 +1412,7 @@ ROLE_PERMISSIONS = {
         "settings",
     },
     "Manager": {
-        "dashboard",
+        "overview",
         "lead_capture",
         "pipeline",
         "analytics",
@@ -1420,12 +1420,12 @@ ROLE_PERMISSIONS = {
         "technicians",
     },
     "Staff": {
-        "dashboard",
+        "overview",
         "lead_capture",
         "pipeline",
     },
     "Viewer": {
-        "dashboard",
+        "overview",
         "pipeline",
     },
 }
@@ -2324,7 +2324,7 @@ with st.sidebar:
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
     PAGE_MAP = {
-        "Overview": ("dashboard", page_overview),
+        "Overview": ("overview", page_overview),
         "Lead Capture": ("lead_capture", page_lead_capture),
         "Pipeline Board": ("pipeline", page_pipeline_board),
         "Analytics": ("analytics", page_analytics),
