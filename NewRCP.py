@@ -699,6 +699,17 @@ def safe_migrate_new_tables():
                     conn.execute(
                         text("ALTER TABLE users ADD COLUMN activation_expires_at DATETIME")
                     )
+                        # ---- PASSWORD RESET ----
+            if "password_reset_token" not in cols:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN password_reset_token VARCHAR")
+                )
+            
+            if "password_reset_expires_at" not in cols:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME")
+                )
+
 
 
     except Exception as e:
@@ -1897,6 +1908,10 @@ from datetime import timedelta
 def generate_activation_token():
     return secrets.token_urlsafe(32)
 
+import secrets
+
+def generate_password_reset_token():
+    return secrets.token_urlsafe(32)
 
 
 def upsert_lead_record(payload: dict, actor="admin"):
@@ -4216,6 +4231,67 @@ def wp_auth_bridge():
     st.success("Login successful")
     st.rerun()
 
+def request_password_reset(email: str):
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.email == email.lower()).first()
+
+        if not user:
+            return  # Silent fail for security
+
+        token = generate_password_reset_token()
+
+        user.password_reset_token = token
+        user.password_reset_expires_at = datetime.utcnow() + timedelta(hours=1)
+
+        s.commit()
+
+        reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+
+        send_password_reset_email(user.email, reset_link)
+
+def send_password_reset_email(email: str, reset_link: str):
+    # TEMP: console output for testing
+    print("PASSWORD RESET LINK:", reset_link)
+
+    # Later you can wire:
+    # SendGrid / Mailgun / SMTP / SES
+
+def reset_password_with_token(token: str, new_password_hash: str):
+    with SessionLocal() as s:
+        user = s.query(User).filter(
+            User.password_reset_token == token,
+            User.password_reset_expires_at > datetime.utcnow()
+        ).first()
+
+        if not user:
+            raise ValueError("Invalid or expired reset token")
+
+        user.password_hash = new_password_hash
+        user.password_reset_token = None
+        user.password_reset_expires_at = None
+
+        s.commit()
+#--------------------OPTIONAL PAGE RESET FOR STREAMLIT---------------
+def page_reset_password():
+    st.markdown("## 🔐 Reset Password")
+
+    token = st.query_params.get("token")
+    if not token:
+        st.error("Missing reset token")
+        return
+
+    new_password = st.text_input("New Password", type="password")
+
+    if st.button("Reset Password"):
+        try:
+            hashed = hash_password(new_password)  # your existing hasher
+            reset_password_with_token(token, hashed)
+            st.success("Password reset successful")
+            st.query_params.clear()
+        except Exception as e:
+            st.error(str(e))
+
+request_password_reset("your@email.com")
 
 # -------------------------
 # Settings Page
