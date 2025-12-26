@@ -2303,7 +2303,9 @@ if "activate" in query_params:
     st.stop()
 
 
-
+def page_overview():
+    st.markdown("## 📊 Overview")
+    st.info("Overview page placeholder")
 # ----------------------
 # WORDPRESS AUTH BRIDGE (GLOBAL)
 # ----------------------
@@ -4252,20 +4254,37 @@ def page_settings():
                 st.error("Enter a valid email address (example@domain.com)")
                 st.stop()
 
-            try:
-                # 🔐 CREATE EXPIRING INVITE TOKEN
-                token = create_invite_user(invite_email.lower(), invite_role)
+            with SessionLocal() as s:
+                exists = s.query(User).filter(User.email == invite_email.lower()).first()
 
-                invite_link = f"{FRONTEND_URL}/activate?token={token}"
+                if exists:
+                    st.error("User already exists")
+                else:
+                    # 🔐 CREATE EXPIRING INVITE TOKEN
+                    token = generate_activation_token()
 
-                # 📤 SEND EMAIL
-                send_invite_email(invite_email, invite_link)
+                    user = User(
+                        username=invite_email,
+                        email=invite_email.lower(),
+                        role=invite_role,
+                        plan="starter",
+                        subscription_status="trial",
+                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                        activation_token=token,
+                        activation_expires_at=datetime.utcnow() + timedelta(hours=48),
+                        is_active=False,
+                    )
 
-                st.success("Invite email sent successfully")
-                st.rerun()
+                    s.add(user)
+                    s.commit()
 
-            except Exception as e:
-                st.error(f"Failed to send invite: {e}")
+                    invite_link = f"{FRONTEND_URL}/activate?token={token}"
+
+                    # ✅ For now (testing / copy-paste)
+                    st.write("Invite link:", invite_link)
+
+                    st.success("Invite created successfully")
+                    st.rerun()
 
     st.markdown("---")
 
@@ -4301,7 +4320,7 @@ def page_settings():
                     username=username.strip() if username else email.lower(),
                     full_name=full_name.strip(),
                     role=role,
-                    is_active=True,          # internal users are active immediately
+                    is_active=True,
                     email_verified=True,
                 )
                 st.success("User created successfully")
@@ -4339,7 +4358,7 @@ def page_settings():
         with col2:
             tech_role = st.selectbox(
                 "Specialization",
-                ["Estimator", "Restoration Tech", "Inspector", "Adjuster", "Other"]
+                ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
             )
             tech_active = st.checkbox("Active", value=True)
 
@@ -4391,8 +4410,6 @@ def page_settings():
                     update_technician_status(row["username"], new_status)
                     st.success("Status updated")
                     st.rerun()
-
-
 
 
 def page_technician_mobile():
@@ -5068,9 +5085,7 @@ if "token" in st.query_params:
     wp_auth_bridge()
     st.stop()
 
-def page_overview():
-    st.markdown("## 📊 Overview")
-    st.info("Overview page placeholder")
+
 
 # ----------------------
 # Router (main)
