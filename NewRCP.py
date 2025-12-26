@@ -5266,10 +5266,12 @@ with st.sidebar:
     visible_pages[choice]()
 
     if get_current_user():
-    
-if st.button("🚪 Logout"):
-        st.session_state.pop("user_id", None)
-        st.rerun()
+        if st.button("🚪 Logout"):
+            st.session_state.clear()
+            st.success("Logged out successfully")
+            st.rerun()
+
+   
 
 
 # ---------- END BLOCK E ----------
