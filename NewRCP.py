@@ -2304,48 +2304,6 @@ if "activate" in query_params:
 
 
 
-# ----------------------
-# WORDPRESS AUTH BRIDGE (GLOBAL)
-# ----------------------
-
-if "token" in st.query_params:
-    wp_auth_bridge()
-    st.stop()
-
-def page_overview():
-    import plotly.express as px
-# ----------------------
-# NAVIGATION Side Bar Control
-# ----------------------
-with st.sidebar:
-    st.header("ReCapture Pro")
-    
-    user = get_current_user()
-    role = user.role if user else "Viewer"
-
-    allowed_pages = ROLE_PERMISSIONS.get(role, set())
-
-    PAGE_MAP = {
-        "Overview": ("overview", page_overview),
-        "Lead Capture": ("lead_capture", page_lead_capture),
-        "Pipeline Board": ("pipeline", page_pipeline_board),
-        "Analytics": ("analytics", page_analytics),
-        "CPA & ROI": ("analytics", page_cpa_roi),
-        "Tasks": ("tasks", page_tasks),
-        "AI Recommendations": ("business_intelligence", page_ai_recommendations),
-        "Seasonal Trends": ("business_intelligence", page_seasonal_trends),
-        "Settings": ("settings", page_settings),
-        "Exports": ("exports", page_exports),
-    }
-
-    visible_pages = {
-        label: func
-        for label, (key, func) in PAGE_MAP.items()
-        if key in allowed_pages
-    }
-
-    choice = st.radio("Navigate", list(visible_pages.keys()))
-    visible_pages[choice]()
 
 
 
@@ -2461,8 +2419,8 @@ def alerts_ui():
 
 
 
-
-
+def page_overview():
+    import plotly.express as px
     st.markdown("<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>", unsafe_allow_html=True)
     st.markdown("<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>", unsafe_allow_html=True)
 
@@ -5076,7 +5034,48 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 2. Optimize GMB categories and services
 3. Increase local landing page coverage
 """, unsafe_allow_html=True)
+
+
 # ---------- END BLOCK E ----------
+# ----------------------
+# WORDPRESS AUTH BRIDGE (GLOBAL)
+# ----------------------
+
+if "token" in st.query_params:
+    wp_auth_bridge()
+    st.stop()
+# ----------------------
+# NAVIGATION Side Bar Control
+# ----------------------
+with st.sidebar:
+    st.header("ReCapture Pro")
+    
+    user = get_current_user()
+    role = user.role if user else "Viewer"
+
+    allowed_pages = ROLE_PERMISSIONS.get(role, set())
+
+    PAGE_MAP = {
+        "Overview": ("overview", page_overview),
+        "Lead Capture": ("lead_capture", page_lead_capture),
+        "Pipeline Board": ("pipeline", page_pipeline_board),
+        "Analytics": ("analytics", page_analytics),
+        "CPA & ROI": ("analytics", page_cpa_roi),
+        "Tasks": ("tasks", page_tasks),
+        "AI Recommendations": ("business_intelligence", page_ai_recommendations),
+        "Seasonal Trends": ("business_intelligence", page_seasonal_trends),
+        "Settings": ("settings", page_settings),
+        "Exports": ("exports", page_exports),
+    }
+
+    visible_pages = {
+        label: func
+        for label, (key, func) in PAGE_MAP.items()
+        if key in allowed_pages
+    }
+
+    choice = st.radio("Navigate", list(visible_pages.keys()))
+    visible_pages[choice]()
 
 # ---------- END BLOCK E ----------
 
