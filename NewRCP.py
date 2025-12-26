@@ -2324,7 +2324,7 @@ with st.sidebar:
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
     PAGE_MAP = {
-        "Overview": ("dashboard", page_dashboard),
+        "Overview": ("dashboard", page_overview),
         "Lead Capture": ("lead_capture", page_lead_capture),
         "Pipeline Board": ("pipeline", page_pipeline_board),
         "Analytics": ("analytics", page_analytics),
