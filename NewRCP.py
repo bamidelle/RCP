@@ -989,18 +989,7 @@ def get_current_user():
         return user
 
 
-#----------------------------
-# Please log in to continue.
-#----------------------------
-def require_auth():
-    """
-    Hard stop if user is not authenticated.
-    """
-    if not st.session_state.get("authenticated"):
-        st.warning("Please log in to continue.")
-        st.stop()
 
-require_auth()
 
 
 def decode_wp_token(token: str):
