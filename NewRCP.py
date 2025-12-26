@@ -5265,13 +5265,13 @@ with st.sidebar:
     choice = st.radio("Navigate", list(visible_pages.keys()))
     visible_pages[choice]()
 
-    if get_current_user():
+    if user:
+        st.write(f"👤 {user.full_name or user.email}")
+
         if st.button("🚪 Logout"):
             st.session_state.clear()
             st.success("Logged out successfully")
             st.rerun()
-
-   
 
 
 # ---------- END BLOCK E ----------
