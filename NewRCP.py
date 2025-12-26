@@ -2303,9 +2303,7 @@ if "activate" in query_params:
     st.stop()
 
 
-def page_overview():
-    st.markdown("## 📊 Overview")
-    st.info("Overview page placeholder")
+
 # ----------------------
 # WORDPRESS AUTH BRIDGE (GLOBAL)
 # ----------------------
