@@ -686,6 +686,20 @@ def safe_migrate_new_tables():
                     conn.execute(
                         text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'")
                     )
+                        # ---- USERS TABLE ----
+            if "users" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("users")]
+            
+                if "activation_token" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN activation_token VARCHAR")
+                    )
+            
+                if "activation_expires_at" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN activation_expires_at DATETIME")
+                    )
+
 
     except Exception as e:
         print("Safe migration skipped:", e)
@@ -1868,6 +1882,14 @@ def is_valid_email(email: str) -> bool:
     return bool(EMAIL_REGEX.match(email.strip().lower()))
 
 
+import secrets
+from datetime import timedelta
+
+def generate_activation_token():
+    return secrets.token_urlsafe(32)
+
+
+
 def upsert_lead_record(payload: dict, actor="admin"):
     """
     payload must include lead_id (string)
@@ -1957,6 +1979,32 @@ def delete_lead_record(lead_id: str, actor="admin"):
         raise
     finally:
         s.close()
+
+
+def activate_user_from_token(token: str) -> bool:
+    with SessionLocal() as s:
+        user = (
+            s.query(User)
+            .filter(User.activation_token == token)
+            .first()
+        )
+
+        if not user:
+            return False
+
+        if user.activation_expires_at and user.activation_expires_at < datetime.utcnow():
+            return False
+
+        # ✅ Activate user
+        user.is_active = True
+        user.email_verified = True
+        user.subscription_status = "active"
+        user.activation_token = None
+        user.activation_expires_at = None
+
+        s.add(user)
+        s.commit()
+        return True
 
 
 def get_users_df():
@@ -2243,6 +2291,25 @@ body, .stApp { background: #ffffff; color: #0b1220; font-family: 'Comfortaa', sa
 </style>
 """
 st.markdown(APP_CSS, unsafe_allow_html=True)
+
+
+query_params = st.query_params
+
+if "activate" in query_params:
+    token = query_params.get("activate")
+
+    st.title("🔐 Activating your account...")
+
+    success = activate_user_from_token(token)
+
+    if success:
+        st.success("✅ Account activated successfully")
+        st.info("You may now log in.")
+    else:
+        st.error("❌ Invalid or expired activation link")
+
+    st.stop()
+
 
 
 # ----------------------
@@ -3838,6 +3905,7 @@ def page_technician_map_tracking():
         ).add_to(m)
 
     st_folium(m, height=600, use_container_width=True)
+    st.success("Technician map page loaded")
 
 
 def page_technician_mobile():
