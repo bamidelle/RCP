@@ -5068,6 +5068,10 @@ if "token" in st.query_params:
     wp_auth_bridge()
     st.stop()
 
+def page_overview():
+    st.markdown("## 📊 Overview")
+    st.info("Overview page placeholder")
+
 # ----------------------
 # Router (main)
 # ----------------------
