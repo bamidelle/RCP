@@ -62,6 +62,7 @@ import uuid
 from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 
+from passlib.context import CryptContext
 
 
 
@@ -4199,7 +4200,6 @@ def page_ai_recommendations():
 
 
     # End of page
-from passlib.context import CryptContext
 
 pwd_context = CryptContext(
     schemes=["bcrypt"],
