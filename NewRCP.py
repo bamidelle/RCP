@@ -36,6 +36,9 @@ from datetime import datetime, timedelta
 
 import secrets
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from sqlalchemy import (
     create_engine,
@@ -562,6 +565,7 @@ def safe_migrate():
 
         if "users" in inspector.get_table_names():
             existing = [c["name"] for c in inspector.get_columns("users")]
+
             desired = {
                 "plan": "TEXT",
                 "trial_ends_at": "DATETIME",
@@ -569,16 +573,30 @@ def safe_migrate():
             }
 
             with engine.begin() as conn:
+                # ---- Subscription / Plan Fields ----
                 for col, typ in desired.items():
                     if col not in existing:
                         conn.execute(
                             text(f"ALTER TABLE users ADD COLUMN {col} {typ}")
                         )
 
+                # ---- User security fields ----
+                if "failed_login_attempts" not in existing:
+                    conn.execute(text(
+                        "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"
+                    ))
+
+                if "locked_until" not in existing:
+                    conn.execute(text(
+                        "ALTER TABLE users ADD COLUMN locked_until DATETIME"
+                    ))
+
     except Exception as e:
         print("⚠️ User migration skipped:", e)
 
+
 safe_migrate()
+
 
 def create_login_token(user, minutes=15):
     token = secrets.token_urlsafe(32)
@@ -1860,6 +1878,9 @@ def send_email(to_email: str, subject: str, html_body: str):
         server.starttls()
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.send_message(msg)
+
+
+
 
 def send_invite_email(email: str, invite_link: str):
     html = f"""
@@ -4367,13 +4388,28 @@ def authenticate_user(email: str, password: str):
         if not user.password_hash:
             return None
 
-        if not verify_password(password, user.password_hash):
-            return None
+        # ---- Check if account is locked ----
+        if user.locked_until and user.locked_until > datetime.utcnow():
+            raise Exception("Account locked. Try again later.")
 
+        # ---- Verify password ----
+        if not verify_password(password, user.password_hash):
+            user.failed_login_attempts += 1
+
+            if user.failed_login_attempts >= 5:
+                user.locked_until = datetime.utcnow() + timedelta(minutes=30)
+
+            s.commit()
+            raise Exception("Invalid credentials")
+
+        # ---- SUCCESS: reset failed attempts ----
+        user.failed_login_attempts = 0
+        user.locked_until = None
         user.last_login_at = datetime.utcnow()
         s.commit()
 
         return user
+
 
 def page_login():
     st.markdown("## 🔐 Login")
@@ -4601,6 +4637,41 @@ def page_settings():
                     update_technician_status(row["username"], new_status)
                     st.success("Status updated")
                     st.rerun()
+
+    st.markdown("---")
+    st.markdown("## 🔐 Change Password")
+    
+    with st.form("change_password_form"):
+        current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+    
+        submitted_pw = st.form_submit_button("Update Password")
+    
+        if submitted_pw:
+            if not current_password or not new_password:
+                st.error("All fields required")
+                st.stop()
+    
+            if new_password != confirm_password:
+                st.error("Passwords do not match")
+                st.stop()
+    
+            user = get_current_user()
+    
+            with SessionLocal() as s:
+                db_user = s.query(User).filter(User.id == user.id).first()
+    
+                if not pwd_context.verify(current_password, db_user.password_hash):
+                    st.error("Current password incorrect")
+                    st.stop()
+    
+                db_user.password_hash = pwd_context.hash(new_password)
+                s.commit()
+    
+            st.success("Password updated successfully")
+            st.rerun()
+
 
 
 def page_technician_mobile():
@@ -5282,6 +5353,7 @@ if "token" in st.query_params:
     else:
         wp_auth_bridge()
         st.stop()
+
 
 
 # ----------------------
