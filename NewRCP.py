@@ -35,7 +35,7 @@ import jwt
 from datetime import datetime, timedelta
 
 import secrets
-from passlib.hash import bcrypt
+
 
 from sqlalchemy import (
     create_engine,
