@@ -996,6 +996,54 @@ def set_logged_in_user(user: User):
 
     
 # ----------------------
+# ACCOUNT REACTIVATION
+# ----------------------
+
+def reactivate_user_account(user: User, plan: str):
+    """
+    Re-enables a locked account after successful upgrade
+    """
+    user.plan = plan
+    user.subscription_status = "active"
+    user.is_active = True
+    user.email_verified = True   # safe if coming from Stripe / admin
+    user.trial_ends_at = None
+
+# ----------------------
+# TRIAL REMINDER EMAILS
+# ----------------------
+
+TRIAL_REMINDER_DAYS = [7, 3, 1]  # days before expiration
+
+
+def send_trial_expiry_reminders():
+    """
+    Send reminder emails to users whose trials are expiring soon.
+    Safe to run multiple times (idempotent by date).
+    """
+    now = datetime.utcnow()
+
+    with SessionLocal() as s:
+        users = (
+            s.query(User)
+            .filter(
+                User.subscription_status == "trial",
+                User.trial_ends_at.isnot(None),
+                User.is_active == True
+            )
+            .all()
+        )
+
+        for user in users:
+            days_left = (user.trial_ends_at - now).days
+
+            if days_left in TRIAL_REMINDER_DAYS:
+                try:
+                    send_trial_reminder_email(user.email, days_left)
+                except Exception as e:
+                    print(f"Failed reminder email for {user.email}: {e}")
+
+# ----------------------
 # AUTH HELPERS
 # ----------------------
 
@@ -1005,6 +1053,7 @@ def get_current_user():
     Enforces:
     - account is active
     - email is verified
+    - trial has not expired
     """
 
     user_id = st.session_state.get("user_id")
@@ -1019,24 +1068,30 @@ def get_current_user():
             st.error("User session invalid")
             st.stop()
 
+        # 🚫 Account disabled
         if not user.is_active:
             st.error("Your account is inactive. Please contact an administrator.")
             st.stop()
 
+        # ✉️ Email not verified
         if not user.email_verified:
             st.error("Please verify your email address before accessing the app.")
             st.stop()
 
-        # ---- TRIAL / SUBSCRIPTION ENFORCEMENT ----
-        if user.subscription_status == "trial":
-            if user.trial_ends_at and user.trial_ends_at < datetime.utcnow():
-                st.error("⛔ Your trial has expired. Please upgrade to continue.")
-                st.stop()
-        
-        if user.subscription_status not in ("trial", "active"):
-            st.error("⛔ Subscription inactive. Please contact billing.")
-            st.stop()
+        # ⏳ TRIAL EXPIRED (STEP T)
+        if (
+            user.subscription_status == "trial"
+            and user.trial_ends_at
+            and datetime.utcnow() > user.trial_ends_at
+        ):
+            user.is_active = False
+            s.commit()
 
+            st.error(
+                "⏰ Your free trial has ended.\n\n"
+                "Please upgrade your plan to continue using ReCapture Pro."
+            )
+            st.stop()
 
         return user
 
@@ -2034,6 +2089,28 @@ def create_invite_user(email: str, role: str):
 
     return token
 
+def send_trial_reminder_email(email: str, days_left: int):
+    subject = f"⏰ Your ReCapture Pro trial expires in {days_left} day(s)"
+
+    body = f"""
+Hi,
+
+Your ReCapture Pro trial will expire in {days_left} day(s).
+
+To avoid interruption, please upgrade your plan before your trial ends.
+
+👉 Log in to upgrade
+
+If you have questions, just reply to this email.
+
+— ReCapture Pro Team
+"""
+
+    send_email(
+        to=email,
+        subject=subject,
+        body=body
+    )
 
 # ---------- END BLOCK C ----------
 
@@ -4543,6 +4620,16 @@ def request_password_reset(email: str):
 
     send_password_reset_email(email, reset_link)
 
+def admin_upgrade_user(user_id: int, plan: str):
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+
+        reactivate_user_account(user, plan)
+        s.commit()
+        return True
+
 # -------------------------
 # Settings Page
 # -------------------------
@@ -4694,6 +4781,19 @@ def page_settings():
     st.markdown("---")
 
     # ======================================================
+    # 📨 ADMIN — TRIAL REMINDER EMAILS
+    # ======================================================
+    user = get_current_user()
+    if user.role == "Admin":
+        st.markdown("### 📨 Trial Management")
+
+        if st.button("📨 Send Trial Reminder Emails (Admin)"):
+            send_trial_expiry_reminders()
+            st.success("Trial reminders sent")
+
+    st.markdown("---")
+
+    # ======================================================
     # 👷 TECHNICIAN MANAGEMENT
     # ======================================================
     st.markdown("## 👷 Technician Management")
@@ -4818,6 +4918,7 @@ def page_settings():
 
             st.success("Password updated successfully")
             st.rerun()
+
 
 
 def page_technician_mobile():
