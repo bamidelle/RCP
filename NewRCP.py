@@ -1042,6 +1042,53 @@ def send_trial_expiry_reminders():
                     send_trial_reminder_email(user.email, days_left)
                 except Exception as e:
                     print(f"Failed reminder email for {user.email}: {e}")
+# ----------------------
+# BILLING PROVIDER ABSTRACTION
+# ----------------------
+
+class BillingProvider:
+    """
+    Interface for all payment providers.
+    """
+
+    def create_checkout(self, user, plan):
+        raise NotImplementedError
+
+    def verify_payment(self, payload):
+        raise NotImplementedError
+
+    def cancel_subscription(self, user):
+        raise NotImplementedError
+
+
+class DummyBillingProvider(BillingProvider):
+    """
+    Temporary provider for manual / offline payments.
+    """
+
+    def create_checkout(self, user, plan):
+        return {
+            "status": "pending",
+            "message": "Payment instructions sent manually"
+        }
+
+    def verify_payment(self, payload):
+        return True
+
+    def cancel_subscription(self, user):
+        return True
+
+def upgrade_user_plan(user, new_plan):
+    checkout = BILLING_PROVIDER.create_checkout(user, new_plan)
+
+    # Manual approval or webhook later
+    user.plan = new_plan
+    user.subscription_status = "active"
+    user.trial_ends_at = None
+
+    with SessionLocal() as s:
+        s.merge(user)
+        s.commit()
 
 # ----------------------
 # AUTH HELPERS
@@ -1096,7 +1143,18 @@ def get_current_user():
         return user
 
 
+#----------------------------
+# Please log in to continue.
+#----------------------------
+def require_auth():
+    """
+    Hard stop if user is not authenticated.
+    """
+    if not st.session_state.get("authenticated"):
+        st.warning("Please log in to continue.")
+        st.stop()
 
+require_auth()
 
 
 def decode_wp_token(token: str):
@@ -1584,6 +1642,7 @@ ROLE_PERMISSIONS = {
         "competitor_intelligence",
         "technicians",
         "settings",
+        "billing",
     },
     "Manager": {
         "overview",
@@ -4918,7 +4977,135 @@ def page_settings():
 
             st.success("Password updated successfully")
             st.rerun()
+        st.markdown("---")
+        st.markdown("## 💼 Admin Billing Controls")
+    
+        admin_users_df = get_users_df()
+    
+        if admin_users_df.empty:
+            st.info("No users available.")
+        else:
+            for _, row in admin_users_df.iterrows():
+                with st.expander(f"💳 {row['email']} ({row['plan']})", expanded=False):
+    
+                    col1, col2, col3 = st.columns(3)
+    
+                    with col1:
+                        new_plan = st.selectbox(
+                            "Plan",
+                            ["starter", "pro", "enterprise"],
+                            index=["starter", "pro", "enterprise"].index(row["plan"]),
+                            key=f"plan_{row['id']}"
+                        )
+    
+                    with col2:
+                        new_status = st.selectbox(
+                            "Subscription Status",
+                            ["trial", "active", "expired", "canceled"],
+                            index=["trial", "active", "expired", "canceled"].index(row["subscription_status"]),
+                            key=f"status_{row['id']}"
+                        )
+    
+                    with col3:
+                        active_flag = st.checkbox(
+                            "Account Active",
+                            value=bool(row.get("is_active", True)),
+                            key=f"active_{row['id']}"
+                        )
+    
+                    if st.button("Save Billing Changes", key=f"save_{row['id']}"):
+                        with SessionLocal() as s:
+                            user = s.query(User).filter(User.id == row["id"]).first()
+                            if user:
+                                user.plan = new_plan
+                                user.subscription_status = new_status
+                                user.is_active = active_flag
+    
+                                # If activating, clear trial
+                                if new_status == "active":
+                                    user.trial_ends_at = None
+    
+                                s.commit()
+                                st.success("Billing updated")
+                                st.rerun()
 
+# -------------------------
+# Billing Page
+# -------------------------
+def page_billing():
+    require_role_access("billing")
+
+    user = get_current_user()
+
+    st.markdown(
+        "<div class='header'>💳 Billing & Subscription</div>",
+        unsafe_allow_html=True
+    )
+
+    # =============================
+    # CURRENT PLAN
+    # =============================
+    st.subheader("Current Plan")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Plan", user.plan.capitalize())
+
+    with col2:
+        st.metric("Status", user.subscription_status.capitalize())
+
+    if user.subscription_status == "trial":
+        days_left = max(
+            0,
+            (user.trial_ends_at - datetime.utcnow()).days
+        )
+        st.info(f"Trial ends in **{days_left} days**")
+
+    st.markdown("---")
+
+    # =============================
+    # AVAILABLE PLANS
+    # =============================
+    st.subheader("Available Plans")
+
+    plans = {
+        "starter": {
+            "price": "$0",
+            "desc": "Basic access for small teams",
+        },
+        "pro": {
+            "price": "$99 / month",
+            "desc": "Advanced analytics & automation",
+        },
+        "enterprise": {
+            "price": "Custom",
+            "desc": "Unlimited access & priority support",
+        },
+    }
+
+    for plan, meta in plans.items():
+        with st.container():
+            c1, c2, c3 = st.columns([3, 2, 2])
+
+            with c1:
+                st.markdown(f"### {plan.capitalize()}")
+                st.caption(meta["desc"])
+
+            with c2:
+                st.markdown(f"**{meta['price']}**")
+
+            with c3:
+                if user.plan == plan:
+                    st.success("Current plan")
+                else:
+                    if st.button(f"Upgrade to {plan}", key=f"upgrade_{plan}"):
+                        result = BILLING_PROVIDER.create_checkout(
+                            user=user,
+                            plan=plan
+                        )
+
+                        st.info(result.get("message", "Checkout started"))
 
 
 def page_technician_mobile():
@@ -5671,6 +5858,8 @@ with st.sidebar:
         "Seasonal Trends": ("business_intelligence", page_seasonal_trends),
         "Settings": ("settings", page_settings),
         "Exports": ("exports", page_exports),
+        "Billing": ("billing", page_billing),
+
     }
 
     visible_pages = {
