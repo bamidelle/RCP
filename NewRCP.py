@@ -680,17 +680,46 @@ def safe_migrate_new_tables():
 
                 if "last_login_at" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
-                
+
                 #-------- Extension ------------------------------------------
                 if "invite_token_hash" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN invite_token_hash VARCHAR"))
-                
+
                 if "invite_expires_at" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN invite_expires_at DATETIME"))
-                
+
                 if "activated_at" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN activated_at DATETIME"))
 
+                if "activation_token" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN activation_token VARCHAR")
+                    )
+
+                if "activation_expires_at" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN activation_expires_at DATETIME")
+                    )
+
+                # ---- PASSWORD RESET ----
+                if "password_reset_token" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN password_reset_token VARCHAR")
+                    )
+
+                if "password_reset_expires_at" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME")
+                    )
+
+                if "password_hash" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
+
+                if "reset_token" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR"))
+
+                if "reset_expires_at" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_expires_at DATETIME"))
 
             # ---- TECHNICIANS TABLE ----
             if "technicians" in inspector.get_table_names():
@@ -699,49 +728,9 @@ def safe_migrate_new_tables():
                     conn.execute(
                         text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'")
                     )
-                        # ---- USERS TABLE ----
-            if "users" in inspector.get_table_names():
-                cols = [c["name"] for c in inspector.get_columns("users")]
-            
-                if "activation_token" not in cols:
-                    conn.execute(
-                        text("ALTER TABLE users ADD COLUMN activation_token VARCHAR")
-                    )
-            
-                if "activation_expires_at" not in cols:
-                    conn.execute(
-                        text("ALTER TABLE users ADD COLUMN activation_expires_at DATETIME")
-                    )
-                        # ---- PASSWORD RESET ----
-            if "password_reset_token" not in cols:
-                conn.execute(
-                    text("ALTER TABLE users ADD COLUMN password_reset_token VARCHAR")
-                )
-            
-            if "password_reset_expires_at" not in cols:
-                conn.execute(
-                    text("ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME")
-                )
-
-            # ---- PASSWORD RESET ----
-            if "users" in inspector.get_table_names():
-                cols = [c["name"] for c in inspector.get_columns("users")]
-            
-                if "password_hash" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
-            
-                if "reset_token" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR"))
-            
-                if "reset_expires_at" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_expires_at DATETIME"))
-
-
-
 
     except Exception as e:
         print("Safe migration skipped:", e)
-
 
 
 # Call migration
