@@ -356,6 +356,12 @@ class User(Base):
 
     password_hash = Column(String, nullable=True)
 
+    password_hash = Column(String, nullable=True)
+
+    reset_token = Column(String, nullable=True)
+    reset_expires_at = Column(DateTime, nullable=True)
+
+
 
 
 class UserInvite(Base):
@@ -713,6 +719,20 @@ def safe_migrate_new_tables():
                     text("ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME")
                 )
 
+            # ---- PASSWORD RESET ----
+            if "users" in inspector.get_table_names():
+                cols = [c["name"] for c in inspector.get_columns("users")]
+            
+                if "password_hash" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
+            
+                if "reset_token" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR"))
+            
+                if "reset_expires_at" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_expires_at DATETIME"))
+
+
 
 
     except Exception as e:
@@ -1039,6 +1059,22 @@ def verify_invite_token(token: str) -> User:
 
     except jwt.ExpiredSignatureError:
         raise ValueError("Invite expired")
+
+
+import secrets
+from passlib.hash import bcrypt
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hash(password)
+
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.verify(password, hashed)
+
+
+def generate_reset_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
@@ -1858,6 +1894,9 @@ def send_invite_email(email: str, invite_link: str):
         html_body=html
     )
 
+def send_password_reset_email(email: str, reset_link: str):
+    st.write("🔐 PASSWORD RESET LINK (DEV MODE):")
+    st.write(reset_link)
 
 
 def generate_invite_token(email: str) -> tuple[str, str]:
@@ -4250,6 +4289,25 @@ def wp_auth_bridge():
     st.success("Login successful")
     st.rerun()
 
+def reset_password_with_token(token: str, new_password: str):
+    with SessionLocal() as s:
+        user = s.query(User).filter(
+            User.reset_token == token,
+            User.reset_expires_at > datetime.utcnow()
+        ).first()
+
+        if not user:
+            raise Exception("Invalid or expired reset token")
+
+        user.password_hash = hash_password(new_password)
+        user.reset_token = None
+        user.reset_expires_at = None
+        user.email_verified = True
+
+        s.commit()
+
+
+
 def request_password_reset(email: str):
     with SessionLocal() as s:
         user = s.query(User).filter(User.email == email.lower()).first()
@@ -4275,42 +4333,35 @@ def send_password_reset_email(email: str, reset_link: str):
     # Later you can wire:
     # SendGrid / Mailgun / SMTP / SES
 
-def reset_password_with_token(token: str, new_password_hash: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-            User.password_reset_token == token,
-            User.password_reset_expires_at > datetime.utcnow()
-        ).first()
 
-        if not user:
-            raise ValueError("Invalid or expired reset token")
-
-        user.password_hash = new_password_hash
-        user.password_reset_token = None
-        user.password_reset_expires_at = None
-
-        s.commit()
 #--------------------OPTIONAL PAGE RESET FOR STREAMLIT---------------
 def page_reset_password():
-    st.markdown("## 🔐 Reset Password")
+    st.markdown("## 🔐 Reset Your Password")
 
     token = st.query_params.get("token")
     if not token:
         st.error("Missing reset token")
-        return
+        st.stop()
 
-    new_password = st.text_input("New Password", type="password")
+    pw1 = st.text_input("New Password", type="password")
+    pw2 = st.text_input("Confirm Password", type="password")
 
     if st.button("Reset Password"):
+        if not pw1 or len(pw1) < 8:
+            st.error("Password must be at least 8 characters")
+            st.stop()
+
+        if pw1 != pw2:
+            st.error("Passwords do not match")
+            st.stop()
+
         try:
-            hashed = hash_password(new_password)  # your existing hasher
-            reset_password_with_token(token, hashed)
-            st.success("Password reset successful")
-            st.query_params.clear()
+            reset_password_with_token(token, pw1)
+            st.success("Password reset successful. You may now log in.")
+            st.stop()
         except Exception as e:
             st.error(str(e))
 
-request_password_reset("your@email.com")
 
 
 def authenticate_user(email: str, password: str):
@@ -4348,6 +4399,22 @@ def page_login():
             set_logged_in_user(user)
             st.success("Logged in successfully")
             st.rerun()
+
+def request_password_reset(email: str):
+    token = generate_reset_token()
+
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.email == email).first()
+        if not user:
+            return  # silent fail (security)
+
+        user.reset_token = token
+        user.reset_expires_at = datetime.utcnow() + timedelta(hours=1)
+        s.commit()
+
+    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+
+    send_password_reset_email(email, reset_link)
 
 # -------------------------
 # Settings Page
@@ -5219,8 +5286,14 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 # ----------------------
 
 if "token" in st.query_params:
-    wp_auth_bridge()
-    st.stop()
+    if st.query_params.get("reset") == "1":
+        page_reset_password()
+        st.stop()
+    else:
+        wp_auth_bridge()
+        st.stop()
+
+
 # ----------------------
 # NAVIGATION Side Bar Control
 # ----------------------
