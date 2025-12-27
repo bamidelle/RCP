@@ -13,4 +13,4 @@ streamlit-extras
 streamlit-folium
 folium
 PyJWT
-
+passlib[bcrypt]
