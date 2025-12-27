@@ -739,6 +739,16 @@ def safe_migrate_new_tables():
                 if "reset_expires_at" not in cols:
                     conn.execute(text("ALTER TABLE users ADD COLUMN reset_expires_at DATETIME"))
 
+                if "otp_code" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN otp_code VARCHAR"))
+                
+                if "otp_expires_at" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN otp_expires_at DATETIME"))
+                
+                if "otp_required" not in cols:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN otp_required BOOLEAN DEFAULT 0"))
+                
+
             # ---- TECHNICIANS TABLE ----
             if "technicians" in inspector.get_table_names():
                 cols = [c["name"] for c in inspector.get_columns("technicians")]
@@ -1017,6 +1027,17 @@ def get_current_user():
             st.error("Please verify your email address before accessing the app.")
             st.stop()
 
+        # ---- TRIAL / SUBSCRIPTION ENFORCEMENT ----
+        if user.subscription_status == "trial":
+            if user.trial_ends_at and user.trial_ends_at < datetime.utcnow():
+                st.error("⛔ Your trial has expired. Please upgrade to continue.")
+                st.stop()
+        
+        if user.subscription_status not in ("trial", "active"):
+            st.error("⛔ Subscription inactive. Please contact billing.")
+            st.stop()
+
+
         return user
 
 
@@ -1084,6 +1105,24 @@ def verify_password(password: str, hashed: str) -> bool:
 
 def generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+import random
+
+def generate_otp():
+    return str(random.randint(100000, 999999))
+
+def send_otp_email(email, otp):
+    subject = "Your ReCapture Pro verification code"
+    body = f"""
+Your verification code is:
+
+{otp}
+
+This code expires in 5 minutes.
+If you did not request this, ignore this email.
+"""
+    send_email(email, subject, body)
 
 
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
@@ -1510,16 +1549,65 @@ ROLE_PERMISSIONS = {
     },
 }
 
-def require_role_access(page_key: str):
+# ----------------------
+# PLAN CAPABILITIES (GLOBAL)
+# ----------------------
+PLAN_LIMITS = {
+    "starter": {
+        "pages": {
+            "overview",
+            "lead_capture",
+            "pipeline",
+            "analytics",
+            "tasks",
+        },
+        "max_users": 3,
+        "max_leads": 100,
+    },
+    "pro": {
+        "pages": {
+            "overview",
+            "lead_capture",
+            "pipeline",
+            "analytics",
+            "tasks",
+            "business_intelligence",
+            "seasonal_trends",
+            "exports",
+        },
+        "max_users": 10,
+        "max_leads": 1000,
+    },
+    "enterprise": {
+        "pages": {"*"},
+        "max_users": 999,
+        "max_leads": 999999,
+    },
+}
+
+def require_role_access(page_key):
     user = get_current_user()
     if not user:
-        st.error("Authentication required.")
         st.stop()
 
-    allowed = ROLE_PERMISSIONS.get(user.role, set())
-    if page_key not in allowed:
-        st.warning("🚫 You do not have access to this page.")
+    # Role enforcement
+    allowed_pages = ROLE_PERMISSIONS.get(user.role, set())
+    if page_key not in allowed_pages:
+        st.error("⛔ Access denied.")
         st.stop()
+
+    # Plan enforcement
+    plan = user.plan or "starter"
+    limits = PLAN_LIMITS.get(plan)
+
+    if limits:
+        allowed = limits["pages"]
+        if "*" not in allowed and page_key not in allowed:
+            st.warning("🔒 This feature requires an upgrade.")
+            st.info("Upgrade your plan to unlock this feature.")
+            st.stop()
+
+
 
     
 def analyze_job_types(df):
@@ -4406,9 +4494,22 @@ def authenticate_user(email: str, password: str):
         user.failed_login_attempts = 0
         user.locked_until = None
         user.last_login_at = datetime.utcnow()
+
+        # Generate OTP for Admins or first-time login
+        otp = generate_otp()
+        user.otp_code = otp
+        user.otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
+        user.otp_required = True
+
+        send_otp_email(user.email, otp)
+
         s.commit()
 
-        return user
+        # Mark user as pending OTP
+        st.session_state["otp_user_id"] = user.id
+
+        return "OTP_REQUIRED"
+
 
 
 def page_login():
@@ -4481,13 +4582,25 @@ def page_settings():
                 st.error("Enter a valid email address (example@domain.com)")
                 st.stop()
 
+            # ✅ PLAN USER LIMIT CHECK
             with SessionLocal() as s:
-                exists = s.query(User).filter(User.email == invite_email.lower()).first()
+                count = s.query(User).count()
+
+            plan = get_current_user().plan
+            max_users = PLAN_LIMITS.get(plan, {}).get("max_users", 0)
+
+            if max_users and count >= max_users:
+                st.error("User limit reached for your plan.")
+                st.stop()
+
+            with SessionLocal() as s:
+                exists = s.query(User).filter(
+                    User.email == invite_email.lower()
+                ).first()
 
                 if exists:
                     st.error("User already exists")
                 else:
-                    # 🔐 CREATE EXPIRING INVITE TOKEN
                     token = generate_activation_token()
 
                     user = User(
@@ -4506,8 +4619,6 @@ def page_settings():
                     s.commit()
 
                     invite_link = f"{FRONTEND_URL}/activate?token={token}"
-
-                    # ✅ For now (testing / copy-paste)
                     st.write("Invite link:", invite_link)
 
                     st.success("Invite created successfully")
@@ -4541,6 +4652,17 @@ def page_settings():
                 st.error("Please enter a valid email address")
                 st.stop()
 
+            # ✅ PLAN USER LIMIT CHECK
+            with SessionLocal() as s:
+                count = s.query(User).count()
+
+            plan = get_current_user().plan
+            max_users = PLAN_LIMITS.get(plan, {}).get("max_users", 0)
+
+            if max_users and count >= max_users:
+                st.error("User limit reached for your plan.")
+                st.stop()
+
             try:
                 add_user(
                     email=email.lower(),
@@ -4555,6 +4677,8 @@ def page_settings():
 
             except Exception as e:
                 st.error(f"Failed to create user: {e}")
+
+    st.markdown("---")
 
     # ======================================================
     # 👥 USERS TABLE
@@ -4634,44 +4758,66 @@ def page_settings():
 
             with c3:
                 if st.button("Update", key=f"btn_{row['username']}"):
-                    update_technician_status(row["username"], new_status)
+                    update_technician_status(
+                        row["username"],
+                        new_status
+                    )
                     st.success("Status updated")
                     st.rerun()
 
     st.markdown("---")
+
+    # ======================================================
+    # 🔐 CHANGE PASSWORD
+    # ======================================================
     st.markdown("## 🔐 Change Password")
-    
+
     with st.form("change_password_form"):
-        current_password = st.text_input("Current Password", type="password")
-        new_password = st.text_input("New Password", type="password")
-        confirm_password = st.text_input("Confirm New Password", type="password")
-    
+        current_password = st.text_input(
+            "Current Password",
+            type="password"
+        )
+        new_password = st.text_input(
+            "New Password",
+            type="password"
+        )
+        confirm_password = st.text_input(
+            "Confirm New Password",
+            type="password"
+        )
+
         submitted_pw = st.form_submit_button("Update Password")
-    
+
         if submitted_pw:
             if not current_password or not new_password:
                 st.error("All fields required")
                 st.stop()
-    
+
             if new_password != confirm_password:
                 st.error("Passwords do not match")
                 st.stop()
-    
+
             user = get_current_user()
-    
+
             with SessionLocal() as s:
-                db_user = s.query(User).filter(User.id == user.id).first()
-    
-                if not pwd_context.verify(current_password, db_user.password_hash):
+                db_user = s.query(User).filter(
+                    User.id == user.id
+                ).first()
+
+                if not pwd_context.verify(
+                    current_password,
+                    db_user.password_hash
+                ):
                     st.error("Current password incorrect")
                     st.stop()
-    
-                db_user.password_hash = pwd_context.hash(new_password)
+
+                db_user.password_hash = pwd_context.hash(
+                    new_password
+                )
                 s.commit()
-    
+
             st.success("Password updated successfully")
             st.rerun()
-
 
 
 def page_technician_mobile():
@@ -5354,7 +5500,53 @@ if "token" in st.query_params:
         wp_auth_bridge()
         st.stop()
 
+if "otp_user_id" in st.session_state:
+    st.markdown("## 🔐 Verify Your Login")
 
+    otp_input = st.text_input("Enter the 6-digit code sent to your email")
+
+    if st.button("Verify Code"):
+        with SessionLocal() as s:
+            user = s.query(User).filter(
+                User.id == st.session_state["otp_user_id"]
+            ).first()
+
+            if not user:
+                st.error("Session expired")
+                st.session_state.clear()
+                st.stop()
+
+            if user.otp_expires_at < datetime.utcnow():
+                st.error("Code expired. Please log in again.")
+                st.session_state.clear()
+                st.stop()
+
+            if otp_input != user.otp_code:
+                st.error("Invalid verification code")
+                st.stop()
+
+            # OTP success
+            user.otp_code = None
+            user.otp_expires_at = None
+            user.otp_required = False
+
+            s.commit()
+
+            st.session_state["user_id"] = user.id
+            del st.session_state["otp_user_id"]
+
+            st.success("Login verified")
+            st.rerun()
+
+    st.stop()
+
+user = get_current_user()
+if user and user.subscription_status == "trial":
+    days_left = max(
+        0,
+        (user.trial_ends_at - datetime.utcnow()).days
+    )
+    st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
 # ----------------------
 # NAVIGATION Side Bar Control
