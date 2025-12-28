@@ -1095,6 +1095,15 @@ def upgrade_user_plan(user, new_plan):
 # ----------------------
 
 def get_current_user():
+    # 🔐 DEV BOOTSTRAP (TEMPORARY — REMOVE IN PROD)
+    if st.secrets.get("DEV_AUTO_LOGIN") == "true":
+        with SessionLocal() as s:
+            admin = s.query(User).filter(User.role == "Admin").first()
+            if admin:
+                st.session_state["user_id"] = admin.id
+                return admin
+
+    # ---- EXISTING LOGIC CONTINUES UNCHANGED BELOW ----
     """
     Resolves the currently authenticated user.
     Enforces:
