@@ -4695,6 +4695,24 @@ def page_reset_password():
         except Exception as e:
             st.error(str(e))
 
+def apply_plan_change(user, new_plan, amount):
+    BILLING_PROVIDER.charge(user, amount)
+    user.plan = new_plan
+    user.subscription_status = "active"
+
+apply_plan_change(user, "pro", 49)
+
+
+def record_invoice(user, amount, description):
+    with SessionLocal() as s:
+        invoice = Invoice(
+            user_id=user.id,
+            amount=amount,
+            status="paid",
+            description=description,
+        )
+        s.add(invoice)
+        s.commit()
 
 
 def authenticate_user(email: str, password: str):
@@ -4871,7 +4889,7 @@ def page_settings():
     st.markdown("---")
 
     # ======================================================
-    # ➕ ADD USER (INTERNAL / ADMIN – IMMEDIATE ACCESS)
+    # ➕ ADD USER (INTERNAL / ADMIN)
     # ======================================================
     st.markdown("### ➕ Add User")
 
@@ -4938,7 +4956,7 @@ def page_settings():
     st.markdown("---")
 
     # ======================================================
-    # 📨 ADMIN — TRIAL REMINDER EMAILS
+    # 📨 ADMIN — TRIAL REMINDERS
     # ======================================================
     user = get_current_user()
     if user.role == "Admin":
@@ -5030,18 +5048,9 @@ def page_settings():
     st.markdown("## 🔐 Change Password")
 
     with st.form("change_password_form"):
-        current_password = st.text_input(
-            "Current Password",
-            type="password"
-        )
-        new_password = st.text_input(
-            "New Password",
-            type="password"
-        )
-        confirm_password = st.text_input(
-            "Confirm New Password",
-            type="password"
-        )
+        current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
 
         submitted_pw = st.form_submit_button("Update Password")
 
@@ -5057,9 +5066,7 @@ def page_settings():
             user = get_current_user()
 
             with SessionLocal() as s:
-                db_user = s.query(User).filter(
-                    User.id == user.id
-                ).first()
+                db_user = s.query(User).filter(User.id == user.id).first()
 
                 if not pwd_context.verify(
                     current_password,
@@ -5068,64 +5075,111 @@ def page_settings():
                     st.error("Current password incorrect")
                     st.stop()
 
-                db_user.password_hash = pwd_context.hash(
-                    new_password
-                )
+                db_user.password_hash = pwd_context.hash(new_password)
                 s.commit()
 
             st.success("Password updated successfully")
             st.rerun()
-        st.markdown("---")
-        st.markdown("## 💼 Admin Billing Controls")
-    
-        admin_users_df = get_users_df()
-    
-        if admin_users_df.empty:
-            st.info("No users available.")
-        else:
-            for _, row in admin_users_df.iterrows():
-                with st.expander(f"💳 {row['email']} ({row['plan']})", expanded=False):
-    
-                    col1, col2, col3 = st.columns(3)
-    
-                    with col1:
-                        new_plan = st.selectbox(
-                            "Plan",
-                            ["starter", "pro", "enterprise"],
-                            index=["starter", "pro", "enterprise"].index(row["plan"]),
-                            key=f"plan_{row['id']}"
-                        )
-    
-                    with col2:
-                        new_status = st.selectbox(
-                            "Subscription Status",
-                            ["trial", "active", "expired", "canceled"],
-                            index=["trial", "active", "expired", "canceled"].index(row["subscription_status"]),
-                            key=f"status_{row['id']}"
-                        )
-    
-                    with col3:
-                        active_flag = st.checkbox(
-                            "Account Active",
-                            value=bool(row.get("is_active", True)),
-                            key=f"active_{row['id']}"
-                        )
-    
-                    if st.button("Save Billing Changes", key=f"save_{row['id']}"):
-                        with SessionLocal() as s:
-                            user = s.query(User).filter(User.id == row["id"]).first()
-                            if user:
-                                user.plan = new_plan
-                                user.subscription_status = new_status
-                                user.is_active = active_flag
-    
-                                # If activating, clear trial
-                                if new_status == "active":
-                                    user.trial_ends_at = None
-    
-                                s.commit()
-                                st.success("Billing updated")
-                                st.rerun()
+
+    st.markdown("---")
+
+    # ======================================================
+    # 💼 ADMIN BILLING CONTROLS
+    # ======================================================
+    st.markdown("## 💼 Admin Billing Controls")
+
+    admin_users_df = get_users_df()
+
+    if admin_users_df.empty:
+        st.info("No users available.")
+    else:
+        for _, row in admin_users_df.iterrows():
+            with st.expander(f"💳 {row['email']} ({row['plan']})", expanded=False):
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    new_plan = st.selectbox(
+                        "Plan",
+                        ["starter", "pro", "enterprise"],
+                        index=["starter", "pro", "enterprise"].index(row["plan"]),
+                        key=f"plan_{row['id']}"
+                    )
+
+                with col2:
+                    new_status = st.selectbox(
+                        "Subscription Status",
+                        ["trial", "active", "expired", "canceled"],
+                        index=["trial", "active", "expired", "canceled"].index(
+                            row["subscription_status"]
+                        ),
+                        key=f"status_{row['id']}"
+                    )
+
+                with col3:
+                    active_flag = st.checkbox(
+                        "Account Active",
+                        value=bool(row.get("is_active", True)),
+                        key=f"active_{row['id']}"
+                    )
+
+                if st.button("Save Billing Changes", key=f"save_{row['id']}"):
+                    with SessionLocal() as s:
+                        u = s.query(User).filter(User.id == row["id"]).first()
+                        if u:
+                            u.plan = new_plan
+                            u.subscription_status = new_status
+                            u.is_active = active_flag
+
+                            if new_status == "active":
+                                u.trial_ends_at = None
+
+                            s.commit()
+                            st.success("Billing updated")
+                            st.rerun()
+
+    st.markdown("---")
+
+    # ======================================================
+    # 💳 BILLING HISTORY (CURRENT USER)
+    # ======================================================
+    st.markdown("### 💳 Billing History")
+
+    with SessionLocal() as s:
+        invoices = (
+            s.query(Invoice)
+            .filter(Invoice.user_id == get_current_user().id)
+            .order_by(Invoice.created_at.desc())
+            .all()
+        )
+
+    if not invoices:
+        st.info("No billing records yet.")
+    else:
+        for inv in invoices:
+            st.write(
+                f"🧾 {inv.created_at.date()} — ${inv.amount} — "
+                f"{inv.status.upper()} — {inv.description}"
+            )
+
+
+class BillingProvider:
+    def charge(self, user, amount, metadata=None):
+        raise NotImplementedError
+
+    def cancel(self, user):
+        raise NotImplementedError
+BILLING_PROVIDER = ManualBillingProvider()
+
+
+class ManualBillingProvider(BillingProvider):
+    def charge(self, user, amount, metadata=None):
+        record_invoice(user, amount, "Manual plan upgrade")
+        return True
+
+    def cancel(self, user):
+        return True
+
 
 # -------------------------
 # Billing Page
