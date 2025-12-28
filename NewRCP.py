@@ -275,6 +275,32 @@ PLANS = {
     "enterprise": {"max_leads_per_month": None},
 }
 
+PLAN_LIMITS = {
+    "trial": {
+        "max_users": 3,
+        "max_leads": 50,
+        "ai_requests_per_day": 20,
+        "exports": False,
+    },
+    "starter": {
+        "max_users": 5,
+        "max_leads": 300,
+        "ai_requests_per_day": 100,
+        "exports": True,
+    },
+    "pro": {
+        "max_users": 20,
+        "max_leads": 3000,
+        "ai_requests_per_day": 500,
+        "exports": True,
+    },
+    "enterprise": {
+        "max_users": 9999,
+        "max_leads": 999999,
+        "ai_requests_per_day": 999999,
+        "exports": True,
+    },
+}
 
 
 
@@ -369,6 +395,16 @@ class User(Base):
     reset_expires_at = Column(DateTime, nullable=True)
 
 
+class Invoice(Base):
+    __tablename__ = "invoices"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    amount = Column(Float)
+    currency = Column(String, default="USD")
+    status = Column(String)  # paid / unpaid / refunded
+    description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class UserInvite(Base):
@@ -1090,12 +1126,25 @@ def upgrade_user_plan(user, new_plan):
         s.merge(user)
         s.commit()
 
+
+#----------------------------
+# Please log in to continue.
+#----------------------------
+def require_auth():
+    """
+    Hard stop if user is not authenticated.
+    """
+    if not st.session_state.get("authenticated"):
+        st.warning("Please log in to continue.")
+        st.stop()
+
+require_auth()
 # ----------------------
 # AUTH HELPERS
 # ----------------------
 
 def get_current_user():
-    # 🔐 DEV BOOTSTRAP (REMOVE IN PROD)
+    # 🔐 DEV BOOTSTRAP (TEMPORARY — REMOVE IN PROD)
     if st.secrets.get("DEV_AUTO_LOGIN") == "true":
         with SessionLocal() as s:
             admin = s.query(User).filter(User.role == "Admin").first()
@@ -1103,7 +1152,15 @@ def get_current_user():
                 st.session_state["user_id"] = admin.id
                 return admin
 
-    # ---------- ORIGINAL LOGIC CONTINUES ----------
+    # ---- EXISTING LOGIC CONTINUES UNCHANGED BELOW ----
+    """
+    Resolves the currently authenticated user.
+    Enforces:
+    - account is active
+    - email is verified
+    - trial has not expired
+    """
+
     user_id = st.session_state.get("user_id")
     if not user_id:
         return None
@@ -1116,15 +1173,47 @@ def get_current_user():
             st.error("User session invalid")
             st.stop()
 
+        # 🚫 Account disabled
         if not user.is_active:
             st.error("Your account is inactive. Please contact an administrator.")
             st.stop()
 
+        # ✉️ Email not verified
         if not user.email_verified:
             st.error("Please verify your email address before accessing the app.")
             st.stop()
 
+        # ⏳ TRIAL EXPIRED (ORIGINAL HARD STOP LOGIC)
+        if (
+            user.subscription_status == "trial"
+            and user.trial_ends_at
+            and datetime.utcnow() > user.trial_ends_at
+        ):
+            user.is_active = False
+            s.commit()
+
+            st.error(
+                "⏰ Your free trial has ended.\n\n"
+                "Please upgrade your plan to continue using ReCapture Pro."
+            )
+            st.stop()
+
+        # 📌 GRACE PERIOD ENFORCEMENT (ADDED)
+        from datetime import datetime, timedelta
+
+        if user.subscription_status == "trial":
+            if user.trial_ends_at and datetime.utcnow() > user.trial_ends_at:
+                grace_days = 3
+                grace_end = user.trial_ends_at + timedelta(days=grace_days)
+
+                if datetime.utcnow() > grace_end:
+                    st.error(
+                        "Your trial has ended. Please upgrade to continue using ReCapture Pro."
+                    )
+                    st.stop()
+
         return user
+
 
 
 #----------------------------
@@ -1221,6 +1310,28 @@ If you did not request this, ignore this email.
 """
     send_email(email, subject, body)
 
+def enforce_plan_limit(user, feature, current_value=0):
+    plan = user.plan or "trial"
+    limits = PLAN_LIMITS.get(plan, {})
+
+    limit = limits.get(feature)
+
+    if limit is None:
+        return True
+
+    if isinstance(limit, bool):
+        if not limit:
+            st.error(f"This feature is not available on the {plan} plan.")
+            st.stop()
+
+    if current_value >= limit:
+        st.error(
+            f"You have reached your {feature.replace('_', ' ')} limit "
+            f"for the {plan} plan."
+        )
+        st.stop()
+
+    return True
 
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
 def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
@@ -2981,6 +3092,9 @@ def page_overview():
 
 
 
+user = get_current_user()
+lead_count = get_total_leads_for_account(user)
+enforce_plan_limit(user, "max_leads", lead_count)
 
 # ------------------------------------------------------------
 # NEXT PAGE STARTS HERE
