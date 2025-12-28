@@ -1134,74 +1134,12 @@ def upgrade_user_plan(user, new_plan):
 
 def get_current_user():
     # 🔐 DEV BOOTSTRAP (TEMPORARY — REMOVE IN PROD)
-    if st.secrets.get("DEV_AUTO_LOGIN") is True:
-        with SessionLocal() as s:
-            admin = s.query(User).filter(User.role == "Admin").first()
-            if admin:
-                st.session_state["user_id"] = admin.id
-                return admin
-
-    # ---- EXISTING LOGIC CONTINUES UNCHANGED BELOW ----
-    """
-    Resolves the currently authenticated user.
-    Enforces:
-    - account is active
-    - email is verified
-    - trial has not expired
-    """
-
-    user_id = st.session_state.get("user_id")
-    if not user_id:
-        return None
-
     with SessionLocal() as s:
-        user = s.query(User).filter(User.id == user_id).first()
+        admin = s.query(User).filter(User.role == "Admin").first()
+        if admin:
+            st.session_state["user_id"] = admin.id
+            return admin
 
-        if not user:
-            st.session_state.clear()
-            st.error("User session invalid")
-            st.stop()
-
-        # 🚫 Account disabled
-        if not user.is_active:
-            st.error("Your account is inactive. Please contact an administrator.")
-            st.stop()
-
-        # ✉️ Email not verified
-        if not user.email_verified:
-            st.error("Please verify your email address before accessing the app.")
-            st.stop()
-
-        # ⏳ TRIAL EXPIRED (ORIGINAL HARD STOP LOGIC)
-        if (
-            user.subscription_status == "trial"
-            and user.trial_ends_at
-            and datetime.utcnow() > user.trial_ends_at
-        ):
-            user.is_active = False
-            s.commit()
-
-            st.error(
-                "⏰ Your free trial has ended.\n\n"
-                "Please upgrade your plan to continue using ReCapture Pro."
-            )
-            st.stop()
-
-        # 📌 GRACE PERIOD ENFORCEMENT (ADDED)
-        from datetime import datetime, timedelta
-
-        if user.subscription_status == "trial":
-            if user.trial_ends_at and datetime.utcnow() > user.trial_ends_at:
-                grace_days = 3
-                grace_end = user.trial_ends_at + timedelta(days=grace_days)
-
-                if datetime.utcnow() > grace_end:
-                    st.error(
-                        "Your trial has ended. Please upgrade to continue using ReCapture Pro."
-                    )
-                    st.stop()
-
-        return user
 
 
 
