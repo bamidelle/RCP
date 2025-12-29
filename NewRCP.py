@@ -74,21 +74,29 @@ from passlib.context import CryptContext
 # ======================
 
 class DummyBillingProvider:
-    """
-    Development-only billing provider.
-    NO real charges.
-    """
-
     def charge(self, user, amount):
-        print(f"[BILLING] Simulated charge: {user.email} → ${amount}")
+        if not user:
+            raise ValueError("Billing failed: user is None")
+
+        email = getattr(user, "email", None) or getattr(user, "username", "unknown-user")
+
+        print(f"[BILLING] Simulated charge: {email} → ${amount}")
         return True
+
 
 
 # 🔥 MUST EXIST BEFORE apply_plan_change IS DEFINED
 BILLING_PROVIDER = DummyBillingProvider()
 
 
+def apply_plan_change(user, new_plan, amount):
+    if not user:
+        raise ValueError("Cannot apply plan: user is None")
 
+    BILLING_PROVIDER.charge(user, amount)
+
+    user.plan = new_plan
+    user.subscription_status = "active"
 
 # ---------- Country list helper (robust) ----------
 import requests
@@ -741,31 +749,47 @@ def safe_migrate_new_tables():
 
         with engine.begin() as conn:
 
+            # ==========================
             # ---- USERS TABLE ----
+            # ==========================
             if "users" in inspector.get_table_names():
                 cols = [c["name"] for c in inspector.get_columns("users")]
 
                 if "email" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN email VARCHAR"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN email VARCHAR")
+                    )
 
                 if "email_verified" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0")
+                    )
 
                 if "is_active" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT 1")
+                    )
 
                 if "last_login_at" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN last_login_at DATETIME"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN last_login_at DATETIME")
+                    )
 
-                #-------- Extension ------------------------------------------
+                # ---- INVITES / ACTIVATION ----
                 if "invite_token_hash" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN invite_token_hash VARCHAR"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN invite_token_hash VARCHAR")
+                    )
 
                 if "invite_expires_at" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN invite_expires_at DATETIME"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN invite_expires_at DATETIME")
+                    )
 
                 if "activated_at" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN activated_at DATETIME"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN activated_at DATETIME")
+                    )
 
                 if "activation_token" not in cols:
                     conn.execute(
@@ -777,7 +801,12 @@ def safe_migrate_new_tables():
                         text("ALTER TABLE users ADD COLUMN activation_expires_at DATETIME")
                     )
 
-                # ---- PASSWORD RESET ----
+                # ---- PASSWORD / SECURITY ----
+                if "password_hash" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN password_hash VARCHAR")
+                    )
+
                 if "password_reset_token" not in cols:
                     conn.execute(
                         text("ALTER TABLE users ADD COLUMN password_reset_token VARCHAR")
@@ -788,31 +817,52 @@ def safe_migrate_new_tables():
                         text("ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME")
                     )
 
-                if "password_hash" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR"))
-
                 if "reset_token" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_token VARCHAR"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN reset_token VARCHAR")
+                    )
 
                 if "reset_expires_at" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN reset_expires_at DATETIME"))
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN reset_expires_at DATETIME")
+                    )
 
                 if "otp_code" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN otp_code VARCHAR"))
-                
-                if "otp_expires_at" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN otp_expires_at DATETIME"))
-                
-                if "otp_required" not in cols:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN otp_required BOOLEAN DEFAULT 0"))
-                
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN otp_code VARCHAR")
+                    )
 
+                if "otp_expires_at" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN otp_expires_at DATETIME")
+                    )
+
+                if "otp_required" not in cols:
+                    conn.execute(
+                        text("ALTER TABLE users ADD COLUMN otp_required BOOLEAN DEFAULT 0")
+                    )
+
+                # ✅ BACKFILL EMAIL IF MISSING
+                conn.execute(
+                    text("""
+                        UPDATE users
+                        SET email = username
+                        WHERE email IS NULL OR email = ''
+                    """)
+                )
+
+            # ==========================
             # ---- TECHNICIANS TABLE ----
+            # ==========================
             if "technicians" in inspector.get_table_names():
                 cols = [c["name"] for c in inspector.get_columns("technicians")]
+
                 if "status" not in cols:
                     conn.execute(
-                        text("ALTER TABLE technicians ADD COLUMN status VARCHAR DEFAULT 'available'")
+                        text(
+                            "ALTER TABLE technicians "
+                            "ADD COLUMN status VARCHAR DEFAULT 'available'"
+                        )
                     )
 
     except Exception as e:
@@ -821,6 +871,7 @@ def safe_migrate_new_tables():
 
 # Call migration
 safe_migrate_new_tables()
+
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -4671,12 +4722,6 @@ def page_reset_password():
         except Exception as e:
             st.error(str(e))
 
-def apply_plan_change(user, new_plan, amount):
-    BILLING_PROVIDER.charge(user, amount)
-    user.plan = new_plan
-    user.subscription_status = "active"
-
-apply_plan_change(user, "pro", 49)
 
 
 def record_invoice(user, amount, description):
