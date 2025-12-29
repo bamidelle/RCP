@@ -1250,6 +1250,19 @@ def enforce_plan_limit(user, feature, current_value=0):
 
     return True
 
+
+
+def get_total_leads_for_account(user):
+    """
+    Temporary single-tenant helper.
+    Returns total number of leads.
+    """
+    if not user:
+        return 0
+
+    with SessionLocal() as s:
+        return s.query(Lead).count()
+
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
 def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
     s = get_session()
@@ -3005,6 +3018,13 @@ def page_overview():
                         st.error("Failed to assign: " + str(e))
     # end for
 
+def get_monthly_lead_count(user):
+    with SessionLocal() as s:
+        return s.query(Lead).count()
+
+def get_active_users_count(user):
+    with SessionLocal() as s:
+        return s.query(User).filter(User.is_active == True).count()
 
 
 
