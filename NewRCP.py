@@ -69,6 +69,25 @@ from passlib.context import CryptContext
 
 
 
+# ======================
+# BILLING PROVIDER (DEV)
+# ======================
+
+class DummyBillingProvider:
+    """
+    Development-only billing provider.
+    NO real charges.
+    """
+
+    def charge(self, user, amount):
+        print(f"[BILLING] Simulated charge: {user.email} → ${amount}")
+        return True
+
+
+# 🔥 MUST EXIST BEFORE apply_plan_change IS DEFINED
+BILLING_PROVIDER = DummyBillingProvider()
+
+
 
 
 # ---------- Country list helper (robust) ----------
@@ -407,25 +426,7 @@ class Invoice(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-# ----------------------
-# BILLING PROVIDER (ABSTRACTION)
-# ----------------------
 
-class DummyBillingProvider:
-    """
-    Placeholder billing provider.
-    Safe for dev/testing.
-    Replace later with Stripe, Paystack, Flutterwave, etc.
-    """
-
-    def charge(self, user, amount):
-        # 🔒 No real charge — dev only
-        print(f"[BILLING] Charging {user.email} ${amount} (SIMULATED)")
-        return True
-
-
-# ✅ GLOBAL PROVIDER INSTANCE
-BILLING_PROVIDER = DummyBillingProvider()
 
 
 class UserInvite(Base):
