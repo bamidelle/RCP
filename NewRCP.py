@@ -1330,6 +1330,21 @@ def enforce_plan_limit(user, limit_key: str, current_value: int):
     return True
 
 
+# ----------------------
+# BILLING PROVIDER (DEV / MANUAL)
+# ----------------------
+
+class ManualBillingProvider:
+    def charge(self, user, amount):
+        print(f"[BILLING] Simulated charge: {user.email} → ${amount}")
+        return True
+
+    def cancel(self, user):
+        print(f"[BILLING] Simulated cancel for {user.email}")
+        return True
+BILLING_PROVIDER = ManualBillingProvider()
+
+
 
 
 def get_total_leads_for_account(user):
@@ -5185,22 +5200,7 @@ def page_settings():
             )
 
 
-class BillingProvider:
-    def charge(self, user, amount, metadata=None):
-        raise NotImplementedError
 
-    def cancel(self, user):
-        raise NotImplementedError
-BILLING_PROVIDER = ManualBillingProvider()
-
-
-class ManualBillingProvider(BillingProvider):
-    def charge(self, user, amount, metadata=None):
-        record_invoice(user, amount, "Manual plan upgrade")
-        return True
-
-    def cancel(self, user):
-        return True
 
 
 # -------------------------
