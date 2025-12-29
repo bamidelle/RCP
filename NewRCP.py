@@ -2324,16 +2324,7 @@ def activate_user_from_token(token: str) -> bool:
         s.commit()
         return True
 
-def get_total_leads_for_account(user):
-    """
-    Returns total number of leads for the user's account.
-    Adjust filtering later for multi-tenant accounts.
-    """
-    if not user:
-        return 0
 
-    with SessionLocal() as s:
-        return s.query(Lead).count()
 
 
 def get_users_df():
@@ -3017,7 +3008,16 @@ def page_overview():
 
 
 
+def get_total_leads_for_account(user):
+    """
+    Returns total number of leads for the user's account.
+    Adjust filtering later for multi-tenant accounts.
+    """
+    if not user:
+        return 0
 
+    with SessionLocal() as s:
+        return s.query(Lead).count()
 
 
 user = get_current_user()
