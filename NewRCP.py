@@ -1227,28 +1227,34 @@ If you did not request this, ignore this email.
 """
     send_email(email, subject, body)
 
-def enforce_plan_limit(user, feature, current_value=0):
-    plan = user.plan or "trial"
-    limits = PLAN_LIMITS.get(plan, {})
+def enforce_plan_limit(user, limit_key: str, current_value: int):
+    """
+    Enforces plan limits safely.
+    """
 
-    limit = limits.get(feature)
+    # 🛑 SAFETY GUARD
+    if not user:
+        return True  # no enforcement if user not resolved
 
-    if limit is None:
+    plan = getattr(user, "plan", None) or "trial"
+
+    limits = PLAN_LIMITS.get(plan)
+    if not limits:
         return True
 
-    if isinstance(limit, bool):
-        if not limit:
-            st.error(f"This feature is not available on the {plan} plan.")
-            st.stop()
+    max_allowed = limits.get(limit_key)
+    if max_allowed is None:
+        return True
 
-    if current_value >= limit:
+    if current_value > max_allowed:
         st.error(
-            f"You have reached your {feature.replace('_', ' ')} limit "
-            f"for the {plan} plan."
+            f"Plan limit reached: {limit_key.replace('_', ' ').title()} "
+            f"({current_value}/{max_allowed})"
         )
         st.stop()
 
     return True
+
 
 
 
