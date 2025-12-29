@@ -596,7 +596,16 @@ class CompetitorAlert(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 # ---------- END BLOCK A2 ----------
-Base.metadata.create_all(bind=engine)
+def safe_migrate():
+    from sqlalchemy import inspect
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+
+    if "users" not in existing_tables:
+        Base.metadata.create_all(bind=engine)
+
+safe_migrate()
+
 
 # ---------- END BLOCK A ----------
 
