@@ -1131,14 +1131,15 @@ def upgrade_user_plan(user, new_plan):
 # ----------------------
 # AUTH HELPERS
 # ----------------------
-
 def get_current_user():
-    # 🔐 DEV BOOTSTRAP (TEMPORARY — REMOVE IN PROD)
-    with SessionLocal() as s:
-        admin = s.query(User).filter(User.role == "Admin").first()
-        if admin:
-            st.session_state["user_id"] = admin.id
-            return admin
+    # 🔐 DEV AUTO LOGIN (REMOVE IN PROD)
+    if st.secrets.get("DEV_AUTO_LOGIN") == "true":
+        with SessionLocal() as s:
+            admin = s.query(User).filter(User.role == "Admin").first()
+            if admin:
+                st.session_state["user_id"] = admin.id
+                return admin
+
 
 
 
