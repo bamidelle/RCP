@@ -375,6 +375,28 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 Base = declarative_base()
 
+# ----------------------
+# BOOTSTRAP ADMIN USER (RUNS ONCE)
+# ----------------------
+def bootstrap_admin():
+    with SessionLocal() as s:
+        admin = s.query(User).filter(User.role == "Admin").first()
+        if not admin:
+            admin = User(
+                email="admin@recapturepro.com",
+                username="admin",
+                full_name="System Admin",
+                role="Admin",
+                is_active=True,
+                email_verified=True,
+                plan="pro",
+                subscription_status="active",
+            )
+            s.add(admin)
+            s.commit()
+            print("✅ Admin user bootstrapped")
+
+bootstrap_admin()
 
 # ----------------------
 # MODELS
