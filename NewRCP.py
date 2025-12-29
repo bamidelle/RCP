@@ -407,6 +407,27 @@ class Invoice(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+# ----------------------
+# BILLING PROVIDER (ABSTRACTION)
+# ----------------------
+
+class DummyBillingProvider:
+    """
+    Placeholder billing provider.
+    Safe for dev/testing.
+    Replace later with Stripe, Paystack, Flutterwave, etc.
+    """
+
+    def charge(self, user, amount):
+        # 🔒 No real charge — dev only
+        print(f"[BILLING] Charging {user.email} ${amount} (SIMULATED)")
+        return True
+
+
+# ✅ GLOBAL PROVIDER INSTANCE
+BILLING_PROVIDER = DummyBillingProvider()
+
+
 class UserInvite(Base):
     __tablename__ = "user_invites"
 
