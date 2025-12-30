@@ -1332,20 +1332,25 @@ If you did not request this, ignore this email.
     send_email(email, subject, body)
 
 def enforce_plan_limit(user, limit_key, current_value):
-    # 🔓 ADMINS BYPASS ALL LIMITS
+    # 🛑 Safety guard — user not resolved yet
+    if not user:
+        return
+
+    # 🛑 Admins bypass all limits
     if user.role == "Admin":
-        return True
+        return
 
     plan = user.plan or "starter"
     limits = PLAN_LIMITS.get(plan, {})
     max_allowed = limits.get(limit_key)
 
     if max_allowed is None:
-        return True
+        return
 
     if current_value >= max_allowed:
         st.warning("🔒 This feature requires an upgrade.")
         st.stop()
+
 
 
 
