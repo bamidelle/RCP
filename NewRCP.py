@@ -67,8 +67,6 @@ from sqlalchemy.orm import relationship
 
 from passlib.context import CryptContext
 
-if "FORCE_RESET" in st.query_params:
-    st.session_state.clear()
 
 
 # ======================
@@ -6028,6 +6026,8 @@ if user and user.subscription_status == "trial":
     )
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
+st.sidebar.write("🔐 ROLE:", user.role)
+st.sidebar.write("🧭 ALLOWED:", allowed_pages)
 
 # ----------------------
 # NAVIGATION Side Bar Control
