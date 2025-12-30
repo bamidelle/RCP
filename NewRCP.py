@@ -1235,11 +1235,11 @@ def get_current_user():
             if admin:
                 st.session_state["user_id"] = admin.id
                         # 🔒 Normalize role
-                        if not user.role:
-                            user.role = "Admin"  # bootstrap safety
-                            s.commit()
-                
-                        return user
+                            if not user.role:
+                                user.role = "Admin"  # bootstrap safety
+                                s.commit()
+                    
+                            return user
 
 
 
