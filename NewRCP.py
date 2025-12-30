@@ -623,6 +623,7 @@ def bootstrap_admin():
             s.commit()
         return admin
 
+bootstrap_admin()
 
 
 # Create tables if missing
