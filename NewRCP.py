@@ -6034,27 +6034,26 @@ if user and user.subscription_status == "trial":
 
 
 # ----------------------
-# NAVIGATION Side Bar Control
+# NAVIGATION Side Bar Control (Enhanced)
 # ----------------------
 with st.sidebar:
-    st.header("ReCapture Pro")
-    
+    st.markdown("## 🛠️ **ReCapture Pro**")
+
     user = get_current_user()
-    role = (user.role or "Viewer").strip().title() if user else "Viewer"
+    role = user.role if user else "Viewer"
+
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
     PAGE_MAP = {
-        "Overview": ("overview", page_overview),
-        "Lead Capture": ("lead_capture", page_lead_capture),
-        "Pipeline Board": ("pipeline", page_pipeline_board),
-        "Analytics": ("analytics", page_analytics),
-        "CPA & ROI": ("analytics", page_cpa_roi),
-        "Tasks": ("tasks", page_tasks),
-        "AI Recommendations": ("business_intelligence", page_ai_recommendations),
-        "Seasonal Trends": ("business_intelligence", page_seasonal_trends),
-        "Settings": ("settings", page_settings),
-        "Exports": ("exports", page_exports),
-        "Billing": ("billing", page_billing),
+        "📊 Overview": ("overview", page_overview),
+        "📝 Lead Capture": ("lead_capture", page_lead_capture),
+        "🧩 Pipeline Board": ("pipeline", page_pipeline_board),
+        "📈 Analytics": ("analytics", page_analytics),
+        "💰 CPA & ROI": ("analytics", page_cpa_roi),
+        "🤖 AI Recommendations": ("business_intelligence", page_ai_recommendations),
+        "🌦️ Seasonal Trends": ("business_intelligence", page_seasonal_trends),
+        "⚙️ Settings": ("settings", page_settings),
+        "💳 Billing": ("billing", page_billing),
     }
 
     visible_pages = {
@@ -6066,18 +6065,15 @@ with st.sidebar:
     choice = st.radio("Navigate", list(visible_pages.keys()))
     visible_pages[choice]()
 
+    # ----------------------
+    # User Footer
+    # ----------------------
     if user:
-        st.write(f"👤 {user.full_name or user.email}")
+        st.markdown("---")
+        st.markdown(f"👤 **{user.full_name or user.email}**")
+        st.caption(f"🔐 Role: {user.role.capitalize()} | 📦 Plan: {user.plan.capitalize()}")
 
         if st.button("🚪 Logout"):
             st.session_state.clear()
             st.success("Logged out successfully")
             st.rerun()
-
-
-
-
-
-# Footer
-st.markdown("---")
-st.markdown("<div class='small-muted'>ReCapture Pro. SQLite persistence. Integrated Field Tracking (upgrade) enabled.</div>", unsafe_allow_html=True)
