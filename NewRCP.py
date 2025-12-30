@@ -614,14 +614,18 @@ def bootstrap_admin():
                 username="admin",
                 full_name="System Admin",
                 role="Admin",
-                is_active=True,
-                email_verified=True,
-                plan="pro",
-                subscription_status="active",
             )
-            s.add(admin)
-            s.commit()
+
+        # 🔓 FORCE ADMIN UNLOCK
+        admin.plan = "pro"
+        admin.subscription_status = "active"
+        admin.is_active = True
+        admin.email_verified = True
+
+        s.add(admin)
+        s.commit()
         return admin
+
 
 bootstrap_admin()
 
@@ -1323,33 +1327,22 @@ If you did not request this, ignore this email.
 """
     send_email(email, subject, body)
 
-def enforce_plan_limit(user, limit_key: str, current_value: int):
-    """
-    Enforces plan limits safely.
-    """
-
-    # 🛑 SAFETY GUARD
-    if not user:
-        return True  # no enforcement if user not resolved
-
-    plan = getattr(user, "plan", None) or "trial"
-
-    limits = PLAN_LIMITS.get(plan)
-    if not limits:
+def enforce_plan_limit(user, limit_key, current_value):
+    # 🔓 ADMINS BYPASS ALL LIMITS
+    if user.role == "Admin":
         return True
 
+    plan = user.plan or "starter"
+    limits = PLAN_LIMITS.get(plan, {})
     max_allowed = limits.get(limit_key)
+
     if max_allowed is None:
         return True
 
-    if current_value > max_allowed:
-        st.error(
-            f"Plan limit reached: {limit_key.replace('_', ' ').title()} "
-            f"({current_value}/{max_allowed})"
-        )
+    if current_value >= max_allowed:
+        st.warning("🔒 This feature requires an upgrade.")
         st.stop()
 
-    return True
 
 
 # ----------------------
