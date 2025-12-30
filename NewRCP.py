@@ -606,31 +606,21 @@ class CompetitorAlert(Base):
 # BOOTSTRAP ADMIN USER (RUNS ONCE)
 # ----------------------
 def bootstrap_admin():
-    try:
-        with SessionLocal() as s:
-            # Ensure users table exists before querying
-            inspector = inspect(engine)
-            if "users" not in inspector.get_table_names():
-                return  # DB not ready yet
+    with SessionLocal() as s:
+        admin = s.query(User).filter(User.role == "Admin").first()
+        if not admin:
+            admin = User(
+                email="admin@recapturepro.com",
+                username="admin",
+                full_name="System Admin",
+                role="Admin",
+                is_active=True,
+                email_verified=True,
+                plan="enterprise",  # 👈 IMPORTANT
+            )
+            s.add(admin)
+            s.commit()
 
-            admin = s.query(User).filter(User.role == "Admin").first()
-
-            if not admin:
-                admin = User(
-                    email="admin@recapturepro.com",
-                    username="admin",
-                    full_name="System Admin",
-                    role="Admin",
-                    plan="pro",
-                    is_active=True,
-                    email_verified=True,
-                )
-                s.add(admin)
-                s.commit()
-                print("✅ Admin bootstrapped")
-
-    except Exception as e:
-        print("⚠️ bootstrap_admin skipped:", e)
 
 
 
