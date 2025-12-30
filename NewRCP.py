@@ -634,9 +634,6 @@ def bootstrap_admin():
 
 
 
-bootstrap_admin()
-
-
 # Create tables if missing
 from sqlalchemy import inspect
 
