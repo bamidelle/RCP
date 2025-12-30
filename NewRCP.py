@@ -6041,10 +6041,6 @@ with st.sidebar:
     
     user = get_current_user()
     role = (user.role or "Viewer").strip().title() if user else "Viewer"
-    st.sidebar.write("🔐 ROLE:", repr(role))
-    st.sidebar.write("🧭 ALLOWED:", allowed_pages)
-
-
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
     PAGE_MAP = {
