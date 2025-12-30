@@ -6036,8 +6036,6 @@ if user and user.subscription_status == "trial":
     )
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
-st.sidebar.write("🔐 ROLE:", user.role if user else "None")
-allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
 # ----------------------
 # NAVIGATION Side Bar Control (SAFE)
@@ -6053,7 +6051,9 @@ with st.sidebar:
     else:
         role = "Viewer"
 
-    allowed_pages = ROLE_PERMISSIONS.get(user.role, set())
+    role = user.role
+    allowed_pages = ROLE_PERMISSIONS.get(role, set())
+
 
 
     PAGE_MAP = {
