@@ -6040,31 +6040,29 @@ st.sidebar.write("🔐 ROLE:", user.role if user else "None")
 allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
 # ----------------------
-# NAVIGATION Side Bar Control
+# NAVIGATION Side Bar Control (SAFE)
 # ----------------------
 with st.sidebar:
     st.header("ReCapture Pro")
 
     user = get_current_user()
 
-    if not user:
-        st.sidebar.error("❌ No authenticated user")
-        st.stop()
-
-    role = user.role or "Admin"
-
-    st.sidebar.write("🔐 ROLE:", role)
+    # ✅ GUARANTEED role resolution (NO NameError possible)
+    if user and hasattr(user, "role") and user.role:
+        role = user.role
+    else:
+        role = "Viewer"
 
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
     PAGE_MAP = {
         "📊 Overview": ("overview", page_overview),
-        "🧲 Lead Capture": ("lead_capture", page_lead_capture),
-        "📋 Pipeline Board": ("pipeline", page_pipeline_board),
-        "📈 Analytics": ("analytics", page_analytics),
+        "📝 Lead Capture": ("lead_capture", page_lead_capture),
+        "📈 Pipeline Board": ("pipeline", page_pipeline_board),
+        "📊 Analytics": ("analytics", page_analytics),
         "💰 CPA & ROI": ("analytics", page_cpa_roi),
         "🤖 AI Recommendations": ("business_intelligence", page_ai_recommendations),
-        "🌦️ Seasonal Trends": ("business_intelligence", page_seasonal_trends),
+        "🌦 Seasonal Trends": ("business_intelligence", page_seasonal_trends),
         "⚙️ Settings": ("settings", page_settings),
         "💳 Billing": ("billing", page_billing),
         "📤 Exports": ("exports", page_exports),
@@ -6077,19 +6075,24 @@ with st.sidebar:
     }
 
     if not visible_pages:
-        st.warning("⚠️ No pages allowed for this role")
+        st.warning("No pages available for your role.")
         st.stop()
 
     choice = st.radio("Navigate", list(visible_pages.keys()))
     visible_pages[choice]()
 
-    st.markdown("---")
-    st.write(f"👤 {user.full_name or user.email}")
+    # ------------------
+    # USER INFO + LOGOUT
+    # ------------------
+    if user:
+        st.markdown("---")
+        st.write(f"👤 {user.full_name or user.email}")
+        st.write(f"🔐 Role: {role}")
 
-    if st.button("🚪 Logout"):
-        st.session_state.clear()
-        st.success("Logged out successfully")
-        st.rerun()
+        if st.button("🚪 Logout"):
+            st.session_state.clear()
+            st.rerun()
+
 
 
 
