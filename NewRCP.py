@@ -67,6 +67,8 @@ from sqlalchemy.orm import relationship
 
 from passlib.context import CryptContext
 
+if "FORCE_RESET" in st.query_params:
+    st.session_state.clear()
 
 
 # ======================
