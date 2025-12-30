@@ -1332,13 +1332,14 @@ If you did not request this, ignore this email.
     send_email(email, subject, body)
 
 def enforce_plan_limit(user, limit_key, current_value):
-    # 🛑 Safety guard — user not resolved yet
-    if not user:
+    # 🛑 Streamlit rerun safety
+    if user is None:
         return
 
-    # 🛑 Admins bypass all limits
-    if user.role == "Admin":
+    # 🛑 Admin bypass
+    if getattr(user, "role", None) == "Admin":
         return
+
 
     plan = user.plan or "starter"
     limits = PLAN_LIMITS.get(plan, {})
