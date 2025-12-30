@@ -625,6 +625,7 @@ def bootstrap_admin():
 
 
 
+
 # Create tables if missing
 from sqlalchemy import inspect
 
@@ -1227,13 +1228,14 @@ def upgrade_user_plan(user, new_plan):
 # AUTH HELPERS
 # ----------------------
 def get_current_user():
-    # 🔐 DEV AUTO LOGIN (REMOVE IN PROD)
-    if st.secrets.get("DEV_AUTO_LOGIN") == "true":
+    # 🔐 DEV ADMIN AUTO-LOGIN (REMOVE IN PROD)
+    if st.secrets.get("DEV_AUTO_LOGIN", "true") == "true":
         with SessionLocal() as s:
             admin = s.query(User).filter(User.role == "Admin").first()
             if admin:
                 st.session_state["user_id"] = admin.id
                 return admin
+
 
 
 
