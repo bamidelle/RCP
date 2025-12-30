@@ -1234,7 +1234,12 @@ def get_current_user():
             admin = s.query(User).filter(User.role == "Admin").first()
             if admin:
                 st.session_state["user_id"] = admin.id
-                return admin
+                        # 🔒 Normalize role
+                        if not user.role:
+                            user.role = "Admin"  # bootstrap safety
+                            s.commit()
+                
+                        return user
 
 
 
@@ -6044,7 +6049,7 @@ with st.sidebar:
         st.sidebar.error("❌ No authenticated user")
         st.stop()
 
-    role = user.role  # ✅ DEFINE ROLE HERE
+    role = user.role or "Admin"
 
     st.sidebar.write("🔐 ROLE:", role)
 
