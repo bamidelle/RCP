@@ -3162,7 +3162,7 @@ def get_total_leads_for_account(user):
 
 user = get_current_user()
 lead_count = get_total_leads_for_account(user)
-enforce_plan_limit(user, "max_leads", lead_count)
+
 
 # ------------------------------------------------------------
 # NEXT PAGE STARTS HERE
