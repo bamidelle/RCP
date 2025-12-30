@@ -608,7 +608,6 @@ class CompetitorAlert(Base):
 def bootstrap_admin():
     with SessionLocal() as s:
         admin = s.query(User).filter(User.role == "Admin").first()
-
         if not admin:
             admin = User(
                 email="admin@recapturepro.com",
@@ -621,6 +620,7 @@ def bootstrap_admin():
             )
             s.add(admin)
             s.commit()
+
 
 
 
