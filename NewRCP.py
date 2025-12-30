@@ -6037,23 +6037,30 @@ allowed_pages = ROLE_PERMISSIONS.get(role, set())
 # ----------------------
 with st.sidebar:
     st.header("ReCapture Pro")
-    
+
     user = get_current_user()
-    role = (user.role or "Viewer").strip().title() if user else "Viewer"
+
+    if not user:
+        st.sidebar.error("❌ No authenticated user")
+        st.stop()
+
+    role = user.role  # ✅ DEFINE ROLE HERE
+
+    st.sidebar.write("🔐 ROLE:", role)
+
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
     PAGE_MAP = {
-        "Overview": ("overview", page_overview),
-        "Lead Capture": ("lead_capture", page_lead_capture),
-        "Pipeline Board": ("pipeline", page_pipeline_board),
-        "Analytics": ("analytics", page_analytics),
-        "CPA & ROI": ("analytics", page_cpa_roi),
-        "Tasks": ("tasks", page_tasks),
-        "AI Recommendations": ("business_intelligence", page_ai_recommendations),
-        "Seasonal Trends": ("business_intelligence", page_seasonal_trends),
-        "Settings": ("settings", page_settings),
-        "Exports": ("exports", page_exports),
-        "Billing": ("billing", page_billing),
+        "📊 Overview": ("overview", page_overview),
+        "🧲 Lead Capture": ("lead_capture", page_lead_capture),
+        "📋 Pipeline Board": ("pipeline", page_pipeline_board),
+        "📈 Analytics": ("analytics", page_analytics),
+        "💰 CPA & ROI": ("analytics", page_cpa_roi),
+        "🤖 AI Recommendations": ("business_intelligence", page_ai_recommendations),
+        "🌦️ Seasonal Trends": ("business_intelligence", page_seasonal_trends),
+        "⚙️ Settings": ("settings", page_settings),
+        "💳 Billing": ("billing", page_billing),
+        "📤 Exports": ("exports", page_exports),
     }
 
     visible_pages = {
@@ -6062,16 +6069,20 @@ with st.sidebar:
         if key in allowed_pages
     }
 
+    if not visible_pages:
+        st.warning("⚠️ No pages allowed for this role")
+        st.stop()
+
     choice = st.radio("Navigate", list(visible_pages.keys()))
     visible_pages[choice]()
 
-    if user:
-        st.write(f"👤 {user.full_name or user.email}")
+    st.markdown("---")
+    st.write(f"👤 {user.full_name or user.email}")
 
-        if st.button("🚪 Logout"):
-            st.session_state.clear()
-            st.success("Logged out successfully")
-            st.rerun()
+    if st.button("🚪 Logout"):
+        st.session_state.clear()
+        st.success("Logged out successfully")
+        st.rerun()
 
 
 
