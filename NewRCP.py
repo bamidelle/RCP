@@ -6028,7 +6028,6 @@ if user and user.subscription_status == "trial":
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
 st.sidebar.write("🔐 ROLE:", user.role if user else "None")
-st.sidebar.write("🧭 ALLOWED:", allowed_pages)
 allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
 # ----------------------
