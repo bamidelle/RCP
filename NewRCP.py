@@ -6051,7 +6051,7 @@ with st.sidebar:
     st.header("ReCapture Pro")
     
     user = get_current_user()
-    role = user.role if user else "Viewer"
+    role = (user.role or "Viewer").strip().title() if user else "Viewer"
 
     allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
@@ -6067,7 +6067,6 @@ with st.sidebar:
         "Settings": ("settings", page_settings),
         "Exports": ("exports", page_exports),
         "Billing": ("billing", page_billing),
-
     }
 
     visible_pages = {
@@ -6086,10 +6085,6 @@ with st.sidebar:
             st.session_state.clear()
             st.success("Logged out successfully")
             st.rerun()
-
-
-# ---------- END BLOCK E ----------
-
 
 
 
