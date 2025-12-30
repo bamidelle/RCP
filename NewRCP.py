@@ -608,15 +608,16 @@ class CompetitorAlert(Base):
 def bootstrap_admin():
     with SessionLocal() as s:
         admin = s.query(User).filter(User.role == "Admin").first()
+
         if not admin:
             admin = User(
                 email="admin@recapturepro.com",
                 username="admin",
                 full_name="System Admin",
                 role="Admin",
+                plan="enterprise",
                 is_active=True,
                 email_verified=True,
-                plan="enterprise",  # 👈 IMPORTANT
             )
             s.add(admin)
             s.commit()
@@ -6026,8 +6027,9 @@ if user and user.subscription_status == "trial":
     )
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
-st.sidebar.write("🔐 ROLE:", user.role)
+st.sidebar.write("🔐 ROLE:", user.role if user else "None")
 st.sidebar.write("🧭 ALLOWED:", allowed_pages)
+allowed_pages = ROLE_PERMISSIONS.get(role, set())
 
 # ----------------------
 # NAVIGATION Side Bar Control
