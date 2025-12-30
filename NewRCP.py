@@ -6053,7 +6053,8 @@ with st.sidebar:
     else:
         role = "Viewer"
 
-    allowed_pages = ROLE_PERMISSIONS.get(role, set())
+    allowed_pages = ROLE_PERMISSIONS.get(user.role, set())
+
 
     PAGE_MAP = {
         "📊 Overview": ("overview", page_overview),
