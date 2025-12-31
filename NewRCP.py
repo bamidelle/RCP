@@ -1869,17 +1869,16 @@ def require_role_access(page_key):
     if not user:
         st.stop()
 
-    # Role enforcement
-    if DEV_MODE:
-        allowed_pages = set(PAGE_MAP.keys())  # all pages visible
-        user_role = "Admin"  # treat user as Admin
-    else:
-        user_role = user.role
-        allowed_pages = ROLE_PERMISSIONS.get(user_role, set())
+# Role enforcement
+    allowed_pages = ROLE_PERMISSIONS.get(user.role, set())
+    if page_key not in allowed_pages:
+        st.error("⛔ Access denied.")
+        st.stop()
 
     # Plan enforcement
     plan = user.plan or "starter"
     limits = PLAN_LIMITS.get(plan)
+
 
     if limits:
         allowed = limits["pages"]
