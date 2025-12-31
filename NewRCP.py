@@ -6051,12 +6051,18 @@ if "otp_user_id" in st.session_state:
     st.stop()
 
 user = get_current_user()
-if user and user.subscription_status == "trial":
+
+if (
+    user
+    and user.subscription_status == "trial"
+    and user.trial_ends_at
+):
     days_left = max(
         0,
         (user.trial_ends_at - datetime.utcnow()).days
     )
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
+
 
 
 # ----------------------
