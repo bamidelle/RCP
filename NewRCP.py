@@ -1171,7 +1171,9 @@ def send_trial_expiry_reminders():
     Send reminder emails to users whose trials are expiring soon.
     Safe to run multiple times (idempotent by date).
     """
-    now = datetime.utcnow()
+    import datetime as dt
+    now = dt.datetime.utcnow()
+
 
     with SessionLocal() as s:
         users = (
