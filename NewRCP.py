@@ -1219,8 +1219,6 @@ def upgrade_user_plan(user, new_plan):
 # ----------------------
 # DEV MODE (RESET & STABILIZE)
 # ----------------------
-DEV_MODE = True   # 🔴 TURN OFF IN PRODUCTION
-
 def bootstrap_admin():
     from datetime import datetime
     with SessionLocal() as s:
@@ -1262,15 +1260,6 @@ def get_current_user():
             st.warning("Invalid session")
             st.stop()
         return user
-
-
-
-
-
-
-
-
-
 
 
 def decode_wp_token(token: str):
@@ -1998,28 +1987,38 @@ PLAN_LIMITS = {
     },
 }
 
+# ----------------------
+# PAGE ACCESS GUARD
+# ----------------------
+
 def require_role_access(page_key):
     user = get_current_user()
+
+    # 🔓 DEV MODE = FULL ACCESS
+    if DEV_MODE:
+        return
+
     if not user:
         st.stop()
 
-# Role enforcement
-    allowed_pages = ROLE_PERMISSIONS.get(user.role, set())
-    if page_key not in allowed_pages:
-        st.error("⛔ Access denied.")
+    # 🔓 ADMIN ALWAYS ALLOWED
+    if getattr(user, "role", None) == "Admin":
+        return
+
+    # 🔐 FEATURE-BASED LOCK
+    PAGE_FEATURE_MAP = {
+        "settings": "settings",
+        "billing": "billing",
+        "exports": "exports",
+        "business_intelligence": "ai_recommendations",
+        "seasonal_trends": "seasonal_trends",
+    }
+
+    feature_key = PAGE_FEATURE_MAP.get(page_key)
+
+    if feature_key and not has_feature(user, feature_key):
+        st.warning("🔒 This feature requires an upgrade.")
         st.stop()
-
-    # Plan enforcement
-    plan = user.plan or "starter"
-    limits = PLAN_LIMITS.get(plan)
-
-
-    if limits:
-        allowed = limits["pages"]
-        if "*" not in allowed and page_key not in allowed:
-            st.warning("🔒 This feature requires an upgrade.")
-            st.info("Upgrade your plan to unlock this feature.")
-            st.stop()
 
 
 
@@ -5026,6 +5025,7 @@ def admin_upgrade_user(user_id: int, plan: str):
 # Settings Page
 # -------------------------
 def page_settings():
+    require_role_access("settings")
 
     st.markdown(
         "<div class='header'>⚙️ Settings & User Management</div>",
