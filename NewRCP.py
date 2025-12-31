@@ -1438,81 +1438,96 @@ def has_feature(user, feature_key):
 # ----------------------
 def enforce_plan_limit(user, limit_key, current_value=None):
     """
-    Enforces plan limits safely.
-    - DEV MODE: all limits bypassed
-    - Admin: all limits bypassed
-    - Viewer/Users: enforced by plan
+    Enforces plan-based limits safely.
+
+    Rules:
+    - DEV MODE → all limits bypassed
+    - Admins → all limits bypassed
+    - Missing usage → fail open (safe)
+    - Production users → enforced by plan
     """
 
-    # ----------------------
-    # 🔓 DEV MODE BYPASS
-    # ----------------------
-    if globals().get("DEV_MODE") is True:
+    # ======================================================
+    # 🔓 DEV MODE OVERRIDE (GLOBAL)
+    # ======================================================
+    if globals().get("DEV_MODE", False) is True:
         return True
 
-    # ----------------------
-    # 🔓 ADMIN BYPASS
-    # ----------------------
+    # ======================================================
+    # 👑 ADMIN OVERRIDE (ALWAYS ALLOWED)
+    # ======================================================
     if user and getattr(user, "role", None) == "Admin":
         return True
 
-    # ----------------------
-    # SAFETY CHECKS
-    # ----------------------
+    # ======================================================
+    # 🔐 AUTH SAFETY
+    # ======================================================
     if not user:
         st.error("Authentication required.")
         st.stop()
 
     plan = getattr(user, "plan", None) or "trial"
 
-    # ----------------------
-    # PLAN LIMIT DEFINITIONS
-    # ----------------------
+    # ======================================================
+    # 📦 PLAN LIMIT DEFINITIONS
+    # (Keep here OR import from central config)
+    # ======================================================
     PLAN_LIMITS = {
         "trial": {
             "max_leads": 25,
             "ai_requests": 10,
             "exports": 0,
+            "max_users": 1,
         },
         "starter": {
             "max_leads": 200,
             "ai_requests": 100,
             "exports": 10,
+            "max_users": 3,
         },
         "pro": {
             "max_leads": 2000,
             "ai_requests": 1000,
             "exports": 100,
+            "max_users": 10,
         },
         "enterprise": {
             "max_leads": float("inf"),
             "ai_requests": float("inf"),
             "exports": float("inf"),
+            "max_users": float("inf"),
         },
     }
 
     limits = PLAN_LIMITS.get(plan, {})
 
-    # If feature not controlled → allow
+    # ======================================================
+    # 🟢 FEATURE NOT LIMITED → ALLOW
+    # ======================================================
     if limit_key not in limits:
         return True
 
     limit_value = limits[limit_key]
 
-    # Unlimited
+    # Unlimited feature
     if limit_value == float("inf"):
         return True
 
-    # If no current usage provided → allow safely
+    # ======================================================
+    # 🛡️ FAIL-OPEN SAFETY
+    # ======================================================
     if current_value is None:
         return True
 
-    # ----------------------
+    # ======================================================
     # 🚫 LIMIT EXCEEDED
-    # ----------------------
+    # ======================================================
     if current_value >= limit_value:
         st.warning("🔒 This feature requires an upgrade.")
-        st.info(f"Your **{plan.capitalize()}** plan allows **{limit_value} {limit_key.replace('_', ' ')}**.")
+        st.info(
+            f"Your **{plan.capitalize()}** plan allows "
+            f"**{limit_value} {limit_key.replace('_', ' ')}**."
+        )
 
         if st.button("🚀 Upgrade Plan"):
             st.session_state["open_billing"] = True
@@ -1520,7 +1535,6 @@ def enforce_plan_limit(user, limit_key, current_value=None):
         st.stop()
 
     return True
-
 
 
 
