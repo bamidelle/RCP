@@ -5079,12 +5079,12 @@ def page_settings():
         unsafe_allow_html=True
     )
     st.markdown(
-        "<em>Add team users, invite users, manage roles and technicians.</em>",
+        "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
         unsafe_allow_html=True
     )
 
     # ======================================================
-    # 📧 INVITE USER (EMAIL + EXPIRY TOKEN)
+    # 📧 INVITE USER
     # ======================================================
     st.markdown("### 📧 Invite User")
 
@@ -5104,10 +5104,10 @@ def page_settings():
                 st.stop()
 
             if not is_valid_email(invite_email):
-                st.error("Enter a valid email address (example@domain.com)")
+                st.error("Enter a valid email address")
                 st.stop()
 
-            # ✅ PLAN USER LIMIT CHECK
+            # 🔒 PLAN USER LIMIT CHECK
             with SessionLocal() as s:
                 count = s.query(User).count()
 
@@ -5125,40 +5125,41 @@ def page_settings():
 
                 if exists:
                     st.error("User already exists")
-                else:
-                    token = generate_activation_token()
+                    st.stop()
 
-                    user = User(
-                        username=invite_email,
-                        email=invite_email.lower(),
-                        role=invite_role,
-                        plan="starter",
-                        subscription_status="trial",
-                        trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                        activation_token=token,
-                        activation_expires_at=datetime.utcnow() + timedelta(hours=48),
-                        is_active=False,
-                    )
+                token = generate_activation_token()
 
-                    s.add(user)
-                    s.commit()
+                user = User(
+                    username=invite_email,
+                    email=invite_email.lower(),
+                    role=invite_role,
+                    plan="starter",
+                    subscription_status="trial",
+                    trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                    activation_token=token,
+                    activation_expires_at=datetime.utcnow() + timedelta(hours=48),
+                    is_active=False,
+                )
 
-                    invite_link = f"{FRONTEND_URL}/activate?token={token}"
-                    st.write("Invite link:", invite_link)
+                s.add(user)
+                s.commit()
 
-                    st.success("Invite created successfully")
-                    st.rerun()
+                invite_link = f"{FRONTEND_URL}/activate?token={token}"
+                st.write("Invite link:", invite_link)
+
+                st.success("Invite created successfully")
+                st.rerun()
 
     st.markdown("---")
 
     # ======================================================
-    # ➕ ADD USER (INTERNAL / ADMIN)
+    # ➕ ADD USER (ADMIN)
     # ======================================================
     st.markdown("### ➕ Add User")
 
     with st.form("create_user_form"):
         email = st.text_input("Email (required)")
-        username = st.text_input("Username (optional — defaults to email)")
+        username = st.text_input("Username (optional)")
         full_name = st.text_input("Full Name")
         role = st.selectbox(
             "Role",
@@ -5174,10 +5175,9 @@ def page_settings():
                 st.stop()
 
             if not is_valid_email(email):
-                st.error("Please enter a valid email address")
+                st.error("Invalid email")
                 st.stop()
 
-            # ✅ PLAN USER LIMIT CHECK
             with SessionLocal() as s:
                 count = s.query(User).count()
 
@@ -5188,20 +5188,17 @@ def page_settings():
                 st.error("User limit reached for your plan.")
                 st.stop()
 
-            try:
-                add_user(
-                    email=email.lower(),
-                    username=username.strip() if username else email.lower(),
-                    full_name=full_name.strip(),
-                    role=role,
-                    is_active=True,
-                    email_verified=True,
-                )
-                st.success("User created successfully")
-                st.rerun()
+            add_user(
+                email=email.lower(),
+                username=username.strip() if username else email.lower(),
+                full_name=full_name.strip(),
+                role=role,
+                is_active=True,
+                email_verified=True,
+            )
 
-            except Exception as e:
-                st.error(f"Failed to create user: {e}")
+            st.success("User created successfully")
+            st.rerun()
 
     st.markdown("---")
 
@@ -5226,8 +5223,14 @@ def page_settings():
         st.markdown("### 📨 Trial Management")
 
         if st.button("📨 Send Trial Reminder Emails (Admin)"):
-            send_trial_expiry_reminders()
-            st.success("Trial reminders sent")
+            try:
+                send_trial_expiry_reminders()
+                st.success("Trial reminders sent")
+            except Exception as e:
+                if DEV_MODE:
+                    st.warning(f"Trial reminder skipped (dev): {e}")
+                else:
+                    raise
 
     st.markdown("---")
 
@@ -5236,72 +5239,44 @@ def page_settings():
     # ======================================================
     st.markdown("## 👷 Technician Management")
 
-    with st.expander("➕ Add Technician", expanded=False):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            tech_username = st.text_input("Username (unique)")
-            tech_name = st.text_input("Full Name")
-            tech_phone = st.text_input("Phone Number")
-
-        with col2:
-            tech_role = st.selectbox(
-                "Specialization",
-                ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
-            )
-            tech_active = st.checkbox("Active", value=True)
+    with st.expander("➕ Add Technician"):
+        tech_username = st.text_input("Username")
+        tech_name = st.text_input("Full Name")
+        tech_phone = st.text_input("Phone Number")
+        tech_role = st.selectbox(
+            "Specialization",
+            ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
+        )
+        tech_active = st.checkbox("Active", True)
 
         if st.button("Save Technician"):
-            if not tech_username:
-                st.error("Username is required")
-            else:
-                try:
-                    add_technician(
-                        tech_username.strip(),
-                        full_name=tech_name.strip(),
-                        phone=tech_phone.strip(),
-                        specialization=tech_role,
-                        active=tech_active,
-                    )
-                    st.success("Technician saved")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Failed to save technician: {e}")
-
-    st.markdown("### 📋 Existing Technicians")
+            add_technician(
+                tech_username.strip(),
+                full_name=tech_name.strip(),
+                phone=tech_phone.strip(),
+                specialization=tech_role,
+                active=tech_active,
+            )
+            st.success("Technician saved")
+            st.rerun()
 
     tech_df = get_technicians_df(active_only=False)
-    if tech_df.empty:
-        st.info("No technicians added yet.")
-    else:
+    if not tech_df.empty:
         for _, row in tech_df.iterrows():
-            c1, c2, c3 = st.columns([3, 2, 2])
-
-            with c1:
-                st.write(f"👷 **{row['full_name']}** (`{row['username']}`)")
-
-            with c2:
-                new_status = st.selectbox(
-                    "Status",
-                    ["available", "assigned", "enroute", "onsite", "completed"],
-                    index=[
-                        "available",
-                        "assigned",
-                        "enroute",
-                        "onsite",
-                        "completed",
-                    ].index(row.get("status", "available")),
-                    key=f"status_{row['username']}",
-                )
-
-            with c3:
-                if st.button("Update", key=f"btn_{row['username']}"):
-                    update_technician_status(
-                        row["username"],
-                        new_status
-                    )
-                    st.success("Status updated")
-                    st.rerun()
+            cols = st.columns([3, 2, 2])
+            cols[0].write(f"👷 **{row['full_name']}** (`{row['username']}`)")
+            new_status = cols[1].selectbox(
+                "Status",
+                ["available", "assigned", "enroute", "onsite", "completed"],
+                index=["available","assigned","enroute","onsite","completed"].index(
+                    row.get("status", "available")
+                ),
+                key=f"status_{row['username']}",
+            )
+            if cols[2].button("Update", key=f"upd_{row['username']}"):
+                update_technician_status(row["username"], new_status)
+                st.success("Status updated")
+                st.rerun()
 
     st.markdown("---")
 
@@ -5315,33 +5290,22 @@ def page_settings():
         new_password = st.text_input("New Password", type="password")
         confirm_password = st.text_input("Confirm New Password", type="password")
 
-        submitted_pw = st.form_submit_button("Update Password")
-
-        if submitted_pw:
-            if not current_password or not new_password:
-                st.error("All fields required")
-                st.stop()
-
+        if st.form_submit_button("Update Password"):
             if new_password != confirm_password:
                 st.error("Passwords do not match")
                 st.stop()
 
             user = get_current_user()
-
             with SessionLocal() as s:
                 db_user = s.query(User).filter(User.id == user.id).first()
-
-                if not pwd_context.verify(
-                    current_password,
-                    db_user.password_hash
-                ):
+                if not pwd_context.verify(current_password, db_user.password_hash):
                     st.error("Current password incorrect")
                     st.stop()
 
                 db_user.password_hash = pwd_context.hash(new_password)
                 s.commit()
 
-            st.success("Password updated successfully")
+            st.success("Password updated")
             st.rerun()
 
     st.markdown("---")
@@ -5352,54 +5316,39 @@ def page_settings():
     st.markdown("## 💼 Admin Billing Controls")
 
     admin_users_df = get_users_df()
+    for _, row in admin_users_df.iterrows():
+        with st.expander(f"💳 {row['email']} ({row['plan']})"):
+            new_plan = st.selectbox(
+                "Plan",
+                ["starter", "pro", "enterprise"],
+                index=["starter","pro","enterprise"].index(row["plan"]),
+                key=f"plan_{row['id']}"
+            )
+            new_status = st.selectbox(
+                "Status",
+                ["trial", "active", "expired", "canceled"],
+                index=["trial","active","expired","canceled"].index(
+                    row["subscription_status"]
+                ),
+                key=f"status_{row['id']}"
+            )
+            active_flag = st.checkbox(
+                "Active",
+                value=row.get("is_active", True),
+                key=f"active_{row['id']}"
+            )
 
-    if admin_users_df.empty:
-        st.info("No users available.")
-    else:
-        for _, row in admin_users_df.iterrows():
-            with st.expander(f"💳 {row['email']} ({row['plan']})", expanded=False):
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    new_plan = st.selectbox(
-                        "Plan",
-                        ["starter", "pro", "enterprise"],
-                        index=["starter", "pro", "enterprise"].index(row["plan"]),
-                        key=f"plan_{row['id']}"
-                    )
-
-                with col2:
-                    new_status = st.selectbox(
-                        "Subscription Status",
-                        ["trial", "active", "expired", "canceled"],
-                        index=["trial", "active", "expired", "canceled"].index(
-                            row["subscription_status"]
-                        ),
-                        key=f"status_{row['id']}"
-                    )
-
-                with col3:
-                    active_flag = st.checkbox(
-                        "Account Active",
-                        value=bool(row.get("is_active", True)),
-                        key=f"active_{row['id']}"
-                    )
-
-                if st.button("Save Billing Changes", key=f"save_{row['id']}"):
-                    with SessionLocal() as s:
-                        u = s.query(User).filter(User.id == row["id"]).first()
-                        if u:
-                            u.plan = new_plan
-                            u.subscription_status = new_status
-                            u.is_active = active_flag
-
-                            if new_status == "active":
-                                u.trial_ends_at = None
-
-                            s.commit()
-                            st.success("Billing updated")
-                            st.rerun()
+            if st.button("Save", key=f"save_{row['id']}"):
+                with SessionLocal() as s:
+                    u = s.query(User).get(row["id"])
+                    u.plan = new_plan
+                    u.subscription_status = new_status
+                    u.is_active = active_flag
+                    if new_status == "active":
+                        u.trial_ends_at = None
+                    s.commit()
+                st.success("Billing updated")
+                st.rerun()
 
     st.markdown("---")
 
@@ -5424,96 +5373,6 @@ def page_settings():
                 f"🧾 {inv.created_at.date()} — ${inv.amount} — "
                 f"{inv.status.upper()} — {inv.description}"
             )
-
-
-
-
-
-# -------------------------
-# Billing Page
-# -------------------------
-def page_billing():
-    require_role_access("billing")
-
-    user = get_current_user()
-
-    st.markdown(
-        "<div class='header'>💳 Billing & Subscription</div>",
-        unsafe_allow_html=True
-    )
-
-    # =============================
-    # CURRENT PLAN
-    # =============================
-    st.subheader("Current Plan")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.metric("Plan", user.plan.capitalize())
-
-    with col2:
-        st.metric("Status", user.subscription_status.capitalize())
-
-    if user.subscription_status == "trial":
-        if user.trial_ends_at:
-            days_left = max(
-                0,
-                (user.trial_ends_at - datetime.utcnow()).days
-            )
-            st.info(f"Trial ends in **{days_left} days**")
-        else:
-            st.warning("Trial active (no end date set)")
-
-    st.markdown("---")
-
-    # =============================
-    # AVAILABLE PLANS
-    # =============================
-    st.subheader("Available Plans")
-
-    plans = {
-        "starter": {
-            "price": "$0",
-            "desc": "Basic access for small teams",
-        },
-        "pro": {
-            "price": "$99 / month",
-            "desc": "Advanced analytics & automation",
-        },
-        "enterprise": {
-            "price": "Custom",
-            "desc": "Unlimited access & priority support",
-        },
-    }
-
-    for plan, meta in plans.items():
-        with st.container():
-            c1, c2, c3 = st.columns([3, 2, 2])
-
-            with c1:
-                st.markdown(f"### {plan.capitalize()}")
-                st.caption(meta["desc"])
-
-            with c2:
-                st.markdown(f"**{meta['price']}**")
-            with c3:
-                # 🔓 DEV MODE OVERRIDE
-                if DEV_MODE:
-                    st.success("Developer mode — all plans unlocked")
-                else:
-                    if user.plan == plan:
-                        st.success("Current plan")
-                    else:
-                        if st.button(f"Upgrade to {plan}", key=f"upgrade_{plan}"):
-                            result = BILLING_PROVIDER.create_checkout(
-                                user=user,
-                                plan=plan
-                            )
-            
-                            st.info(result.get("message", "Checkout started"))
-
-
 
 def page_technician_mobile():
     st.markdown("## 📱 Technician Mobile")
