@@ -1871,7 +1871,7 @@ def require_role_access(page_key):
 
     # Role enforcement
     if DEV_MODE:
-        allowed_pages = set(page.keys())  # all pages visible
+        allowed_pages = set(PAGE_MAP.keys())  # all pages visible
         user_role = "Admin"  # treat user as Admin
     else:
         user_role = user.role
