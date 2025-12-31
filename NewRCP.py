@@ -1870,10 +1870,12 @@ def require_role_access(page_key):
         st.stop()
 
     # Role enforcement
-    allowed_pages = ROLE_PERMISSIONS.get(user.role, set())
-    if page_key not in allowed_pages:
-        st.error("⛔ Access denied.")
-        st.stop()
+    if DEV_MODE:
+        allowed_pages = set(PAGE_MAP.keys())  # all pages visible
+        user_role = "Admin"  # treat user as Admin
+    else:
+        user_role = user.role
+        allowed_pages = ROLE_PERMISSIONS.get(user_role, set())
 
     # Plan enforcement
     plan = user.plan or "starter"
@@ -6099,6 +6101,11 @@ with st.sidebar:
         st.session_state.clear()
         st.success("Logged out")
         st.rerun()
+
+# -----------------------------
+# DEV MODE: Unlock all features
+# -----------------------------
+DEV_MODE = True  # Set False in production
 
 # ----------------------
 # ROUTER (STABLE)
