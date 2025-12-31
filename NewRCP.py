@@ -5026,7 +5026,6 @@ def admin_upgrade_user(user_id: int, plan: str):
 # Settings Page
 # -------------------------
 def page_settings():
-    require_role_access("settings")
 
     st.markdown(
         "<div class='header'>⚙️ Settings & User Management</div>",
