@@ -1353,32 +1353,94 @@ If you did not request this, ignore this email.
 """
     send_email(email, subject, body)
 
-def enforce_plan_limit(user, limit_key, current_value):
+# ----------------------
+# PLAN LIMIT ENFORCEMENT
+# ----------------------
 
-    # 🔓 DEV + ADMIN BYPASS
-    if DEV_MODE or user.role == "Admin":
-        return
-    # 🛑 Streamlit rerun safety
-    if user is None:
-        return
+def enforce_plan_limit(user, limit_key, current_value=None):
+    """
+    Enforces plan limits safely.
+    - DEV MODE: all limits bypassed
+    - Admin: all limits bypassed
+    - Viewer/Users: enforced by plan
+    """
 
-    # 🛑 Admin bypass
-    if getattr(user, "role", None) == "Admin":
-        return
+    # ----------------------
+    # 🔓 DEV MODE BYPASS
+    # ----------------------
+    if globals().get("DEV_MODE") is True:
+        return True
 
+    # ----------------------
+    # 🔓 ADMIN BYPASS
+    # ----------------------
+    if user and getattr(user, "role", None) == "Admin":
+        return True
 
+    # ----------------------
+    # SAFETY CHECKS
+    # ----------------------
+    if not user:
+        st.error("Authentication required.")
+        st.stop()
 
-    plan = user.plan or "starter"
+    plan = getattr(user, "plan", None) or "trial"
+
+    # ----------------------
+    # PLAN LIMIT DEFINITIONS
+    # ----------------------
+    PLAN_LIMITS = {
+        "trial": {
+            "max_leads": 25,
+            "ai_requests": 10,
+            "exports": 0,
+        },
+        "starter": {
+            "max_leads": 200,
+            "ai_requests": 100,
+            "exports": 10,
+        },
+        "pro": {
+            "max_leads": 2000,
+            "ai_requests": 1000,
+            "exports": 100,
+        },
+        "enterprise": {
+            "max_leads": float("inf"),
+            "ai_requests": float("inf"),
+            "exports": float("inf"),
+        },
+    }
+
     limits = PLAN_LIMITS.get(plan, {})
-    max_allowed = limits.get(limit_key)
 
-    if max_allowed is None:
-        return
+    # If feature not controlled → allow
+    if limit_key not in limits:
+        return True
 
-    if not DEV_MODE:
-        if user.plan not in ("pro", "enterprise"):
-            st.warning("🔒 This feature requires an upgrade")
-            return
+    limit_value = limits[limit_key]
+
+    # Unlimited
+    if limit_value == float("inf"):
+        return True
+
+    # If no current usage provided → allow safely
+    if current_value is None:
+        return True
+
+    # ----------------------
+    # 🚫 LIMIT EXCEEDED
+    # ----------------------
+    if current_value >= limit_value:
+        st.warning("🔒 This feature requires an upgrade.")
+        st.info(f"Your **{plan.capitalize()}** plan allows **{limit_value} {limit_key.replace('_', ' ')}**.")
+
+        if st.button("🚀 Upgrade Plan"):
+            st.session_state["open_billing"] = True
+
+        st.stop()
+
+    return True
 
 
 
