@@ -37,6 +37,8 @@ from datetime import datetime, timedelta
 import secrets
 
 import smtplib
+from email.message import EmailMessage
+import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -2427,51 +2429,46 @@ def send_email(to_email: str, subject: str, html_body: str):
         server.login(SMTP_USER, SMTP_PASSWORD)
         server.send_message(msg)
 
+def send_email(to_email, subject, body):
+    msg = EmailMessage()
+    msg["From"] = st.secrets["SMTP_FROM"]
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    with smtplib.SMTP(st.secrets["SMTP_HOST"], st.secrets["SMTP_PORT"]) as server:
+        server.starttls()
+        server.login(
+            st.secrets["SMTP_USER"],
+            st.secrets["SMTP_PASSWORD"]
+        )
+        server.send_message(msg)
 
 
 
-def send_invite_email(email: str, invite_link: str):
-    html = f"""
-    <div style="font-family: Arial, sans-serif;">
-        <h2>You're invited to ReCapture Pro</h2>
-        <p>You’ve been invited to join <strong>ReCapture Pro</strong>.</p>
-        <p>Your trial is ready. Click below to activate your account:</p>
+def send_invite_email(to_email, invite_link):
+    subject = "You're invited to join ReCapture Pro"
+    
+    body = f"""
+Hello,
 
-        <p>
-            <a href="{invite_link}"
-               style="background:#2563eb;color:#fff;padding:12px 18px;
-               text-decoration:none;border-radius:6px;">
-               Activate Account
-            </a>
-        </p>
+You've been invited to join ReCapture Pro.
 
-        <p>This link expires in 24 hours.</p>
-    </div>
-    """
+Click the link below to activate your account:
+{invite_link}
+
+This invitation expires in 48 hours.
+
+If you did not expect this email, you can ignore it.
+
+— ReCapture Pro Team
+"""
+
     send_email(
-        to_email=email,
-        subject="You're invited to ReCapture Pro",
-        html_body=html
+        to_email=to_email,
+        subject=subject,
+        body=body
     )
-
-def send_password_reset_email(email: str, reset_link: str):
-    st.write("🔐 PASSWORD RESET LINK (DEV MODE):")
-    st.write(reset_link)
-
-
-def generate_invite_token(email: str) -> tuple[str, str]:
-    payload = {
-        "email": email,
-        "type": "invite",
-        "exp": datetime.utcnow() + timedelta(hours=INVITE_EXPIRY_HOURS),
-        "iat": datetime.utcnow(),
-    }
-
-    token = jwt.encode(payload, INVITE_SECRET, algorithm="HS256")
-
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-
-    return token, token_hash
 
 
 def create_invite_user(email: str, role: str):
