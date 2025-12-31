@@ -1354,6 +1354,10 @@ If you did not request this, ignore this email.
     send_email(email, subject, body)
 
 def enforce_plan_limit(user, limit_key, current_value):
+
+    # 🔓 DEV + ADMIN BYPASS
+    if DEV_MODE or user.role == "Admin":
+        return
     # 🛑 Streamlit rerun safety
     if user is None:
         return
@@ -1781,11 +1785,17 @@ def get_current_plan():
     if not user:
         return "starter"
 
+    if not DEV_MODE:
+        if user.trial_ends_at and user.trial_ends_at < datetime.utcnow():
+            st.error("Trial expired")
+            st.stop()
+
     if user.subscription_status == "trial":
         if user.trial_ends_at and datetime.utcnow() > user.trial_ends_at:
             return "expired"
 
     return user.plan
+
 
 
 
@@ -5322,18 +5332,22 @@ def page_billing():
 
             with c2:
                 st.markdown(f"**{meta['price']}**")
-
             with c3:
-                if user.plan == plan:
-                    st.success("Current plan")
+                # 🔓 DEV MODE OVERRIDE
+                if DEV_MODE:
+                    st.success("Developer mode — all plans unlocked")
                 else:
-                    if st.button(f"Upgrade to {plan}", key=f"upgrade_{plan}"):
-                        result = BILLING_PROVIDER.create_checkout(
-                            user=user,
-                            plan=plan
-                        )
+                    if user.plan == plan:
+                        st.success("Current plan")
+                    else:
+                        if st.button(f"Upgrade to {plan}", key=f"upgrade_{plan}"):
+                            result = BILLING_PROVIDER.create_checkout(
+                                user=user,
+                                plan=plan
+                            )
+            
+                            st.info(result.get("message", "Checkout started"))
 
-                        st.info(result.get("message", "Checkout started"))
 
 
 def page_technician_mobile():
@@ -6070,6 +6084,9 @@ if (
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
 
+if DEV_MODE:
+    st.sidebar.markdown("🛠️ **Developer Mode**")
+    st.sidebar.markdown("All features unlocked")
 
 # ----------------------
 # NAVIGATION (STABLE MODE) -sidebar menu
