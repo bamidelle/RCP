@@ -1353,10 +1353,67 @@ If you did not request this, ignore this email.
 """
     send_email(email, subject, body)
 
+
+
+# ----------------------
+# FEATURE ACCESS CHECK
+# ----------------------
+
+def has_feature(user, feature_key):
+    """
+    Returns True if the user can access a feature.
+    Safe for DEV, Admin, missing plans, missing users.
+    """
+
+    # 🔓 DEV MODE
+    if globals().get("DEV_MODE") is True:
+        return True
+
+    if not user:
+        return False
+
+    # 🔓 ADMIN ALWAYS HAS ACCESS
+    if getattr(user, "role", None) == "Admin":
+        return True
+
+    plan = getattr(user, "plan", None) or "trial"
+
+    PLAN_FEATURES = {
+        "trial": {
+            "ai_recommendations": False,
+            "seasonal_trends": False,
+            "exports": False,
+            "billing": False,
+            "settings": True,  # allow user mgmt even on trial
+        },
+        "starter": {
+            "ai_recommendations": True,
+            "seasonal_trends": True,
+            "exports": True,
+            "billing": True,
+            "settings": True,
+        },
+        "pro": {
+            "ai_recommendations": True,
+            "seasonal_trends": True,
+            "exports": True,
+            "billing": True,
+            "settings": True,
+        },
+        "enterprise": {
+            "ai_recommendations": True,
+            "seasonal_trends": True,
+            "exports": True,
+            "billing": True,
+            "settings": True,
+        },
+    }
+
+    return PLAN_FEATURES.get(plan, {}).get(feature_key, False)
+
 # ----------------------
 # PLAN LIMIT ENFORCEMENT
 # ----------------------
-
 def enforce_plan_limit(user, limit_key, current_value=None):
     """
     Enforces plan limits safely.
@@ -6149,6 +6206,8 @@ if (
 if DEV_MODE:
     st.sidebar.markdown("🛠️ **Developer Mode**")
     st.sidebar.markdown("All features unlocked")
+
+st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
 
 # ----------------------
 # NAVIGATION (STABLE MODE) -sidebar menu
