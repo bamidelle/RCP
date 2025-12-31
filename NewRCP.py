@@ -1146,14 +1146,20 @@ def send_trial_expiry_reminders():
             .all()
         )
 
+        from datetime import datetime, timedelta
+        
         for user in users:
-            days_left = (user.trial_ends_at - now).days
-
+            if user.trial_ends_at:
+                days_left = (user.trial_ends_at - now).days
+            else:
+                days_left = None
+        
             if days_left in TRIAL_REMINDER_DAYS:
                 try:
                     send_trial_reminder_email(user.email, days_left)
                 except Exception as e:
                     print(f"Failed reminder email for {user.email}: {e}")
+
 # ----------------------
 # BILLING PROVIDER ABSTRACTION
 # ----------------------
@@ -5269,11 +5275,14 @@ def page_billing():
         st.metric("Status", user.subscription_status.capitalize())
 
     if user.subscription_status == "trial":
-        days_left = max(
-            0,
-            (user.trial_ends_at - datetime.utcnow()).days
-        )
-        st.info(f"Trial ends in **{days_left} days**")
+        if user.trial_ends_at:
+            days_left = max(
+                0,
+                (user.trial_ends_at - datetime.utcnow()).days
+            )
+            st.info(f"Trial ends in **{days_left} days**")
+        else:
+            st.warning("Trial active (no end date set)")
 
     st.markdown("---")
 
