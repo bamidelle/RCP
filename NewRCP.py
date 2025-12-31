@@ -388,42 +388,65 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
 
+    # =========================
     # PRIMARY IDENTITY
+    # =========================
     email = Column(String, unique=True, nullable=False, index=True)
     email_verified = Column(Boolean, default=False)
 
-    # OPTIONAL / INTERNAL
     username = Column(String, unique=True, nullable=True)
     full_name = Column(String, default="")
-    role = Column(String, default="Admin")
+
+    role = Column(String, default="Viewer")
 
     created_at = Column(DateTime, default=datetime.utcnow)
-
-    # BILLING / ACCESS
-    plan = Column(String, default="starter")
-    trial_ends_at = Column(DateTime, nullable=True)
-    subscription_status = Column(String, default="trial")
+    activated_at = Column(DateTime, nullable=True)
 
     # =========================
-    # ACCOUNT STATUS (NEW)
+    # BILLING / SUBSCRIPTION
+    # =========================
+    plan = Column(String, default="starter")
+    subscription_status = Column(String, default="trial")
+
+    trial_ends_at = Column(DateTime, nullable=True)
+
+    # =========================
+    # ACCOUNT STATUS
     # =========================
     is_active = Column(Boolean, default=True)
     last_login_at = Column(DateTime, nullable=True)
 
-
-    # ----------------------
-    # AUTH CONFIG
-    # ----------------------
-    JWT_SECRET = os.environ.get("JWT_SECRET", "CHANGE_ME_NOW")
-    JWT_ALGO = "HS256"
-    JWT_EXP_MINUTES = 15
-
-    password_hash = Column(String, nullable=True)
-
+    # =========================
+    # AUTH / SECURITY
+    # =========================
     password_hash = Column(String, nullable=True)
 
     reset_token = Column(String, nullable=True)
     reset_expires_at = Column(DateTime, nullable=True)
+
+    activation_token = Column(String, nullable=True)
+    activation_expires_at = Column(DateTime, nullable=True)
+
+    # =========================
+    # OTP (2FA / STEP-UP AUTH)
+    # =========================
+    otp_code = Column(String, nullable=True)
+    otp_expires_at = Column(DateTime, nullable=True)
+    otp_required = Column(Boolean, default=False)
+
+    # =========================
+    # LOGIN PROTECTION
+    # =========================
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
+
+    # =========================
+    # JWT CONFIG (STATIC)
+    # =========================
+    JWT_SECRET = os.environ.get("JWT_SECRET", "CHANGE_ME_NOW")
+    JWT_ALGO = "HS256"
+    JWT_EXP_MINUTES = 15
+
 
 
 class Invoice(Base):
