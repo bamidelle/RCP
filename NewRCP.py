@@ -67,7 +67,10 @@ from sqlalchemy.orm import relationship
 
 from passlib.context import CryptContext
 
-
+# -----------------------------
+# DEV MODE: Unlock all features
+# -----------------------------
+DEV_MODE = True  # Set False in production
 
 # ======================
 # BILLING PROVIDER (DEV)
@@ -1368,9 +1371,11 @@ def enforce_plan_limit(user, limit_key, current_value):
     if max_allowed is None:
         return
 
-    if current_value >= max_allowed:
-        st.warning("🔒 This feature requires an upgrade.")
-        st.stop()
+    if not DEV_MODE:
+        if user.plan not in ("pro", "enterprise"):
+            st.warning("🔒 This feature requires an upgrade")
+            return
+
 
 
 
@@ -6101,10 +6106,7 @@ with st.sidebar:
         st.success("Logged out")
         st.rerun()
 
-# -----------------------------
-# DEV MODE: Unlock all features
-# -----------------------------
-DEV_MODE = True  # Set False in production
+
 
 # ----------------------
 # ROUTER (STABLE)
