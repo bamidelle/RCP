@@ -602,26 +602,6 @@ class CompetitorAlert(Base):
 
 # ---------- END BLOCK A ----------
 
-# ----------------------
-# BOOTSTRAP ADMIN USER (RUNS ONCE)
-# ----------------------
-def bootstrap_admin():
-    with SessionLocal() as s:
-        admin = s.query(User).filter(User.role == "Admin").first()
-        if not admin:
-            admin = User(
-                email="admin@recapturepro.com",
-                username="admin",
-                full_name="System Admin",
-                role="Admin",
-                plan="enterprise",
-                is_active=True,
-                email_verified=True,
-            )
-            s.add(admin)
-            s.commit()
-
-
 
 
 
@@ -1227,20 +1207,53 @@ def upgrade_user_plan(user, new_plan):
 # ----------------------
 # AUTH HELPERS
 # ----------------------
+# ----------------------
+# DEV MODE (RESET & STABILIZE)
+# ----------------------
+DEV_MODE = True   # 🔴 TURN OFF IN PRODUCTION
+
+def bootstrap_admin():
+    from datetime import datetime
+    with SessionLocal() as s:
+        admin = s.query(User).filter(User.role == "Admin").first()
+        if not admin:
+            admin = User(
+                email="admin@recapturepro.local",
+                username="admin",
+                full_name="ReCapture Admin",
+                role="Admin",
+                is_active=True,
+                email_verified=True,
+                created_at=datetime.utcnow(),
+            )
+            s.add(admin)
+            s.commit()
+        return admin
+
+
 def get_current_user():
-    # 🔐 DEV ADMIN AUTO-LOGIN (REMOVE IN PROD)
-    if st.secrets.get("DEV_AUTO_LOGIN", "true") == "true":
-        with SessionLocal() as s:
-            admin = s.query(User).filter(User.role == "Admin").first()
-            if admin:
-                st.session_state["user_id"] = admin.id
+    """
+    🔐 DEV OVERRIDE — ALWAYS RETURNS ADMIN
+    """
+    if DEV_MODE:
+        admin = bootstrap_admin()
+        st.session_state["user_id"] = admin.id
+        return admin
 
-                # 🔒 Normalize role
-                if not admin.role:
-                    admin.role = "Admin"  # bootstrap safety
-                    s.commit()
+    # ---- PROD AUTH (IGNORED FOR NOW) ----
+    user_id = st.session_state.get("user_id")
+    if not user_id:
+        st.warning("Please log in to continue")
+        st.stop()
 
-                return admin
+    with SessionLocal() as s:
+        user = s.query(User).get(user_id)
+        if not user:
+            st.session_state.clear()
+            st.warning("Invalid session")
+            st.stop()
+        return user
+
 
 
 
@@ -6038,63 +6051,67 @@ if user and user.subscription_status == "trial":
 
 
 # ----------------------
-# NAVIGATION Side Bar Control (SAFE)
+# NAVIGATION (STABLE MODE) -sidebar menu
 # ----------------------
 with st.sidebar:
-    st.header("ReCapture Pro")
+    st.header("🚀 ReCapture Pro")
 
     user = get_current_user()
 
-    # ✅ GUARANTEED role resolution (NO NameError possible)
-    if user and hasattr(user, "role") and user.role:
-        role = user.role
-    else:
-        role = "Viewer"
+    st.markdown(f"👤 **{user.full_name or user.email}**")
+    st.markdown("🛠️ **Admin (DEV MODE)**")
+    st.markdown("---")
 
-    role = user.role
-    allowed_pages = ROLE_PERMISSIONS.get(role, set())
+    page = st.radio(
+        "Navigate",
+        [
+            "Overview",
+            "Lead Capture",
+            "Pipeline Board",
+            "Analytics",
+            "CPA & ROI",
+            "Tasks",
+            "AI Recommendations",
+            "Seasonal Trends",
+            "Settings",
+            "Billing",
+            "Exports",
+        ],
+        index=0
+    )
 
+    if st.button("🚪 Logout"):
+        st.session_state.clear()
+        st.success("Logged out")
+        st.rerun()
 
-
-    PAGE_MAP = {
-        "📊 Overview": ("overview", page_overview),
-        "📝 Lead Capture": ("lead_capture", page_lead_capture),
-        "📈 Pipeline Board": ("pipeline", page_pipeline_board),
-        "📊 Analytics": ("analytics", page_analytics),
-        "💰 CPA & ROI": ("analytics", page_cpa_roi),
-        "🤖 AI Recommendations": ("business_intelligence", page_ai_recommendations),
-        "🌦 Seasonal Trends": ("business_intelligence", page_seasonal_trends),
-        "⚙️ Settings": ("settings", page_settings),
-        "💳 Billing": ("billing", page_billing),
-        "📤 Exports": ("exports", page_exports),
-    }
-
-    visible_pages = {
-        label: func
-        for label, (key, func) in PAGE_MAP.items()
-        if key in allowed_pages
-    }
-
-    if not visible_pages:
-        st.warning("No pages available for your role.")
-        st.stop()
-
-    choice = st.radio("Navigate", list(visible_pages.keys()))
-    visible_pages[choice]()
-
-    # ------------------
-    # USER INFO + LOGOUT
-    # ------------------
-    if user:
-        st.markdown("---")
-        st.write(f"👤 {user.full_name or user.email}")
-        st.write(f"🔐 Role: {role}")
-
-        if st.button("🚪 Logout"):
-            st.session_state.clear()
-            st.rerun()
-
-
+# ----------------------
+# ROUTER (STABLE)
+# ----------------------
+if page == "Overview":
+    page_overview()
+elif page == "Lead Capture":
+    page_lead_capture()
+elif page == "Pipeline Board":
+    page_pipeline_board()
+elif page == "Analytics":
+    page_analytics()
+elif page == "CPA & ROI":
+    page_cpa_roi()
+elif page == "Tasks":
+    page_tasks()
+elif page == "AI Recommendations":
+    page_ai_recommendations()
+elif page == "Seasonal Trends":
+    page_seasonal_trends()
+elif page == "Settings":
+    page_settings()
+elif page == "Billing":
+    page_billing()
+elif page == "Exports":
+    page_exports()
+else:
+    st.info("Page not implemented yet.")
 
 
 
