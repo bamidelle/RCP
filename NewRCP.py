@@ -72,6 +72,16 @@ from passlib.context import CryptContext
 # -----------------------------
 DEV_MODE = True  # Set False in production
 
+# ----------------------
+# APP CONFIG
+# ----------------------
+
+FRONTEND_URL = (
+    st.secrets.get("FRONTEND_URL")
+    if "FRONTEND_URL" in st.secrets
+    else "http://localhost:8501"
+)
+
 # ======================
 # BILLING PROVIDER (DEV)
 # ======================
