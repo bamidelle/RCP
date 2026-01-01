@@ -5150,9 +5150,13 @@ def page_settings():
             
             add_user(
                 email=email.lower(),
-                username=username.strip(),
+                username=...,
+                full_name=...,
                 role=role,
+                is_active=True,
+                email_verified=True,
             )
+
 
 
             st.success("User created successfully")
