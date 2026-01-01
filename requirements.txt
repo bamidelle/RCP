@@ -14,3 +14,4 @@ streamlit-folium
 folium
 PyJWT
 passlib[bcrypt]
+resend
