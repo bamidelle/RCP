@@ -2360,30 +2360,37 @@ def send_email(to_email, subject, body):
 
 
 
-import requests
+import resend
+import os
 
-def send_invite_email(to_email, invite_link):
-    response = requests.post(
-        "https://api.resend.com/emails",
-        headers={
-            "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "from": st.secrets["EMAIL_FROM"],
-            "to": [to_email],
-            "subject": "You're invited to ReCapture Pro",
+resend.api_key = os.getenv("RESEND_API_KEY")
+
+
+def send_invite_email(to_email, invite_link, role):
+    try:
+        resend.Emails.send({
+            "from": os.getenv("FROM_EMAIL"),
+            "to": to_email,
+            "subject": "You're invited to join ReCapture Pro",
             "html": f"""
-                <h2>You're invited to ReCapture Pro 🚀</h2>
-                <p>Click below to activate your account:</p>
-                <a href="{invite_link}">Activate Account</a>
-                <p>This link expires in 48 hours.</p>
-            """,
-        },
-    )
+                <h2>You're invited to ReCapture Pro</h2>
+                <p>You’ve been invited to join as <b>{role}</b>.</p>
+                <p>Click the button below to activate your account:</p>
+                <p>
+                    <a href="{invite_link}"
+                       style="padding:10px 16px;background:#4F46E5;color:white;
+                              text-decoration:none;border-radius:6px;">
+                       Accept Invitation
+                    </a>
+                </p>
+                <p>This invitation expires in 48 hours.</p>
+            """
+        })
+        return True
+    except Exception as e:
+        print("Invite email failed:", e)
+        return False
 
-    if response.status_code >= 400:
-        raise Exception(response.text)
 
 
 def create_invite_user(email: str, role: str):
@@ -5075,8 +5082,19 @@ def page_settings():
                 invite_link = f"{FRONTEND_URL}/activate?token={token}"
                 st.write("Invite link:", invite_link)
 
-                st.success("Invite created successfully")
+                email_sent = send_invite_email(
+                    to_email=invite_email,
+                    invite_link=invite_link,
+                    role=invite_role
+                )
+                
+                if email_sent:
+                    st.success("Invitation email sent successfully")
+                else:
+                    st.warning("Invite created, but email failed to send")
+                
                 st.rerun()
+
 
     st.markdown("---")
 
