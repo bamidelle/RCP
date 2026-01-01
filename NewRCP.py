@@ -2653,7 +2653,16 @@ def get_leads_for_task_dropdown():
 
 from datetime import datetime, timedelta
 
-def add_user(email, username=None, full_name=None, role="Staff"):
+from sqlalchemy.exc import IntegrityError
+
+def add_user(
+    email,
+    username,
+    full_name=None,
+    role="Staff",
+    is_active=True,
+    email_verified=False,
+):
     # --- HARD BACKEND VALIDATION ---
     if not email:
         raise ValueError("Email is required")
@@ -2663,6 +2672,8 @@ def add_user(email, username=None, full_name=None, role="Staff"):
     if not is_valid_email(email):
         raise ValueError("Invalid email format")
 
+    username = username.strip() if username else email
+
     with SessionLocal() as s:
         # --- UNIQUENESS CHECK ---
         existing = s.query(User).filter(User.email == email).first()
@@ -2671,18 +2682,21 @@ def add_user(email, username=None, full_name=None, role="Staff"):
 
         user = User(
             email=email,
-            username=username or email,
+            username=username,
             full_name=full_name,
             role=role,
+            is_active=is_active,
+            email_verified=email_verified,
         )
 
         s.add(user)
 
         try:
             s.commit()
+            s.refresh(user)
         except IntegrityError:
             s.rollback()
-            raise ValueError("Email already exists")
+            raise ValueError("Failed to create user (email already exists)")
 
         return user
 
@@ -5136,12 +5150,10 @@ def page_settings():
             
             add_user(
                 email=email.lower(),
-                username=username.strip() if username else email.lower(),
-                full_name=full_name.strip(),
+                username=username.strip(),
                 role=role,
-                is_active=True,
-                email_verified=True,
             )
+
 
             st.success("User created successfully")
             st.rerun()
