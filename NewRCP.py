@@ -1442,6 +1442,16 @@ def has_feature(user, feature_key):
 # ----------------------
 #ENFORCE PLAN WAS REMOVED HERE
 
+def enforce_plan_limit(user, limit_key, current_value):
+    # ✅ DEV MODE BYPASS
+    if DEV_MODE:
+        return True
+
+    # ✅ Admin bypass
+    if user and user.role == "Admin":
+        return True
+
+
 
 
 
@@ -2421,6 +2431,22 @@ If you have questions, just reply to this email.
 
 # ---------- END BLOCK C ----------
 
+def can_add_user(current_user, current_count):
+    # ✅ Dev mode: unlimited
+    if DEV_MODE:
+        return True
+
+    # ✅ Admin always allowed
+    if current_user and current_user.role == "Admin":
+        return True
+
+    plan = current_user.plan if current_user else "starter"
+    max_users = PLAN_LIMITS.get(plan, {}).get("max_users")
+
+    if not max_users:
+        return True
+
+    return current_count < max_users
 
 
 
@@ -5013,12 +5039,12 @@ def page_settings():
             with SessionLocal() as s:
                 count = s.query(User).count()
 
-            plan = get_current_user().plan
-            max_users = PLAN_LIMITS.get(plan, {}).get("max_users", 0)
-
-            if max_users and count >= max_users:
+            current_user = get_current_user()
+            
+            if not can_add_user(current_user, count):
                 st.error("User limit reached for your plan.")
                 st.stop()
+
 
             with SessionLocal() as s:
                 exists = s.query(User).filter(
@@ -5083,13 +5109,13 @@ def page_settings():
             with SessionLocal() as s:
                 count = s.query(User).count()
 
-            plan = get_current_user().plan
-            max_users = PLAN_LIMITS.get(plan, {}).get("max_users", 0)
-
-            if max_users and count >= max_users:
+            current_user = get_current_user()
+            
+            if not can_add_user(current_user, count):
                 st.error("User limit reached for your plan.")
                 st.stop()
 
+            
             add_user(
                 email=email.lower(),
                 username=username.strip() if username else email.lower(),
