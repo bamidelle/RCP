@@ -395,10 +395,26 @@ Base = declarative_base()
 # ----------------------
 # MODELS
 # ----------------------
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    plan = Column(String, default="trial")
+    max_users = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True)
+
+    # =========================
+    # ORGANIZATION RELATIONSHIP (NEW)
+    # =========================
+    organization_id = Column(Integer, ForeignKey("organizations.id"))
+    organization = relationship("Organization")
 
     # =========================
     # PRIMARY IDENTITY
@@ -458,7 +474,6 @@ class User(Base):
     JWT_SECRET = os.environ.get("JWT_SECRET", "CHANGE_ME_NOW")
     JWT_ALGO = "HS256"
     JWT_EXP_MINUTES = 15
-
 
 
 class Invoice(Base):
@@ -1257,22 +1272,45 @@ def upgrade_user_plan(user, new_plan):
 # DEV MODE (RESET & STABILIZE)
 # ----------------------
 def bootstrap_admin():
-    from datetime import datetime
     with SessionLocal() as s:
         admin = s.query(User).filter(User.role == "Admin").first()
-        if not admin:
-            admin = User(
-                email="admin@recapturepro.local",
-                username="admin",
-                full_name="ReCapture Admin",
-                role="Admin",
-                is_active=True,
-                email_verified=True,
-                created_at=datetime.utcnow(),
-            )
-            s.add(admin)
-            s.commit()
-        return admin
+
+        if admin:
+            if not admin.organization_id:
+                org = Organization(
+                    name="ReCapture Pro (Primary)",
+                    plan=admin.plan or "trial",
+                    max_users=PLAN_LIMITS.get(admin.plan or "trial", {}).get("max_users", 1)
+                )
+                s.add(org)
+                s.flush()
+
+                admin.organization_id = org.id
+                s.commit()
+            return
+
+        # No admin exists — create one
+        org = Organization(
+            name="ReCapture Pro (Primary)",
+            plan="trial",
+            max_users=PLAN_LIMITS["trial"]["max_users"]
+        )
+        s.add(org)
+        s.flush()
+
+        admin = User(
+            email="admin@recapturepro.dev",
+            username="admin",
+            full_name="System Admin",
+            role="Admin",
+            plan="trial",
+            organization_id=org.id,
+            is_active=True,
+            email_verified=True,
+        )
+
+        s.add(admin)
+        s.commit()
 
 
 def get_current_user():
@@ -1440,20 +1478,43 @@ def has_feature(user, feature_key):
 # ----------------------
 # PLAN LIMIT ENFORCEMENT
 # ----------------------
-#ENFORCE PLAN WAS REMOVED HERE
+#ENFORCE PLAN WAS BLOCKED HERE
 
-def enforce_plan_limit(user, limit_key, current_value):
+#def enforce_plan_limit(user, limit_key, current_value):
     # ✅ DEV MODE BYPASS
-    if DEV_MODE:
-        return True
+    #if DEV_MODE:
+        #return True
 
     # ✅ Admin bypass
-    if user and user.role == "Admin":
-        return True
+    #if user and user.role == "Admin":
+        #return True
 
 
 
 
+def enforce_org_seat_limit(current_user):
+    """
+    Enforces organization-based seat limits.
+    Safe to call from anywhere.
+    """
+
+    # DEV MODE → never block
+    if st.secrets.get("DEV_MODE") == "true":
+        return
+
+    with SessionLocal() as s:
+        org = s.get(Organization, current_user.organization_id)
+
+        if not org or not org.max_users:
+            return  # unlimited or misconfigured org
+
+        user_count = s.query(User).filter(
+            User.organization_id == org.id
+        ).count()
+
+        if user_count >= org.max_users:
+            st.error("User limit reached for your plan.")
+            st.stop()
 
 # ----------------------
 # BILLING PROVIDER (DEV / MANUAL)
@@ -5032,137 +5093,120 @@ def page_settings():
         unsafe_allow_html=True
     )
 
-    # ======================================================
-    # 📧 INVITE USER
-    # ======================================================
-    st.markdown("### 📧 Invite User")
+# ======================================================
+# 📧 INVITE USER
+# ======================================================
+st.markdown("### 📧 Invite User")
 
-    with st.form("invite_user_form"):
-        invite_email = st.text_input("Email (required)")
-        invite_role = st.selectbox(
-            "Role",
-            ["Admin", "Manager", "Staff"],
-            key="invite_role"
-        )
+with st.form("invite_user_form"):
+    invite_email = st.text_input("Email (required)")
+    invite_role = st.selectbox(
+        "Role",
+        ["Admin", "Manager", "Staff"],
+        key="invite_role"
+    )
 
-        submitted_invite = st.form_submit_button("Send Invite")
+    submitted_invite = st.form_submit_button("Send Invite")
 
-        if submitted_invite:
-            if not invite_email:
-                st.error("Email is required")
+    if submitted_invite:
+        # 🔐 ORG SEAT LIMIT ENFORCEMENT
+        current_user = get_current_user()
+        enforce_org_seat_limit(current_user)
+
+        if not invite_email:
+            st.error("Email is required")
+            st.stop()
+
+        if not is_valid_email(invite_email):
+            st.error("Enter a valid email address")
+            st.stop()
+
+        with SessionLocal() as s:
+            exists = s.query(User).filter(
+                User.email == invite_email.lower()
+            ).first()
+
+            if exists:
+                st.error("User already exists")
                 st.stop()
 
-            if not is_valid_email(invite_email):
-                st.error("Enter a valid email address")
-                st.stop()
+            token = generate_activation_token()
 
-            # 🔒 PLAN USER LIMIT CHECK
-            with SessionLocal() as s:
-                count = s.query(User).count()
-
-            current_user = get_current_user()
-            
-            if not can_add_user(current_user, count):
-                st.error("User limit reached for your plan.")
-                st.stop()
-
-
-            with SessionLocal() as s:
-                exists = s.query(User).filter(
-                    User.email == invite_email.lower()
-                ).first()
-
-                if exists:
-                    st.error("User already exists")
-                    st.stop()
-
-                token = generate_activation_token()
-
-                user = User(
-                    username=invite_email,
-                    email=invite_email.lower(),
-                    role=invite_role,
-                    plan="starter",
-                    subscription_status="trial",
-                    trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                    activation_token=token,
-                    activation_expires_at=datetime.utcnow() + timedelta(hours=48),
-                    is_active=False,
-                )
-
-                s.add(user)
-                s.commit()
-
-                invite_link = f"{FRONTEND_URL}/activate?token={token}"
-                st.write("Invite link:", invite_link)
-
-                email_sent = send_invite_email(
-                    to_email=invite_email,
-                    invite_link=invite_link,
-                    role=invite_role
-                )
-                
-                if email_sent:
-                    st.success("Invitation email sent successfully")
-                else:
-                    st.warning("Invite created, but email failed to send")
-                
-                st.rerun()
-
-
-    st.markdown("---")
-
-    # ======================================================
-    # ➕ ADD USER (ADMIN)
-    # ======================================================
-    st.markdown("### ➕ Add User")
-
-    with st.form("create_user_form"):
-        email = st.text_input("Email (required)")
-        username = st.text_input("Username (optional)")
-        full_name = st.text_input("Full Name")
-        role = st.selectbox(
-            "Role",
-            ["Admin", "Manager", "Staff"],
-            key="create_role"
-        )
-
-        submitted_create = st.form_submit_button("Create User")
-
-        if submitted_create:
-            if not email:
-                st.error("Email is required")
-                st.stop()
-
-            if not is_valid_email(email):
-                st.error("Invalid email")
-                st.stop()
-
-            with SessionLocal() as s:
-                count = s.query(User).count()
-
-            current_user = get_current_user()
-            
-            if not can_add_user(current_user, count):
-                st.error("User limit reached for your plan.")
-                st.stop()
-
-            
-            add_user(
-                email=email.lower(),
-                username=...,
-                full_name=...,
-                role=role,
-                is_active=True,
-                email_verified=True,
+            user = User(
+                username=invite_email,
+                email=invite_email.lower(),
+                role=invite_role,
+                organization_id=current_user.organization_id,
+                plan=current_user.plan,
+                subscription_status="trial",
+                trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                activation_token=token,
+                activation_expires_at=datetime.utcnow() + timedelta(hours=48),
+                is_active=False,
             )
 
+            s.add(user)
+            s.commit()
+
+        invite_link = f"{FRONTEND_URL}/activate?token={token}"
+        st.write("Invite link:", invite_link)
+
+        try:
+            send_invite_email(invite_email, invite_link)
+            st.success("Invitation email sent successfully")
+        except Exception as e:
+            if DEV_MODE:
+                st.warning(f"Invite created, email skipped (dev): {e}")
+            else:
+                st.warning("Invite created, but email failed to send")
+
+        st.rerun()
 
 
-            st.success("User created successfully")
-            st.rerun()
+st.markdown("---")
 
-    st.markdown("---")
+# ======================================================
+# ➕ ADD USER (ADMIN)
+# ======================================================
+st.markdown("### ➕ Add User")
+
+with st.form("create_user_form"):
+    email = st.text_input("Email (required)")
+    username = st.text_input("Username (optional)")
+    full_name = st.text_input("Full Name")
+    role = st.selectbox(
+        "Role",
+        ["Admin", "Manager", "Staff"],
+        key="create_role"
+    )
+
+    submitted_create = st.form_submit_button("Create User")
+
+    if submitted_create:
+        # 🔐 ORG SEAT LIMIT ENFORCEMENT
+        current_user = get_current_user()
+        enforce_org_seat_limit(current_user)
+
+        if not email:
+            st.error("Email is required")
+            st.stop()
+
+        if not is_valid_email(email):
+            st.error("Invalid email")
+            st.stop()
+
+        add_user(
+            email=email.lower(),
+            username=username.strip() if username else email.lower(),
+            full_name=full_name.strip(),
+            role=role,
+            is_active=True,
+            email_verified=True,
+        )
+
+        st.success("User created successfully")
+        st.rerun()
+
 
     # ======================================================
     # 👥 USERS TABLE
