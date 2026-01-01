@@ -5320,10 +5320,11 @@ def page_settings():
 
     admin_users_df = get_users_df()
     for _, row in admin_users_df.iterrows():
-        st.write("Billing row keys:", row.index.tolist())
-        st.stop()
+        email = row.get("email") or row.get("username") or "Unknown User"
+        plan = row.get("plan", "unknown")
+        
+        with st.expander(f"💳 {email} ({plan})"):
 
-        with st.expander(f"💳 {row['email']} ({row['plan']})"):
             new_plan = st.selectbox(
                 "Plan",
                 ["starter", "pro", "enterprise"],
