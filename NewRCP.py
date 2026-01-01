@@ -2350,29 +2350,30 @@ def send_email(to_email, subject, body):
 
 
 
+import requests
+
 def send_invite_email(to_email, invite_link):
-    subject = "You're invited to join ReCapture Pro"
-    
-    body = f"""
-Hello,
-
-You've been invited to join ReCapture Pro.
-
-Click the link below to activate your account:
-{invite_link}
-
-This invitation expires in 48 hours.
-
-If you did not expect this email, you can ignore it.
-
-— ReCapture Pro Team
-"""
-
-    send_email(
-        to_email=to_email,
-        subject=subject,
-        body=body
+    response = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": st.secrets["EMAIL_FROM"],
+            "to": [to_email],
+            "subject": "You're invited to ReCapture Pro",
+            "html": f"""
+                <h2>You're invited to ReCapture Pro 🚀</h2>
+                <p>Click below to activate your account:</p>
+                <a href="{invite_link}">Activate Account</a>
+                <p>This link expires in 48 hours.</p>
+            """,
+        },
     )
+
+    if response.status_code >= 400:
+        raise Exception(response.text)
 
 
 def create_invite_user(email: str, role: str):
