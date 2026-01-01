@@ -5090,119 +5090,119 @@ def page_settings():
         unsafe_allow_html=True
     )
 
-# ======================================================
-# 📧 INVITE USER
-# ======================================================
-st.markdown("### 📧 Invite User")
-
-with st.form("invite_user_form"):
-    invite_email = st.text_input("Email (required)")
-    invite_role = st.selectbox(
-        "Role",
-        ["Admin", "Manager", "Staff"],
-        key="invite_role"
-    )
-
-    submitted_invite = st.form_submit_button("Send Invite")
-
-    if submitted_invite:
-        # 🔐 ORG SEAT LIMIT ENFORCEMENT
-        current_user = get_current_user()
-        enforce_org_seat_limit(current_user)
-
-        if not invite_email:
-            st.error("Email is required")
-            st.stop()
-
-        if not is_valid_email(invite_email):
-            st.error("Enter a valid email address")
-            st.stop()
-
-        with SessionLocal() as s:
-            exists = s.query(User).filter(
-                User.email == invite_email.lower()
-            ).first()
-
-            if exists:
-                st.error("User already exists")
-                st.stop()
-
-            token = generate_activation_token()
-
-            user = User(
-                username=invite_email,
-                email=invite_email.lower(),
-                role=invite_role,
-                organization_id=current_user.organization_id,
-                plan=current_user.plan,
-                subscription_status="trial",
-                trial_ends_at=datetime.utcnow() + timedelta(days=14),
-                activation_token=token,
-                activation_expires_at=datetime.utcnow() + timedelta(hours=48),
-                is_active=False,
-            )
-
-            s.add(user)
-            s.commit()
-
-        invite_link = f"{FRONTEND_URL}/activate?token={token}"
-        st.write("Invite link:", invite_link)
-
-        try:
-            send_invite_email(invite_email, invite_link)
-            st.success("Invitation email sent successfully")
-        except Exception as e:
-            if DEV_MODE:
-                st.warning(f"Invite created, email skipped (dev): {e}")
-            else:
-                st.warning("Invite created, but email failed to send")
-
-        st.rerun()
-
-
-st.markdown("---")
-
-# ======================================================
-# ➕ ADD USER (ADMIN)
-# ======================================================
-st.markdown("### ➕ Add User")
-
-with st.form("create_user_form"):
-    email = st.text_input("Email (required)")
-    username = st.text_input("Username (optional)")
-    full_name = st.text_input("Full Name")
-    role = st.selectbox(
-        "Role",
-        ["Admin", "Manager", "Staff"],
-        key="create_role"
-    )
-
-    submitted_create = st.form_submit_button("Create User")
-
-    if submitted_create:
-        # 🔐 ORG SEAT LIMIT ENFORCEMENT
-        current_user = get_current_user()
-        enforce_org_seat_limit(current_user)
-
-        if not email:
-            st.error("Email is required")
-            st.stop()
-
-        if not is_valid_email(email):
-            st.error("Invalid email")
-            st.stop()
-
-        add_user(
-            email=email.lower(),
-            username=username.strip() if username else email.lower(),
-            full_name=full_name.strip(),
-            role=role,
-            is_active=True,
-            email_verified=True,
+    # ======================================================
+    # 📧 INVITE USER
+    # ======================================================
+    st.markdown("### 📧 Invite User")
+    
+    with st.form("invite_user_form"):
+        invite_email = st.text_input("Email (required)")
+        invite_role = st.selectbox(
+            "Role",
+            ["Admin", "Manager", "Staff"],
+            key="invite_role"
         )
-
-        st.success("User created successfully")
-        st.rerun()
+    
+        submitted_invite = st.form_submit_button("Send Invite")
+    
+        if submitted_invite:
+            # 🔐 ORG SEAT LIMIT ENFORCEMENT
+            current_user = get_current_user()
+            enforce_org_seat_limit(current_user)
+    
+            if not invite_email:
+                st.error("Email is required")
+                st.stop()
+    
+            if not is_valid_email(invite_email):
+                st.error("Enter a valid email address")
+                st.stop()
+    
+            with SessionLocal() as s:
+                exists = s.query(User).filter(
+                    User.email == invite_email.lower()
+                ).first()
+    
+                if exists:
+                    st.error("User already exists")
+                    st.stop()
+    
+                token = generate_activation_token()
+    
+                user = User(
+                    username=invite_email,
+                    email=invite_email.lower(),
+                    role=invite_role,
+                    organization_id=current_user.organization_id,
+                    plan=current_user.plan,
+                    subscription_status="trial",
+                    trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                    activation_token=token,
+                    activation_expires_at=datetime.utcnow() + timedelta(hours=48),
+                    is_active=False,
+                )
+    
+                s.add(user)
+                s.commit()
+    
+            invite_link = f"{FRONTEND_URL}/activate?token={token}"
+            st.write("Invite link:", invite_link)
+    
+            try:
+                send_invite_email(invite_email, invite_link)
+                st.success("Invitation email sent successfully")
+            except Exception as e:
+                if DEV_MODE:
+                    st.warning(f"Invite created, email skipped (dev): {e}")
+                else:
+                    st.warning("Invite created, but email failed to send")
+    
+            st.rerun()
+    
+    
+    st.markdown("---")
+    
+    # ======================================================
+    # ➕ ADD USER (ADMIN)
+    # ======================================================
+    st.markdown("### ➕ Add User")
+    
+    with st.form("create_user_form"):
+        email = st.text_input("Email (required)")
+        username = st.text_input("Username (optional)")
+        full_name = st.text_input("Full Name")
+        role = st.selectbox(
+            "Role",
+            ["Admin", "Manager", "Staff"],
+            key="create_role"
+        )
+    
+        submitted_create = st.form_submit_button("Create User")
+    
+        if submitted_create:
+            # 🔐 ORG SEAT LIMIT ENFORCEMENT
+            current_user = get_current_user()
+            enforce_org_seat_limit(current_user)
+    
+            if not email:
+                st.error("Email is required")
+                st.stop()
+    
+            if not is_valid_email(email):
+                st.error("Invalid email")
+                st.stop()
+    
+            add_user(
+                email=email.lower(),
+                username=username.strip() if username else email.lower(),
+                full_name=full_name.strip(),
+                role=role,
+                is_active=True,
+                email_verified=True,
+            )
+    
+            st.success("User created successfully")
+            st.rerun()
 
 
     # ======================================================
