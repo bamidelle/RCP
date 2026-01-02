@@ -5327,63 +5327,73 @@ def page_settings():
     # 💼 ADMIN BILLING CONTROLS
     # ======================================================
     st.markdown("## 💼 Admin Billing Controls")
-
+    
     admin_users_df = get_users_df()
-        st.write("User columns:", list(users_df.columns))
-
+    
+    # 🔍 Debug helper (safe)
+    st.write("User columns:", list(admin_users_df.columns))
+    
     for _, row in admin_users_df.iterrows():
         email = row.get("email") or row.get("username") or "Unknown User"
         plan = row.get("plan", "unknown")
-        
+    
         with st.expander(f"💳 {email} ({plan})"):
-
+    
             new_plan = st.selectbox(
                 "Plan",
                 ["starter", "pro", "enterprise"],
-                index=["starter","pro","enterprise"].index(row["plan"]),
-                key=f"plan_{row['email']}"
+                index=["starter", "pro", "enterprise"].index(row.get("plan", "starter")),
+                key=f"plan_{row['id']}"
             )
+    
             new_status = st.selectbox(
                 "Status",
                 ["trial", "active", "expired", "canceled"],
-                index=["trial","active","expired","canceled"].index(
-                    row["subscription_status"]
+                index=["trial", "active", "expired", "canceled"].index(
+                    row.get("subscription_status", "trial")
                 ),
                 key=f"status_{row['id']}"
             )
+    
             active_flag = st.checkbox(
                 "Active",
-                value=row.get("is_active", True),
+                value=bool(row.get("is_active", True)),
                 key=f"active_{row['id']}"
             )
-
+    
             if st.button("Save", key=f"save_{row['id']}"):
                 with SessionLocal() as s:
                     u = s.query(User).get(row["id"])
-                    u.plan = new_plan
-                    u.subscription_status = new_status
-                    u.is_active = active_flag
-                    if new_status == "active":
-                        u.trial_ends_at = None
-                    s.commit()
+                    if u:
+                        u.plan = new_plan
+                        u.subscription_status = new_status
+                        u.is_active = active_flag
+    
+                        if new_status == "active":
+                            u.trial_ends_at = None
+    
+                        s.commit()
+    
                 st.success("Billing updated")
                 st.rerun()
-
+    
     st.markdown("---")
-
+    
     # ======================================================
     # 💳 BILLING HISTORY (CURRENT USER)
     # ======================================================
     st.markdown("### 💳 Billing History")
-
+    
+    current_user = get_current_user()
+    
     with SessionLocal() as s:
         invoices = (
             s.query(Invoice)
-            .filter(Invoice.user_id == get_current_user().id)
+            .filter(Invoice.user_id == current_user.id)
             .order_by(Invoice.created_at.desc())
             .all()
         )
-
+    
     if not invoices:
         st.info("No billing records yet.")
     else:
@@ -5392,6 +5402,7 @@ def page_settings():
                 f"🧾 {inv.created_at.date()} — ${inv.amount} — "
                 f"{inv.status.upper()} — {inv.description}"
             )
+
 
 def page_technician_mobile():
     st.markdown("## 📱 Technician Mobile")
