@@ -6014,8 +6014,6 @@ if (
 
 #st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
 
-
-
     NAV_ICONS = {
         "Overview": "🧭",
         "Lead Capture": "🎯",
@@ -6028,6 +6026,8 @@ if (
         "Settings": "⚙️",
         "Exports": "📤",
     }
+
+
 
 # ----------------------
 # NAVIGATION (STABLE MODE) -sidebar menu
