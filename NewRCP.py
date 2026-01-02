@@ -6016,18 +6016,18 @@ if (
 
 
 
-NAV_ICONS = {
-    "Overview": "🧭",
-    "Lead Capture": "🎯",
-    "Pipeline Board": "🔄",
-    "Analytics": "📊",
-    "CPA & ROI": "💰",
-    "Tasks": "✅",
-    "AI Recommendations": "🤖",
-    "Seasonal Trends": "🌦",
-    "Settings": "⚙️",
-    "Exports": "📤",
-}
+    NAV_ICONS = {
+        "Overview": "🧭",
+        "Lead Capture": "🎯",
+        "Pipeline Board": "🔄",
+        "Analytics": "📊",
+        "CPA & ROI": "💰",
+        "Tasks": "✅",
+        "AI Recommendations": "🤖",
+        "Seasonal Trends": "🌦",
+        "Settings": "⚙️",
+        "Exports": "📤",
+    }
 
 # ----------------------
 # NAVIGATION (STABLE MODE) -sidebar menu
