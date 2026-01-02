@@ -5343,7 +5343,7 @@ def page_settings():
                 "Plan",
                 ["starter", "pro", "enterprise"],
                 index=["starter", "pro", "enterprise"].index(row.get("plan", "starter")),
-                key=f"plan_{row['id']}"
+                key=f"plan_{row['username']}_{row['created_at']}"['id']}"
             )
     
             new_status = st.selectbox(
