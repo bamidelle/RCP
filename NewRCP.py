@@ -3600,13 +3600,6 @@ def page_pipeline_board():
 def page_analytics():
     require_role_access("analytics")
     st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
-
-        # 🔒 Plan Access Gate
-    if not has_access("analytics_intelligence"):
-        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
-        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
-        return
-
     
     df = leads_to_df(start, end)
 
@@ -4625,13 +4618,6 @@ def page_ai_recommendations():
 
     st.markdown("<div class='header'>🤖 AI Recommendations</div>", unsafe_allow_html=True)
     st.markdown("<em>Heuristic recommendations and quick diagnostics for the pipeline.</em>", unsafe_allow_html=True)
-        # 🔒 Plan Access Gate
-    if not has_access("analytics_intelligence"):
-        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
-        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
-        return
-
-
 
     # Load leads defensively
     try:
@@ -5366,11 +5352,6 @@ def page_technician_mobile():
 def page_exports():
     require_role_access("exports")
     st.markdown("<div class='header'>📤 Exports & Imports</div>", unsafe_allow_html=True)
-    # 🔒 Plan Access Gate
-    if not has_access("analytics_intelligence"):
-        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
-        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
-        return
 
     st.markdown("<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>", unsafe_allow_html=True)
     df = leads_to_df(None, None)
@@ -5500,12 +5481,6 @@ def page_seasonal_trends():
     import streamlit as st
 
     st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
-        # 🔒 Plan Access Gate
-    if not has_access("analytics_intelligence"):
-        st.warning("🔒 Analytics & Business Intelligence is not available on your current plan.")
-        st.info("Upgrade your plan to unlock executive analytics, trends, and insights.")
-        return
-
     st.markdown(
         """
     <em>
