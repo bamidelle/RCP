@@ -2658,6 +2658,16 @@ def get_users_df():
     try:
         with SessionLocal() as s:
             users = s.query(User).all()
+            users_df = pd.DataFrame([
+                {
+                    "id": u.id,
+                    "email": u.email,
+                    "plan": u.plan,
+                    "role": u.role,
+                }
+                for u in users
+            ])
+
 
         if not users:
             return pd.DataFrame(columns=[
@@ -5319,6 +5329,8 @@ def page_settings():
     st.markdown("## 💼 Admin Billing Controls")
 
     admin_users_df = get_users_df()
+    st.write("User columns:", list(users_df.columns))
+
     for _, row in admin_users_df.iterrows():
         email = row.get("email") or row.get("username") or "Unknown User"
         plan = row.get("plan", "unknown")
@@ -5329,7 +5341,7 @@ def page_settings():
                 "Plan",
                 ["starter", "pro", "enterprise"],
                 index=["starter","pro","enterprise"].index(row["plan"]),
-                key=f"plan_{row['id']}"
+                key=f"plan_{row['email']}"
             )
             new_status = st.selectbox(
                 "Status",
