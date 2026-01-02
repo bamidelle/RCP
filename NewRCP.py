@@ -6014,6 +6014,21 @@ if (
 
 #st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
 
+
+
+NAV_ICONS = {
+    "Overview": "🧭",
+    "Lead Capture": "🎯",
+    "Pipeline Board": "🔄",
+    "Analytics": "📊",
+    "CPA & ROI": "💰",
+    "Tasks": "✅",
+    "AI Recommendations": "🤖",
+    "Seasonal Trends": "🌦",
+    "Settings": "⚙️",
+    "Exports": "📤",
+}
+
 # ----------------------
 # NAVIGATION (STABLE MODE) -sidebar menu
 # ----------------------
@@ -6022,27 +6037,28 @@ with st.sidebar:
 
     st.markdown("---")
 
-    page = st.radio(
+    pages = [
+        "Overview",
+        "Lead Capture",
+        "Pipeline Board",
+        "Analytics",
+        "CPA & ROI",
+        "Tasks",
+        "AI Recommendations",
+        "Seasonal Trends",
+        "Settings",
+        "Exports",
+    ]
+    
+    page_label = st.radio(
         "Navigate",
-        [
-            "🔴Overview",
-            "Lead Capture",
-            "Pipeline Board",
-            "Analytics",
-            "CPA & ROI",
-            "Tasks",
-            "AI Recommendations",
-            "Seasonal Trends",
-            "Settings",
-            "Exports",
-        ],
+        [f"{NAV_ICONS[p]}  {p}" for p in pages],
         index=0
     )
+    
+    # Extract page name (remove icon)
+    page = page_label.split("  ", 1)[1]
 
-    if st.button("🚪 Logout"):
-        st.session_state.clear()
-        st.success("Logged out")
-        st.rerun()
 
 
 
