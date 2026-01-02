@@ -3599,13 +3599,40 @@ def page_pipeline_board():
 # Analytics page (donut + SLA line + overdue table)
 def page_analytics():
     require_role_access("analytics")
+
     st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
-    
+
+    # =========================================================
+    # 📅 DATE RANGE (SAFE DEFAULTS — MUST BE FIRST)
+    # =========================================================
+    col1, col2 = st.columns(2)
+
+    with col1:
+        start = st.date_input(
+            "Start date",
+            value=datetime.utcnow().date() - timedelta(days=30)
+        )
+
+    with col2:
+        end = st.date_input(
+            "End date",
+            value=datetime.utcnow().date()
+        )
+
+    # 🛡️ SAFETY GUARD
+    if start > end:
+        st.error("Start date cannot be after end date")
+        return
+
+    # =========================================================
+    # DATA LOAD (UNCHANGED)
+    # =========================================================
     df = leads_to_df(start, end)
 
     if df.empty:
         st.info("No leads to analyze.")
         return
+
     # =========================================================
     # TIME RANGE SELECTION
     # =========================================================
@@ -3622,7 +3649,7 @@ def page_analytics():
         ],
         index=2
     )
-    
+
     custom_start = custom_end = None
     if range_key == "Custom":
         c1, c2 = st.columns(2)
@@ -3630,12 +3657,12 @@ def page_analytics():
             custom_start = st.date_input("Start Date")
         with c2:
             custom_end = st.date_input("End Date")
-    
+
     # =========================================================
     # 🧠 BUSINESS INTELLIGENCE ENGINE
     # =========================================================
     bi_allowed = has_access("analytics_intelligence")
-    
+
     if bi_allowed:
         intelligence = compute_business_intelligence(
             range_key,
@@ -3645,60 +3672,59 @@ def page_analytics():
     else:
         intelligence = {}
 
-
-
     # =========================================================
-    # 🧠 EXECUTIVE SUMMARY (CPA & ROI STYLE)
+    # 🧠 EXECUTIVE SUMMARY
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
-    
-    # --- Top KPI Row (CPA-style cards) ---
+
     k1, k2, k3, k4 = st.columns(4)
-    
+
     k1.metric(
         "Total Jobs",
         intelligence["volume"]["total_jobs"],
         f"{intelligence['volume']['trend']*100:.1f}%"
     )
-    
+
     k2.metric(
         "Total Revenue",
         f"${intelligence['revenue']['total_revenue']:,.0f}",
         f"{intelligence['revenue']['trend']*100:.1f}%"
     )
-    
+
     k3.metric(
         "Revenue / Job",
         f"${intelligence['efficiency']['revenue_per_job']:,.0f}",
         f"{intelligence['efficiency']['trend']*100:.1f}%"
     )
-    
+
     k4.metric(
         "Business Health",
         f"{intelligence.get('health_score', 0)} / 100"
     )
-    
+
     signals = intelligence.get("strategic_signals", [])
-    
+
     if signals:
         st.markdown("### 🚨 Strategic Signals")
         cols = st.columns(len(signals))
-    
+
         for col, sig in zip(cols, signals):
-            col.markdown(f"""
-            <div class="kpi-card">
-                <div class="kpi-label">{sig['icon']} {sig['label']}</div>
-                <div class="kpi-value cyan">{sig.get('short', 'Active')}</div>
-                <div class="kpi-caption">{sig['message']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-    
-        
+            col.markdown(
+                f"""
+                <div class="kpi-card">
+                    <div class="kpi-label">{sig['icon']} {sig['label']}</div>
+                    <div class="kpi-value cyan">{sig.get('short', 'Active')}</div>
+                    <div class="kpi-caption">{sig['message']}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
     # =========================================================
-    # 🧠 EXECUTIVE NARRATIVE (Clean, structured)
+    # 🧠 EXECUTIVE NARRATIVE
     # =========================================================
     st.markdown("### 🧠 Executive Interpretation")
-    
+
     narrative = intelligence.get("executive_narrative", {})
     for line in narrative.get("lines", []):
         confidence = line.get("confidence", 0)
@@ -3708,32 +3734,31 @@ def page_analytics():
             st.info(line["text"])
         else:
             st.warning(line["text"])
-    
 
-    
-        
     health = narrative.get("health_score", 0)
-    version = narrative.get("version", "Unknown")
-    
-    c1, c2 = st.columns(2)
-    
-    c1.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-label">Narrative Health</div>
-        <div class="kpi-value green">{health} / 100</div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-        
     risk = intelligence.get("business_risk_score", 0)
-    
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-label">⚠️ Business Risk Score</div>
-        <div class="kpi-value red">{risk} / 100</div>
-    </div>
-    """, unsafe_allow_html=True)
 
+    c1, c2 = st.columns(2)
+
+    c1.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">Narrative Health</div>
+            <div class="kpi-value green">{health} / 100</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    c2.markdown(
+        f"""
+        <div class="kpi-card">
+            <div class="kpi-label">⚠️ Business Risk Score</div>
+            <div class="kpi-value red">{risk} / 100</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     
     st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
@@ -6013,7 +6038,6 @@ with st.sidebar:
             "AI Recommendations",
             "Seasonal Trends",
             "Settings",
-            "Billing",
             "Exports",
         ],
         index=0
