@@ -6020,10 +6020,6 @@ st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
 with st.sidebar:
     st.header("🚀 ReCapture Pro")
 
-    user = get_current_user()
-
-    st.markdown(f"👤 **{user.full_name or user.email}**")
-    st.markdown("🛠️ **Admin (DEV MODE)**")
     st.markdown("---")
 
     page = st.radio(
