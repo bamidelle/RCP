@@ -6013,28 +6013,28 @@ if (
     #st.sidebar.markdown("All features unlocked")
 
 #st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
-
-    NAV_ICONS = {
-        "Overview": "🧭",
-        "Lead Capture": "🎯",
-        "Pipeline Board": "🔄",
-        "Analytics": "📊",
-        "CPA & ROI": "💰",
-        "Tasks": "✅",
-        "AI Recommendations": "🤖",
-        "Seasonal Trends": "🌦",
-        "Settings": "⚙️",
-        "Exports": "📤",
-    }
-
+# ----------------------
+# NAV ICONS
+# ----------------------
+NAV_ICONS = {
+    "Overview": "🧭",
+    "Lead Capture": "🎯",
+    "Pipeline Board": "🔄",
+    "Analytics": "📊",
+    "CPA & ROI": "💰",
+    "Tasks": "✅",
+    "AI Recommendations": "🤖",
+    "Seasonal Trends": "🌦",
+    "Settings": "⚙️",
+    "Exports": "📤",
+}
 
 
 # ----------------------
-# NAVIGATION (STABLE MODE) -sidebar menu
+# NAVIGATION (STABLE MODE) - SIDEBAR
 # ----------------------
 with st.sidebar:
     st.header("🚀 ReCapture Pro")
-
     st.markdown("---")
 
     pages = [
@@ -6049,17 +6049,15 @@ with st.sidebar:
         "Settings",
         "Exports",
     ]
-    
+
     page_label = st.radio(
         "Navigate",
         [f"{NAV_ICONS[p]}  {p}" for p in pages],
-        index=0
+        index=0,
     )
-    
-    # Extract page name (remove icon)
+
+    # Extract page name (strip emoji)
     page = page_label.split("  ", 1)[1]
-
-
 
 
 # ----------------------
@@ -6067,26 +6065,34 @@ with st.sidebar:
 # ----------------------
 if page == "Overview":
     page_overview()
+
 elif page == "Lead Capture":
     page_lead_capture()
+
 elif page == "Pipeline Board":
     page_pipeline_board()
+
 elif page == "Analytics":
     page_analytics()
+
 elif page == "CPA & ROI":
     page_cpa_roi()
+
 elif page == "Tasks":
     page_tasks()
+
 elif page == "AI Recommendations":
     page_ai_recommendations()
+
 elif page == "Seasonal Trends":
     page_seasonal_trends()
+
 elif page == "Settings":
     page_settings()
-elif page == "Billing":
-    page_billing()
+
 elif page == "Exports":
     page_exports()
+
 else:
     st.info("Page not implemented yet.")
 
