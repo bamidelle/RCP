@@ -6008,11 +6008,11 @@ if (
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
 
-if DEV_MODE:
-    st.sidebar.markdown("🛠️ **Developer Mode**")
-    st.sidebar.markdown("All features unlocked")
+#if DEV_MODE:
+    #st.sidebar.markdown("🛠️ **Developer Mode**")
+    #st.sidebar.markdown("All features unlocked")
 
-st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
+#st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
 
 # ----------------------
 # NAVIGATION (STABLE MODE) -sidebar menu
