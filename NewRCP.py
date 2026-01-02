@@ -5329,7 +5329,7 @@ def page_settings():
     st.markdown("## 💼 Admin Billing Controls")
 
     admin_users_df = get_users_df()
-    st.write("User columns:", list(users_df.columns))
+        st.write("User columns:", list(users_df.columns))
 
     for _, row in admin_users_df.iterrows():
         email = row.get("email") or row.get("username") or "Unknown User"
