@@ -6025,7 +6025,7 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         [
-            "Overview",
+            "🔴Overview",
             "Lead Capture",
             "Pipeline Board",
             "Analytics",
