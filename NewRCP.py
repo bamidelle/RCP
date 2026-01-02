@@ -1416,71 +1416,20 @@ If you did not request this, ignore this email.
 
 
 
-# ----------------------
-# FEATURE ACCESS CHECK
-# ----------------------
-
 def has_feature(user, feature_key):
-    """
-    Returns True if the user can access a feature.
-    Safe for DEV, Admin, missing plans, missing users.
-    """
-
-    # 🔓 DEV MODE
-    if globals().get("DEV_MODE") is True:
+    if PUBLIC_FREE_LAUNCH:
         return True
-
-    if not user:
-        return False
-
-    # 🔓 ADMIN ALWAYS HAS ACCESS
-    if getattr(user, "role", None) == "Admin":
-        return True
-
-    plan = getattr(user, "plan", None) or "trial"
-
-    PLAN_FEATURES = {
-        "trial": {
-            "ai_recommendations": False,
-            "seasonal_trends": False,
-            "exports": False,
-            "billing": False,
-            "settings": True,  # allow user mgmt even on trial
-        },
-        "starter": {
-            "ai_recommendations": True,
-            "seasonal_trends": True,
-            "exports": True,
-            "billing": True,
-            "settings": True,
-        },
-        "pro": {
-            "ai_recommendations": True,
-            "seasonal_trends": True,
-            "exports": True,
-            "billing": True,
-            "settings": True,
-        },
-        "enterprise": {
-            "ai_recommendations": True,
-            "seasonal_trends": True,
-            "exports": True,
-            "billing": True,
-            "settings": True,
-        },
-    }
-
-    return PLAN_FEATURES.get(plan, {}).get(feature_key, False)
+    return feature_key in PLAN_FEATURES.get(user.plan, [])
 
 # ----------------------
 # PLAN LIMIT ENFORCEMENT
 # ----------------------
-#ENFORCE PLAN WAS BLOCKED HERE
+#ENFORCE PLAN WAS REPROGRAMMED FOR FREEMIUM
 
-#def enforce_plan_limit(user, limit_key, current_value):
-    # ✅ DEV MODE BYPASS
-    #if DEV_MODE:
-        #return True
+def enforce_plan_limit(*args, **kwargs):
+    if PUBLIC_FREE_LAUNCH:
+        return True
+
 
     # ✅ Admin bypass
     #if user and user.role == "Admin":
@@ -4196,7 +4145,7 @@ def page_executive_intelligence():
         st.metric("Business Risk Score", f"{risk} / 100")
     else:
         st.metric("Business Risk Score", "🔒 Locked")
-        st.caption("Upgrade to unlock Business Intelligence")
+        st.caption("🎉 Early Access — All Features Unlocked Business Intelligence")
     
         
     # Revenue Leakage
@@ -5323,86 +5272,6 @@ def page_settings():
 
     st.markdown("---")
 
-    # ======================================================
-    # 💼 ADMIN BILLING CONTROLS
-    # ======================================================
-    st.markdown("## 💼 Admin Billing Controls")
-    
-    admin_users_df = get_users_df()
-    
-    # 🔍 Debug helper (safe)
-    st.write("User columns:", list(admin_users_df.columns))
-    
-    for _, row in admin_users_df.iterrows():
-        email = row.get("email") or row.get("username") or "Unknown User"
-        plan = row.get("plan", "unknown")
-    
-        with st.expander(f"💳 {email} ({plan})"):
-    
-            new_plan = st.selectbox(
-                "Plan",
-                ["starter", "pro", "enterprise"],
-                index=["starter", "pro", "enterprise"].index(row.get("plan", "starter")),
-                key=f"plan_{row['username']}_{row['created_at']}"
-
-            )
-    
-            new_status = st.selectbox(
-                "Status",
-                ["trial", "active", "expired", "canceled"],
-                index=["trial", "active", "expired", "canceled"].index(
-                    row.get("subscription_status", "trial")
-                ),
-                key=f"status_{row['id']}"
-            )
-    
-            active_flag = st.checkbox(
-                "Active",
-                value=bool(row.get("is_active", True)),
-                key=f"active_{row['id']}"
-            )
-    
-            if st.button("Save", key=f"save_{row['id']}"):
-                with SessionLocal() as s:
-                    u = s.query(User).get(row["id"])
-                    if u:
-                        u.plan = new_plan
-                        u.subscription_status = new_status
-                        u.is_active = active_flag
-    
-                        if new_status == "active":
-                            u.trial_ends_at = None
-    
-                        s.commit()
-    
-                st.success("Billing updated")
-                st.rerun()
-    
-    st.markdown("---")
-    
-    # ======================================================
-    # 💳 BILLING HISTORY (CURRENT USER)
-    # ======================================================
-    st.markdown("### 💳 Billing History")
-    
-    current_user = get_current_user()
-    
-    with SessionLocal() as s:
-        invoices = (
-            s.query(Invoice)
-            .filter(Invoice.user_id == current_user.id)
-            .order_by(Invoice.created_at.desc())
-            .all()
-        )
-    
-    if not invoices:
-        st.info("No billing records yet.")
-    else:
-        for inv in invoices:
-            st.write(
-                f"🧾 {inv.created_at.date()} — ${inv.amount} — "
-                f"{inv.status.upper()} — {inv.description}"
-            )
 
 
 def page_technician_mobile():
