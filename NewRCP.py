@@ -1983,33 +1983,48 @@ def get_current_plan():
     return user.plan
 
 # ----------------------
-# GET GOOGLE REVIEW FUNCTION
+# GET GOOGLE REVIEW SETTINGS
 # ----------------------
 def get_review_settings(org_id):
-with SessionLocal() as s:
-return s.query(ReviewSettings).filter_by(org_id=org_id).first()
+    with SessionLocal() as s:
+        return (
+            s.query(ReviewSettings)
+            .filter_by(org_id=org_id)
+            .first()
+        )
 
+
+# ----------------------
+# SAVE / UPDATE REVIEW SETTINGS
+# ----------------------
 def save_review_settings(org_id, data):
-with SessionLocal() as s:
-settings = s.query(ReviewSettings).filter_by(org_id=org_id).first()
-if not settings:
-settings = ReviewSettings(org_id=org_id)
-s.add(settings)
+    with SessionLocal() as s:
+        settings = (
+            s.query(ReviewSettings)
+            .filter_by(org_id=org_id)
+            .first()
+        )
+
+        if not settings:
+            settings = ReviewSettings(org_id=org_id)
+            s.add(settings)
+
+        for key, value in data.items():
+            setattr(settings, key, value)
+
+        s.commit()
 
 
-for k, v in data.items():
-setattr(settings, k, v)
-
-
-s.commit()
-
-
+# ----------------------
+# DELETE REVIEW EMAIL TEMPLATE
+# ----------------------
 def delete_email_template(template_id):
-with SessionLocal() as s:
-tpl = s.query(ReviewEmailTemplate).get(template_id)
-if tpl:
-s.delete(tpl)
-s.commit()
+    with SessionLocal() as s:
+        template = s.query(ReviewEmailTemplate).get(template_id)
+
+        if template:
+            s.delete(template)
+            s.commit()
 
 
 
