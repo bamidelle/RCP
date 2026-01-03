@@ -652,7 +652,7 @@ class CompetitorAlert(Base):
 # ---------- END BLOCK A2 ----------
 
 class ReviewSettings(Base):
-__tablename__ = "review_settings"
+    __tablename__ = "review_settings"
 
 
 id = Column(Integer, primary_key=True)
@@ -667,7 +667,7 @@ updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ReviewEmailTemplate(Base):
-__tablename__ = "review_email_templates"
+    __tablename__ = "review_email_templates"
 
 
 id = Column(Integer, primary_key=True)
