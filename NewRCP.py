@@ -2754,26 +2754,27 @@ def activate_user_from_token(token: str) -> bool:
 
 
 def get_completed_job_contacts(user):
+    """
+    Returns contacts eligible for Google review requests.
+    Uses existing lead fields safely (no status dependency).
+    """
     with SessionLocal() as s:
-        leads = s.query(Lead).filter(
-            or_(
-                Lead.stage.in_(["Won", "Awarded", "Completed"]),
-                Lead.awarded_date.isnot(None),
-                Lead.converted == True,
-                Lead.inspection_completed == True,
-            )
-        ).all()
+        leads = s.query(Lead).all()
 
     contacts = []
     for l in leads:
-        if l.contact_email:
-            contacts.append({
-                "name": l.contact_name or "Customer",
-                "email": l.contact_email,
-                "job": l.damage_type or "Completed Job",
-            })
+        email = getattr(l, "contact_email", None)
+        if not email:
+            continue
+
+        contacts.append({
+            "name": getattr(l, "contact_name", "Customer"),
+            "email": email,
+            "job": getattr(l, "job_type", "Completed Job")
+        })
 
     return contacts
+
 
 
 
