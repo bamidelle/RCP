@@ -2752,6 +2752,27 @@ def activate_user_from_token(token: str) -> bool:
         return True
 
 
+def get_completed_job_contacts(user):
+    """
+    Temporary safe stub.
+    Returns contacts from completed / won jobs.
+    """
+
+    # If you already have a leads table with status
+    with SessionLocal() as s:
+        leads = s.query(Lead).filter(
+            Lead.status.in_(["completed", "won", "awarded"])
+        ).all()
+
+    return [
+        {
+            "name": l.contact_name,
+            "email": l.contact_email,
+            "job": l.job_type or "Completed Job"
+        }
+        for l in leads
+        if l.contact_email
+    ]
 
 
 def get_users_df():
