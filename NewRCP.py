@@ -654,16 +654,18 @@ class CompetitorAlert(Base):
 class ReviewSettings(Base):
     __tablename__ = "review_settings"
 
+    id = Column(Integer, primary_key=True)  # ✅ REQUIRED
+    user_id = Column(Integer, nullable=False)
 
-id = Column(Integer, primary_key=True)
-org_id = Column(Integer, index=True)
-google_review_url = Column(String)
-business_name = Column(String)
-business_email = Column(String)
-business_phone = Column(String)
-business_address = Column(String)
-email_footer = Column(Text)
-updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    business_name = Column(String, nullable=True)
+    gmb_review_link = Column(String, nullable=True)
+
+    email_subject = Column(String, nullable=True)
+    email_body = Column(Text, nullable=True)
+    email_footer = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 
 class ReviewEmailTemplate(Base):
