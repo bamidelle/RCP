@@ -671,15 +671,15 @@ class ReviewSettings(Base):
 class ReviewEmailTemplate(Base):
     __tablename__ = "review_email_templates"
 
+    id = Column(Integer, primary_key=True)  # ✅ REQUIRED
+    user_id = Column(Integer, nullable=False)
 
-id = Column(Integer, primary_key=True)
-org_id = Column(Integer, index=True)
-name = Column(String)
-subject = Column(String)
-body = Column(Text)
-is_default = Column(Boolean, default=False)
-created_at = Column(DateTime, default=datetime.utcnow)
-updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    subject = Column(String, nullable=True)
+    body = Column(Text, nullable=True)
+    footer = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 # ---------- END BLOCK A ----------
 
