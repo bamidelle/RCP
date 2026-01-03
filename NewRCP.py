@@ -6166,10 +6166,13 @@ def page_google_reviews():
     st.subheader("📨 Send Review Request")
 
     if st.button("Send Google Review Request"):
-        send_google_review_request(
-            user=get_current_user(),
-            contact=contact
-        )
+      send_google_review_request(
+        to_email=contact.email,
+        customer_name=contact.name,
+        review_link=review_link,
+        job_name=getattr(contact, "job_title", "")
+    )
+
         st.success("Review request sent")
 
 def send_google_review_request(
