@@ -36,7 +36,7 @@ import jwt
 from datetime import datetime, timedelta
 
 import secrets
-
+import resend
 import smtplib
 from email.message import EmailMessage
 import smtplib
@@ -2519,8 +2519,7 @@ def send_email(to_email, subject, body):
 
 
 
-import resend
-import os
+
 
 resend.api_key = os.getenv("RESEND_API_KEY")
 
@@ -6173,6 +6172,38 @@ def page_google_reviews():
         )
         st.success("Review request sent")
 
+def send_google_review_request(
+    to_email: str,
+    customer_name: str,
+    review_link: str,
+    job_name: str = ""
+):
+    subject = "We’d love your Google review ⭐⭐⭐⭐"
+
+    job_line = f" regarding your recent {job_name}" if job_name else ""
+
+    body = f"""
+Hi {customer_name},
+
+Thank you for choosing us{job_line}.
+
+If you have a moment, we’d truly appreciate a quick Google review.
+Your feedback helps us improve and helps others find our services.
+
+👉 Leave a review here:
+{review_link}
+
+Thank you again for your trust.
+
+Best regards,  
+The Team
+"""
+
+    send_email(
+        to_email=to_email,
+        subject=subject,
+        body=body
+    )
 
 # ---------- END BLOCK E ----------
 # ----------------------
