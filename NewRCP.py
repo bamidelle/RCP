@@ -651,7 +651,33 @@ class CompetitorAlert(Base):
 
 # ---------- END BLOCK A2 ----------
 
+class ReviewSettings(Base):
+__tablename__ = "review_settings"
 
+
+id = Column(Integer, primary_key=True)
+org_id = Column(Integer, index=True)
+google_review_url = Column(String)
+business_name = Column(String)
+business_email = Column(String)
+business_phone = Column(String)
+business_address = Column(String)
+email_footer = Column(Text)
+updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ReviewEmailTemplate(Base):
+__tablename__ = "review_email_templates"
+
+
+id = Column(Integer, primary_key=True)
+org_id = Column(Integer, index=True)
+name = Column(String)
+subject = Column(String)
+body = Column(Text)
+is_default = Column(Boolean, default=False)
+created_at = Column(DateTime, default=datetime.utcnow)
+updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 # ---------- END BLOCK A ----------
 
@@ -1097,6 +1123,7 @@ def generate_competitor_alerts():
 # ----------------------
 # HELPERS: DB ops
 # ----------------------
+
 def get_session():
     return SessionLocal()
 
@@ -1477,6 +1504,87 @@ class ManualBillingProvider:
 BILLING_PROVIDER = ManualBillingProvider()
 
 
+import requests
+
+def send_email(to_email, subject, html_body):
+    url = "https://api.resend.com/emails"
+
+    headers = {
+        "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "from": st.secrets.get("EMAIL_FROM", "ReCapture Pro <onboarding@resend.dev>"),
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body
+    }
+
+    response = requests.post(url, json=payload, headers=headers)
+
+    return response.status_code, response.text
+
+def build_review_email(
+    customer_name,
+    business_name,
+    job_type,
+    review_link,
+    custom_message,
+    footer
+):
+    return f"""
+    <p>Hi {customer_name},</p>
+
+    <p>{custom_message}</p>
+
+    <p>
+        If you have a moment, please leave us a review here:<br>
+        👉 <a href="{review_link}">Leave a Google Review</a>
+    </p>
+
+    <p>
+        Job completed: <strong>{job_type}</strong>
+    </p>
+
+    <br>
+    <p>{footer}</p>
+    <hr>
+    <small>{business_name}</small>
+    """
+
+
+def send_review_request_email(
+    contact,
+    template,
+    review_link,
+    business_name
+):
+    html = build_review_email(
+        customer_name=contact["name"],
+        business_name=business_name,
+        job_type=contact.get("job_type", "Recent service"),
+        review_link=review_link,
+        custom_message=template["body"],
+        footer=template["footer"]
+    )
+
+    status, response = send_email(
+        to_email=contact["email"],
+        subject=template["subject"],
+        html_body=html
+    )
+
+    return status == 200
+
+def log_review_request(user_id, email, status):
+    with SessionLocal() as s:
+        s.add(ReviewRequestLog(
+            user_id=user_id,
+            recipient=email,
+            status=status
+        ))
+        s.commit()
 
 
 def get_total_leads_for_account(user):
@@ -1874,8 +1982,34 @@ def get_current_plan():
 
     return user.plan
 
+# ----------------------
+# GET GOOGLE REVIEW FUNCTION
+# ----------------------
+def get_review_settings(org_id):
+with SessionLocal() as s:
+return s.query(ReviewSettings).filter_by(org_id=org_id).first()
+
+def save_review_settings(org_id, data):
+with SessionLocal() as s:
+settings = s.query(ReviewSettings).filter_by(org_id=org_id).first()
+if not settings:
+settings = ReviewSettings(org_id=org_id)
+s.add(settings)
 
 
+for k, v in data.items():
+setattr(settings, k, v)
+
+
+s.commit()
+
+
+def delete_email_template(template_id):
+with SessionLocal() as s:
+tpl = s.query(ReviewEmailTemplate).get(template_id)
+if tpl:
+s.delete(tpl)
+s.commit()
 
 
 
@@ -5940,6 +6074,63 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 3. Increase local landing page coverage
 """, unsafe_allow_html=True)
 
+def page_google_reviews():
+    st.header("Google Review Requests ⭐⭐⭐⭐⭐")
+
+    st.caption(
+        "Request Google reviews from completed jobs to boost reputation and local SEO."
+    )
+
+    # ==============================
+    # Phase A – Save GMB Review Link
+    # ==============================
+    st.subheader("🔗 Google Review Link")
+
+    review_link = st.text_input(
+        "Paste your Google Review link",
+        placeholder="https://g.page/your-business/review"
+    )
+
+    if st.button("💾 Save Review Link"):
+        if not review_link:
+            st.error("Review link is required")
+        else:
+            save_review_link_for_user(get_current_user(), review_link)
+            st.success("Review link saved")
+
+    st.divider()
+
+    # ==============================
+    # Phase B – Select Contact
+    # ==============================
+    st.subheader("👤 Select Customer")
+
+    contacts = get_completed_job_contacts(get_current_user())
+
+    if not contacts:
+        st.info("No completed job contacts yet.")
+        return
+
+    contact = st.selectbox(
+        "Choose a customer",
+        contacts,
+        format_func=lambda c: f"{c.name} ({c.email})"
+    )
+
+    st.divider()
+
+    # ==============================
+    # Phase C – SEND REQUEST (Option 6 goes here)
+    # ==============================
+    st.subheader("📨 Send Review Request")
+
+    if st.button("Send Google Review Request"):
+        send_google_review_request(
+            user=get_current_user(),
+            contact=contact
+        )
+        st.success("Review request sent")
+
 
 # ---------- END BLOCK E ----------
 # ----------------------
@@ -6026,6 +6217,7 @@ NAV_ICONS = {
     "AI Recommendations": "🤖",
     "Seasonal Trends": "🌦",
     "Settings": "⚙️",
+    "Request Google Reviews": "⭐",
     "Exports": "📤",
 }
 
@@ -6047,6 +6239,7 @@ with st.sidebar:
         "AI Recommendations",
         "Seasonal Trends",
         "Settings",
+        "Request Google Reviews",
         "Exports",
     ]
 
@@ -6089,6 +6282,9 @@ elif page == "Seasonal Trends":
 
 elif page == "Settings":
     page_settings()
+
+elif page == "Request Google Reviews":
+    page_google_reviews()
 
 elif page == "Exports":
     page_exports()
