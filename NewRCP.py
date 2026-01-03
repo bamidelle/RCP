@@ -22,6 +22,7 @@ import plotly.express as px
 from datetime import datetime
 import streamlit as st
 import joblib
+from sqlalchemy import or_
 
 import secrets
 import uuid
@@ -2753,26 +2754,27 @@ def activate_user_from_token(token: str) -> bool:
 
 
 def get_completed_job_contacts(user):
-    """
-    Temporary safe stub.
-    Returns contacts from completed / won jobs.
-    """
-
-    # If you already have a leads table with status
     with SessionLocal() as s:
         leads = s.query(Lead).filter(
-            Lead.status.in_(["completed", "won", "awarded"])
+            or_(
+                Lead.stage.in_(["Won", "Awarded", "Completed"]),
+                Lead.awarded_date.isnot(None),
+                Lead.converted == True,
+                Lead.inspection_completed == True,
+            )
         ).all()
 
-    return [
-        {
-            "name": l.contact_name,
-            "email": l.contact_email,
-            "job": l.job_type or "Completed Job"
-        }
-        for l in leads
-        if l.contact_email
-    ]
+    contacts = []
+    for l in leads:
+        if l.contact_email:
+            contacts.append({
+                "name": l.contact_name or "Customer",
+                "email": l.contact_email,
+                "job": l.damage_type or "Completed Job",
+            })
+
+    return contacts
+
 
 
 def get_users_df():
