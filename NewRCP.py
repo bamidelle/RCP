@@ -6155,8 +6155,9 @@ def page_google_reviews():
     contact = st.selectbox(
         "Choose a customer",
         contacts,
-        format_func=lambda c: f"{c.name} ({c.email})"
+        format_func=lambda c: f"{c['name']} ({c['email']})"
     )
+
 
     st.divider()
 
