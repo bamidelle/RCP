@@ -3506,32 +3506,76 @@ lead_count = get_total_leads_for_account(user)
 
 def page_lead_capture():
     require_role_access("lead_capture")
+
     st.markdown("<div class='header'>📇 Lead Capture</div>", unsafe_allow_html=True)
-    st.markdown("<em>Create or upsert a lead. All inputs are saved for reporting and CPA calculations.</em>", unsafe_allow_html=True)
+    st.markdown(
+        "<em>Create or upsert a lead. All inputs are saved for reporting and CPA calculations.</em>",
+        unsafe_allow_html=True
+    )
+
+    # =====================================================
+    # CREATE / UPSERT LEAD FORM
+    # =====================================================
     with st.form("lead_capture_form", clear_on_submit=True):
-        lead_id = st.text_input("Lead ID", value=f"L{int(datetime.utcnow().timestamp())}")
-        source = st.selectbox("Lead Source", ["Google Ads","Organic Search","Referral","Phone","Insurance","Facebook","Instagram","LinkedIn","Other"])
-        source_details = st.text_input("Source details (UTM / notes)", placeholder="utm_source=google...")
+        lead_id = st.text_input(
+            "Lead ID",
+            value=f"L{int(datetime.utcnow().timestamp())}"
+        )
+        source = st.selectbox(
+            "Lead Source",
+            [
+                "Google Ads",
+                "Organic Search",
+                "Referral",
+                "Phone",
+                "Insurance",
+                "Facebook",
+                "Instagram",
+                "LinkedIn",
+                "Other"
+            ]
+        )
+        source_details = st.text_input(
+            "Source details (UTM / notes)",
+            placeholder="utm_source=google..."
+        )
         contact_name = st.text_input("Contact name")
         contact_phone = st.text_input("Contact phone")
         contact_email = st.text_input("Contact email")
         property_address = st.text_input("Property address")
+
         damage_type = st.text_input(
             "Job / Service Type",
-            placeholder="e.g. Water Damage, HVAC Repair, Security Patrol, IT Support"
+            placeholder="e.g. Water Damage, HVAC Repair, Security Patrol"
         )
 
         assigned_to = st.text_input("Assigned to (username)")
-        estimated_value = st.number_input("Estimated value (USD)", min_value=0.0, value=0.0, step=100.0)
-        ad_cost = st.number_input("Cost to acquire lead (USD)", min_value=0.0, value=0.0, step=1.0)
-        sla_hours = st.number_input("SLA hours (first response)", min_value=1, value=DEFAULT_SLA_HOURS, step=1)
+        estimated_value = st.number_input(
+            "Estimated value (USD)",
+            min_value=0.0,
+            value=0.0,
+            step=100.0
+        )
+        ad_cost = st.number_input(
+            "Cost to acquire lead (USD)",
+            min_value=0.0,
+            value=0.0,
+            step=1.0
+        )
+        sla_hours = st.number_input(
+            "SLA hours (first response)",
+            min_value=1,
+            value=DEFAULT_SLA_HOURS,
+            step=1
+        )
         notes = st.text_area("Notes")
+
         submitted = st.form_submit_button("Create / Update Lead")
-        
+
         if submitted:
             try:
                 # ==============================
-                # PLAN LIMIT ENFORCEMENT (PASTE HERE)
+                # PLAN LIMIT ENFORCEMENT
                 # ==============================
                 plan = get_current_plan()
                 limit = PLANS.get(plan, {}).get("max_leads_per_month")
@@ -3544,27 +3588,30 @@ def page_lead_capture():
                             f"({current_count}/{limit}). Upgrade to add more leads."
                         )
                         return
-                # ==============================
-                # END PLAN CHECK
-                # ==============================
 
-                upsert_lead_record({
-                    "lead_id": lead_id.strip(),
-                    "created_at": datetime.utcnow(),
-                    "source": source,
-                    "source_details": source_details,
-                    "contact_name": contact_name,
-                    "contact_phone": contact_phone,
-                    "contact_email": contact_email,
-                    "property_address": property_address,
-                    "damage_type": damage_type,
-                    "assigned_to": assigned_to or None,
-                    "estimated_value": float(estimated_value or 0.0),
-                    "ad_cost": float(ad_cost or 0.0),
-                    "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
-                    "sla_entered_at": datetime.utcnow(),
-                    "notes": notes
-                }, actor="admin")
+                # ==============================
+                # UPSERT LEAD
+                # ==============================
+                upsert_lead_record(
+                    {
+                        "lead_id": lead_id.strip(),
+                        "created_at": datetime.utcnow(),
+                        "source": source,
+                        "source_details": source_details,
+                        "contact_name": contact_name,
+                        "contact_phone": contact_phone,
+                        "contact_email": contact_email,
+                        "property_address": property_address,
+                        "damage_type": damage_type,
+                        "assigned_to": assigned_to or None,
+                        "estimated_value": float(estimated_value or 0.0),
+                        "ad_cost": float(ad_cost or 0.0),
+                        "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
+                        "sla_entered_at": datetime.utcnow(),
+                        "notes": notes
+                    },
+                    actor="admin"
+                )
 
                 st.success(f"Lead {lead_id} saved.")
                 st.rerun()
@@ -3572,6 +3619,67 @@ def page_lead_capture():
             except Exception as e:
                 st.error("Failed to save lead: " + str(e))
                 st.write(traceback.format_exc())
+
+    # =====================================================
+    # SAVED LEADS LIST  ✅ (OUTSIDE FORM — CORRECT)
+    # =====================================================
+    st.markdown("---")
+    st.subheader("📄 Saved Leads")
+
+    df = get_leads_df()
+
+    if df.empty:
+        st.info("No leads created yet.")
+        return
+
+    st.dataframe(
+        df,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # =====================================================
+    # EDIT LEAD
+    # =====================================================
+    st.subheader("✏️ Edit Lead")
+
+    lead_ids = df["lead_id"].tolist()
+
+    selected_lead_id = st.selectbox("Select Lead ID", lead_ids)
+
+    lead_row = df[df["lead_id"] == selected_lead_id].iloc[0]
+
+    with st.form("edit_lead_form"):
+        stage = st.selectbox(
+            "Stage",
+            ["new", "contacted", "won", "lost"],
+            index=["new", "contacted", "won", "lost"].index(lead_row["stage"])
+        )
+
+        updated_estimated_value = st.number_input(
+            "Estimated Value",
+            value=float(lead_row["estimated_value"])
+        )
+
+        updated_assigned_to = st.text_input(
+            "Assigned To",
+            value=lead_row["assigned_to"] or ""
+        )
+
+        update = st.form_submit_button("Update Lead")
+
+        if update:
+            upsert_lead_record(
+                {
+                    "lead_id": selected_lead_id,
+                    "stage": stage,
+                    "estimated_value": updated_estimated_value,
+                    "assigned_to": updated_assigned_to or None
+                },
+                actor="admin"
+            )
+            st.success("Lead updated successfully")
+            st.rerun()
 
 
 # Pipeline Board 
