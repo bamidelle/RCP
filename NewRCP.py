@@ -6114,6 +6114,27 @@ The local restoration market is currently under **{gap['pressure']} competitive 
 3. Increase local landing page coverage
 """, unsafe_allow_html=True)
 
+def save_review_link_for_user(user, review_link):
+    if not user or not review_link:
+        return
+
+    with SessionLocal() as s:
+        existing = s.query(ReviewSettings).filter(
+            ReviewSettings.user_id == user.id
+        ).first()
+
+        if existing:
+            existing.review_link = review_link
+        else:
+            settings = ReviewSettings(
+                user_id=user.id,
+                review_link=review_link
+            )
+            s.add(settings)
+
+        s.commit()
+
+
 def page_google_reviews():
     st.header("Google Review Requests ⭐⭐⭐⭐⭐")
 
