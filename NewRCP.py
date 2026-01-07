@@ -352,7 +352,7 @@ PLAN_LIMITS = {
 # CONFIG
 # ----------------------
 APP_TITLE = "ReCapture Pro"
-#DB_FILE = "titan_backend.db"   # stored in app working directory
+DB_FILE = "titan_backend.db"   # stored in app working directory
 MODEL_FILE = "titan_model.joblib"
 PIPELINE_STAGES = [
     "New", "Contacted", "Inspection Scheduled", "Inspection Completed",
@@ -381,7 +381,7 @@ STRIPE_PLANS = {
 # DB SETUP
 # ----------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-#DB_PATH = os.path.join(BASE_DIR, DB_FILE)
+DB_PATH = os.path.join(BASE_DIR, DB_FILE)
 ENGINE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(
