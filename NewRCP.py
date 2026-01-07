@@ -352,7 +352,7 @@ PLAN_LIMITS = {
 # CONFIG
 # ----------------------
 APP_TITLE = "ReCapture Pro"
-DB_FILE = "titan_backend.db"   # stored in app working directory
+#DB_FILE = "titan_backend.db"   # stored in app working directory
 MODEL_FILE = "titan_model.joblib"
 PIPELINE_STAGES = [
     "New", "Contacted", "Inspection Scheduled", "Inspection Completed",
@@ -655,17 +655,11 @@ class CompetitorAlert(Base):
 class ReviewSettings(Base):
     __tablename__ = "review_settings"
 
-    id = Column(Integer, primary_key=True)  # ✅ REQUIRED
-    user_id = Column(Integer, nullable=False)
-
-    business_name = Column(String, nullable=True)
-    gmb_review_link = Column(String, nullable=True)
-
-    email_subject = Column(String, nullable=True)
-    email_body = Column(Text, nullable=True)
-    email_footer = Column(Text, nullable=True)
-
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    review_link = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
 
 
 
