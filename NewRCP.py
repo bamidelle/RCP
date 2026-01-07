@@ -3653,7 +3653,7 @@ def page_lead_capture():
         stage = st.selectbox(
             "Stage",
             ["new", "contacted", "won", "lost"],
-            index=["new", "contacted", "won", "lost"].index(lead_row["stage"])
+            STAGES = ["new", "contacted", "won", "lost"]  current_stage = lead_row.get("stage") or "new"  if current_stage not in STAGES:     current_stage = "new"  index = STAGES.index(current_stage)
         )
 
         updated_estimated_value = st.number_input(
