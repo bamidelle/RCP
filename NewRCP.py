@@ -4228,7 +4228,7 @@ def page_analytics():
     st.markdown("---")
     # SLA Overdue time series (last 30 days)
     st.subheader("SLA Overdue (last 30 days)")
-    st.markdown("<em>This shows when a lead was not contacted within the agreed Service Level</em>", unsafe_allow_html=True)
+    st.markdown("<em>This shows the Period when a lead was not contacted within the agreed Service Level</em>", unsafe_allow_html=True)
     today = datetime.utcnow().date()
     days = [today - timedelta(days=i) for i in range(29, -1, -1)]
     ts = []
