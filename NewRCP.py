@@ -3295,85 +3295,85 @@ def page_overview():
 
 
         import plotly.graph_objects as go
-    
-    st.markdown("---")
-    st.markdown("### 🚦 Lead Pipeline Stages")
-    st.markdown(
-        "<em>Distribution of leads across stages. Bars are live and color-coded.</em>",
-        unsafe_allow_html=True
-    )
-    
-    # ==============================
-    # STAGE CONFIGURATION
-    # ==============================
-    PIPELINE_STAGES = [
-        "New",
-        "Contacted",
-        "Inspection Scheduled",
-        "Inspection",
-        "Estimate Sent",
-        "Won",
-        "Lost"
-    ]
-    
-    STAGE_COLORS = {
-        "New": "#ff3b3b",
-        "Contacted": "#ff8c1a",
-        "Inspection Scheduled": "#ffd633",
-        "Inspection": "#b3ff66",
-        "Inspection": "#66ffcc",
-        "Estimate Sent": "#00e6e6",
-        "Won": "#3399ff",
-        "Lost": "#9933ff"
-    }
-    
-    # ==============================
-    # SAFETY CHECK
-    # ==============================
-    if df.empty or "stage" not in df.columns:
-        st.info("No leads yet. Create one in Lead Capture.")
-        st.stop()
-    
-    # Normalize stage
-    df["stage"] = df["stage"].fillna("New")
-    df["stage"] = df["stage"].apply(lambda x: x if x in PIPELINE_STAGES else "New")
-    
-    # ==============================
-    # COUNT LEADS PER STAGE
-    # ==============================
-    stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
-    total_leads = stage_counts.sum()
-    
-    # ==============================
-    # CREATE HORIZONTAL BARS
-    # ==============================
-    fig = go.Figure()
-    
-    for stage in PIPELINE_STAGES:
-        count = stage_counts[stage]
-        pct = (count / total_leads * 100) if total_leads > 0 else 0
-        fig.add_trace(go.Bar(
-            y=[stage],
-            x=[pct],
-            orientation='h',
-            text=f"{count} ({pct:.0f}%)",
-            textposition='inside',
-            marker_color=STAGE_COLORS.get(stage, "#888888"),
-            hovertemplate=f"{stage}: {count} leads (%{pct:.0f})<extra></extra>"
-        ))
-    
-    fig.update_layout(
-        barmode='stack',
-        xaxis=dict(range=[0, 100], showticklabels=False, showgrid=False, zeroline=False),
-        yaxis=dict(autorange="reversed", showgrid=False),
-        plot_bgcolor="#0b0f1a",
-        paper_bgcolor="#0b0f1a",
-        font=dict(color="white"),
-        height=350,
-        margin=dict(t=20, b=20, l=20, r=20)
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
+        
+        st.markdown("---")
+        st.markdown("### 🚦 Lead Pipeline Stages")
+        st.markdown(
+            "<em>Distribution of leads across stages. Bars are live and color-coded.</em>",
+            unsafe_allow_html=True
+        )
+        
+        # ==============================
+        # STAGE CONFIGURATION
+        # ==============================
+        PIPELINE_STAGES = [
+            "New",
+            "Contacted",
+            "Inspection Scheduled",
+            "Inspection",
+            "Estimate Sent",
+            "Won",
+            "Lost"
+        ]
+        
+        STAGE_COLORS = {
+            "New": "#ff3b3b",
+            "Contacted": "#ff8c1a",
+            "Inspection Scheduled": "#ffd633",
+            "Inspection": "#b3ff66",
+            "Inspection": "#66ffcc",
+            "Estimate Sent": "#00e6e6",
+            "Won": "#3399ff",
+            "Lost": "#9933ff"
+        }
+        
+        # ==============================
+        # SAFETY CHECK
+        # ==============================
+        if df.empty or "stage" not in df.columns:
+            st.info("No leads yet. Create one in Lead Capture.")
+            st.stop()
+        
+        # Normalize stage
+        df["stage"] = df["stage"].fillna("New")
+        df["stage"] = df["stage"].apply(lambda x: x if x in PIPELINE_STAGES else "New")
+        
+        # ==============================
+        # COUNT LEADS PER STAGE
+        # ==============================
+        stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
+        total_leads = stage_counts.sum()
+        
+        # ==============================
+        # CREATE HORIZONTAL BARS
+        # ==============================
+        fig = go.Figure()
+        
+        for stage in PIPELINE_STAGES:
+            count = stage_counts[stage]
+            pct = (count / total_leads * 100) if total_leads > 0 else 0
+            fig.add_trace(go.Bar(
+                y=[stage],
+                x=[pct],
+                orientation='h',
+                text=f"{count} ({pct:.0f}%)",
+                textposition='inside',
+                marker_color=STAGE_COLORS.get(stage, "#888888"),
+                hovertemplate=f"{stage}: {count} leads (%{pct:.0f})<extra></extra>"
+            ))
+        
+        fig.update_layout(
+            barmode='stack',
+            xaxis=dict(range=[0, 100], showticklabels=False, showgrid=False, zeroline=False),
+            yaxis=dict(autorange="reversed", showgrid=False),
+            plot_bgcolor="#0b0f1a",
+            paper_bgcolor="#0b0f1a",
+            font=dict(color="white"),
+            height=350,
+            margin=dict(t=20, b=20, l=20, r=20)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 
 
         st.markdown("---")
