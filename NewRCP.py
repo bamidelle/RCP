@@ -3383,8 +3383,18 @@ def page_overview():
         on_select="rerun"
     )
 
-    if event and event.selection:
-        st.session_state.selected_stage = event.selection["points"][0]["customdata"]
+    if (
+        event
+        and isinstance(event, dict)
+        and "selection" in event
+        and event["selection"]
+        and "points" in event["selection"]
+        and len(event["selection"]["points"]) > 0
+    ):
+        st.session_state.selected_stage = (
+            event["selection"]["points"][0].get("customdata")
+        )
+
 
     # =====================================================
     # FILTERED LEADS TABLE
