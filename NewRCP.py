@@ -3217,11 +3217,22 @@ def alerts_ui():
 
 def page_overview():
     import plotly.express as px
-    st.markdown("<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>", unsafe_allow_html=True)
-    st.markdown("<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>", unsafe_allow_html=True)
+    import plotly.graph_objects as go
+    import pandas as pd
+    import streamlit as st
 
+    st.markdown(
+        "<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        "<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>",
+        unsafe_allow_html=True
+    )
 
-    # Call alerts_ui() like your design; support both signatures
+    # ==============================
+    # ALERTS
+    # ==============================
     try:
         alerts_ui()
     except TypeError:
@@ -3230,8 +3241,9 @@ def page_overview():
         except Exception:
             pass
 
-
-    # Prefer leads_df if present, otherwise fall back to leads_to_df()
+    # ==============================
+    # LOAD LEADS DATA
+    # ==============================
     try:
         if 'leads_df' in globals() and isinstance(leads_df, pd.DataFrame):
             df = leads_df.copy()
@@ -3240,32 +3252,34 @@ def page_overview():
     except Exception:
         df = leads_to_df()
 
-
     if not isinstance(df, pd.DataFrame):
         df = pd.DataFrame()
 
-
+    # ==============================
+    # KPI METRICS
+    # ==============================
     total_leads = len(df)
-    qualified_leads = int(df[df["qualified"] == True].shape[0]) if not df.empty else 0
-    sla_success_count = int(df[df["contacted"] == True].shape[0]) if not df.empty else 0
-    awarded_count = int(df[df["stage"] == "Won"].shape[0]) if not df.empty else 0
-    lost_count = int(df[df["stage"] == "Lost"].shape[0]) if not df.empty else 0
+    qualified_leads = int(df[df.get("qualified") == True].shape[0]) if not df.empty else 0
+    sla_success_count = int(df[df.get("contacted") == True].shape[0]) if not df.empty else 0
+    awarded_count = int(df[df.get("stage") == "Won"].shape[0]) if not df.empty else 0
+    lost_count = int(df[df.get("stage") == "Lost"].shape[0]) if not df.empty else 0
     closed = awarded_count + lost_count
     conversion_rate = (awarded_count / closed * 100) if closed else 0.0
-    inspection_count = int(df[df["inspection_scheduled"] == True].shape[0]) if not df.empty else 0
+    inspection_count = int(df[df.get("inspection_scheduled") == True].shape[0]) if not df.empty else 0
     inspection_pct = (inspection_count / qualified_leads * 100) if qualified_leads else 0.0
-    estimate_sent_count = int(df[df["estimate_submitted"] == True].shape[0]) if not df.empty else 0
+    estimate_sent_count = int(df[df.get("estimate_submitted") == True].shape[0]) if not df.empty else 0
     pipeline_job_value = float(df["estimated_value"].sum()) if not df.empty else 0.0
     active_leads = total_leads - (awarded_count + lost_count)
     sla_success_pct = (sla_success_count / total_leads * 100) if total_leads else 0.0
     qualification_pct = (qualified_leads / total_leads * 100) if total_leads else 0.0
 
-
     try:
         KPI_COLORS
     except Exception:
-        KPI_COLORS = ["#0ea5e9","#34d399","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#10b981"]
-
+        KPI_COLORS = [
+            "#0ea5e9", "#34d399", "#f59e0b",
+            "#ef4444", "#8b5cf6", "#06b6d4", "#10b981"
+        ]
 
     KPI_ITEMS = [
         ("Active Leads", f"{active_leads}", KPI_COLORS[0], "Leads currently in pipeline"),
@@ -3274,54 +3288,126 @@ def page_overview():
         ("Conversion Rate", f"{conversion_rate:.1f}%", KPI_COLORS[3], "Won / Closed"),
         ("Inspections Booked", f"{inspection_pct:.1f}%", KPI_COLORS[4], "Qualified → Scheduled"),
         ("Estimates Sent", f"{estimate_sent_count}", KPI_COLORS[5], "Estimates submitted"),
-        ("Pipeline Job Value", f"${pipeline_job_value:,.0f}", KPI_COLORS[6], "Total pipeline job value")
+        ("Pipeline Job Value", f"${pipeline_job_value:,.0f}", KPI_COLORS[6], "Total pipeline job value"),
     ]
 
-
-    # render 2 rows: first 4 then next 3
     r1 = st.columns(4)
     r2 = st.columns(3)
     cols = r1 + r2
+
     for col, (title, value, color, note) in zip(cols, KPI_ITEMS):
         pct = min(100, max(10, (abs(hash(title)) % 80) + 20))
         col.markdown(f"""
             <div class='kpi-card'>
               <div class='kpi-title'>{title}</div>
               <div class='kpi-number' style='color:{color};'>{value}</div>
-              <div class='progress-bar'><div class='progress-fill' style='width:{pct}%; background:{color};'></div></div>
+              <div class='progress-bar'>
+                <div class='progress-fill' style='width:{pct}%; background:{color};'></div>
+              </div>
               <div class='small-muted'>{note}</div>
             </div>
         """, unsafe_allow_html=True)
 
+    # =====================================================
+    # 🚦 PIPELINE STAGES (INTERACTIVE)
+    # =====================================================
+    st.markdown("---")
+    st.markdown("### 🚦 Lead Pipeline Stages")
+    st.markdown("<em>Click a stage to filter leads below.</em>", unsafe_allow_html=True)
 
+    PIPELINE_STAGES = [
+        "New",
+        "Contacted",
+        "Inspection Scheduled",
+        "Inspection",
+        "Estimate Sent",
+        "Won",
+        "Lost",
+    ]
 
-		st.markdown("---")
-	    st.markdown("### Lead Pipeline Stages")
-	    st.markdown("<em>Distribution of leads across pipeline stages.</em>", unsafe_allow_html=True)
-	
-	
-	    if df.empty:
-	        st.info("No leads yet. Create one in Lead Capture.")
-	    else:
-	        try:
-	            stages = PIPELINE_STAGES
-	        except Exception:
-	            stages = ["New","Contacted","Inspection Scheduled","Inspection","Estimate Sent","Won","Lost"]
-	        stage_counts = df["stage"].value_counts().reindex(stages, fill_value=0)
-	        pie_df = pd.DataFrame({"status": stage_counts.index, "count": stage_counts.values})
-	        try:
-	            fig = px.pie(pie_df, names="status", values="count", hole=0.45, color="status")
-	            fig.update_traces(textposition='inside', textinfo='percent+label')
-	            st.plotly_chart(fig, use_container_width=True)
-	        except Exception:
-	            st.bar_chart(stage_counts)
+    STAGE_COLORS = {
+        "New": "#ff3b3b",
+        "Contacted": "#ff8c1a",
+        "Inspection Scheduled": "#ffd633",
+        "Inspection": "#b3ff66",
+        "Estimate Sent": "#33cccc",
+        "Won": "#3399ff",
+        "Lost": "#9933ff",
+    }
 
+    if df.empty or "stage" not in df.columns:
+        st.info("No leads yet. Create one in Lead Capture.")
+        return
 
+    df["stage"] = df["stage"].fillna("New")
+    df["stage"] = df["stage"].apply(lambda s: s if s in PIPELINE_STAGES else "New")
 
-        st.markdown("---")
+    stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
+    total_stage_leads = stage_counts.sum()
 
+    if "selected_stage" not in st.session_state:
+        st.session_state.selected_stage = None
 
-    # TOP 5 PRIORITY LEADS
+    fig = go.Figure()
+
+    for stage in PIPELINE_STAGES:
+        count = stage_counts[stage]
+        pct = (count / total_stage_leads * 100) if total_stage_leads else 0
+
+        fig.add_trace(go.Bar(
+            y=[stage],
+            x=[pct],
+            orientation="h",
+            marker_color=STAGE_COLORS[stage],
+            text=f"{count} ({pct:.0f}%)",
+            textposition="inside",
+            customdata=[stage],
+            hovertemplate=f"{stage}: {count} leads<extra></extra>",
+        ))
+
+    fig.update_layout(
+        barmode="stack",
+        xaxis=dict(range=[0, 100], showticklabels=False, showgrid=False),
+        yaxis=dict(autorange="reversed"),
+        plot_bgcolor="#0b0f1a",
+        paper_bgcolor="#0b0f1a",
+        font=dict(color="white"),
+        height=360,
+        margin=dict(l=20, r=20, t=20, b=20),
+        transition=dict(duration=500, easing="cubic-in-out"),
+    )
+
+    event = st.plotly_chart(
+        fig,
+        use_container_width=True,
+        on_select="rerun"
+    )
+
+    if event and event.selection:
+        st.session_state.selected_stage = event.selection["points"][0]["customdata"]
+
+    # =====================================================
+    # FILTERED LEADS TABLE
+    # =====================================================
+    st.markdown("### 📋 Leads")
+
+    if st.session_state.selected_stage:
+        st.success(f"Filtering by stage: {st.session_state.selected_stage}")
+        filtered_df = df[df["stage"] == st.session_state.selected_stage]
+    else:
+        filtered_df = df
+
+    st.dataframe(
+        filtered_df.sort_values("created_at", ascending=False),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    if st.button("🔄 Clear Filter"):
+        st.session_state.selected_stage = None
+        st.rerun()
+
+# TOP 5 PRIORITY LEADS
     st.markdown("---")
     st.markdown("### TOP 5 PRIORITY LEADS")
     st.markdown("<em>Highest urgency leads by priority score (0–1). Address these first.</em>", unsafe_allow_html=True)
