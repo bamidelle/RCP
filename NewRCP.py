@@ -4005,85 +4005,161 @@ def page_pipeline_board():
     st.info(summary)
 
 
+#------------------ANALYTICS PAGE STARTS HERE--------------
+
 def page_analytics():
     require_role_access("analytics")
 
-    st.markdown("<div class='header'>📈 Analytics & SLA</div>", unsafe_allow_html=True)
+    st.markdown("<div class='header'>📈 Analytics</div>", unsafe_allow_html=True)
 
     # =========================================================
-    # 📅 DATE RANGE (SAFE DEFAULTS — MUST BE FIRST)
-    # =========================================================
-    col1, col2 = st.columns(2)
-
-    with col1:
-        start = st.date_input(
-            "Start date",
-            value=datetime.utcnow().date() - timedelta(days=30)
-        )
-
-    with col2:
-        end = st.date_input(
-            "End date",
-            value=datetime.utcnow().date()
-        )
-
-    if start > end:
-        st.error("Start date cannot be after end date")
-        return
-
-    # =========================================================
-    # DATA LOAD
-    # =========================================================
-    df = leads_to_df(start, end)
-
-    if df.empty:
-        st.info("No leads to analyze.")
-        return
-
-    # =========================================================
-    # TIME RANGE SELECTION
+    # ⏱️ TIME WINDOW (SAFE DEFAULT — MUST BE FIRST)
     # =========================================================
     range_key = st.selectbox(
         "Select Time Window",
         [
+            "All Time",
             "Today",
             "Last 7 Days",
             "Last 30 Days",
             "Last 90 Days",
             "Last 6 Months",
             "Last 12 Months",
-            "Custom"
         ],
-        index=2
+        index=0
     )
 
-    custom_start = custom_end = None
-    if range_key == "Custom":
-        c1, c2 = st.columns(2)
-        with c1:
-            custom_start = st.date_input("Start Date")
-        with c2:
-            custom_end = st.date_input("End Date")
+    today = datetime.utcnow().date()
+
+    if range_key == "Today":
+        start, end = today, today
+    elif range_key == "Last 7 Days":
+        start, end = today - timedelta(days=7), today
+    elif range_key == "Last 30 Days":
+        start, end = today - timedelta(days=30), today
+    elif range_key == "Last 90 Days":
+        start, end = today - timedelta(days=90), today
+    elif range_key == "Last 6 Months":
+        start, end = today - timedelta(days=180), today
+    elif range_key == "Last 12 Months":
+        start, end = today - timedelta(days=365), today
+    else:
+        start, end = None, None  # All Time (SAFE)
 
     # =========================================================
-    # 🧠 BUSINESS INTELLIGENCE ENGINE
+    # 📊 DATA LOAD
+    # =========================================================
+    df = leads_to_df(start, end) if start else leads_to_df()
+
+    if df.empty:
+        st.info("No leads available for analytics.")
+        return
+
+    # Normalize
+    df["created_at"] = pd.to_datetime(df["created_at"])
+    df["stage"] = df["stage"].fillna("New")
+    df["source"] = df["source"].fillna("Other")
+
+    PIPELINE_STAGES = [
+        "New",
+        "Contacted",
+        "Inspection Scheduled",
+        "Inspection",
+        "Estimate Sent",
+        "Won",
+        "Lost",
+    ]
+
+    # =========================================================
+    # 🥇 CHART 1 — PIPELINE CONVERSION FUNNEL
+    # =========================================================
+    st.markdown("## 🔄 Pipeline Conversion Funnel")
+
+    stage_counts = (
+        df["stage"]
+        .value_counts()
+        .reindex(PIPELINE_STAGES, fill_value=0)
+        .reset_index()
+    )
+    stage_counts.columns = ["stage", "count"]
+
+    fig_funnel = px.bar(
+        stage_counts,
+        x="count",
+        y="stage",
+        orientation="h",
+        text="count",
+        color="stage",
+        title="Lead Flow Through Pipeline",
+    )
+
+    fig_funnel.update_layout(
+        yaxis=dict(autorange="reversed"),
+        showlegend=False,
+        height=420,
+    )
+
+    st.plotly_chart(fig_funnel, use_container_width=True)
+
+    # =========================================================
+    # 🥈 CHART 2 — LEAD VOLUME OVER TIME
+    # =========================================================
+    st.markdown("## 📈 Lead Volume Over Time")
+
+    volume_df = (
+        df.set_index("created_at")
+        .resample("D")
+        .size()
+        .reset_index(name="leads")
+    )
+
+    fig_volume = px.line(
+        volume_df,
+        x="created_at",
+        y="leads",
+        markers=True,
+        title="Leads Created Over Time",
+    )
+
+    st.plotly_chart(fig_volume, use_container_width=True)
+
+    # =========================================================
+    # 🥉 CHART 3 — LEAD SOURCE PERFORMANCE
+    # =========================================================
+    st.markdown("## 🎯 Lead Source Performance")
+
+    source_df = (
+        df["source"]
+        .value_counts()
+        .reset_index()
+    )
+    source_df.columns = ["source", "count"]
+
+    fig_source = px.bar(
+        source_df,
+        x="source",
+        y="count",
+        text="count",
+        title="Leads by Source",
+    )
+
+    st.plotly_chart(fig_source, use_container_width=True)
+
+    # =========================================================
+    # 🧠 BUSINESS INTELLIGENCE ENGINE (UNCHANGED)
     # =========================================================
     bi_allowed = has_access("analytics_intelligence")
 
     if bi_allowed:
         intelligence = compute_business_intelligence(
             range_key,
-            custom_start,
-            custom_end
+            start,
+            end
         )
     else:
         intelligence = {}
 
-    # =========================================================
-    # 🛡️ BEST-PRACTICE SAFETY INITIALIZATION
-    # =========================================================
     intelligence = intelligence or {}
-
     intelligence.setdefault("volume", {})
     intelligence.setdefault("revenue", {})
     intelligence.setdefault("conversion", {})
@@ -4097,38 +4173,24 @@ def page_analytics():
 
     k1, k2, k3, k4 = st.columns(4)
 
-    total_jobs = intelligence["volume"].get("total_jobs", 0)
-    volume_trend = intelligence["volume"].get("trend", 0)
-
-    total_revenue = intelligence["revenue"].get("total_revenue", 0)
-    revenue_trend = intelligence["revenue"].get("trend", 0)
-
-    revenue_per_job = intelligence["efficiency"].get("revenue_per_job", 0)
-    efficiency_trend = intelligence["efficiency"].get("trend", 0)
-
-    health_score = intelligence.get("health_score", 0)
-
     k1.metric(
         "Total Jobs",
-        total_jobs,
-        f"{volume_trend * 100:.1f}%"
+        intelligence["volume"].get("total_jobs", len(df)),
     )
 
     k2.metric(
         "Total Revenue",
-        f"${total_revenue:,.0f}",
-        f"{revenue_trend * 100:.1f}%"
+        f"${intelligence['revenue'].get('total_revenue', 0):,.0f}",
     )
 
     k3.metric(
         "Revenue / Job",
-        f"${revenue_per_job:,.0f}",
-        f"{efficiency_trend * 100:.1f}%"
+        f"${intelligence['efficiency'].get('revenue_per_job', 0):,.0f}",
     )
 
     k4.metric(
         "Business Health",
-        f"{health_score} / 100"
+        f"{intelligence.get('health_score', 0)} / 100"
     )
 
     # =========================================================
@@ -4152,44 +4214,26 @@ def page_analytics():
                 unsafe_allow_html=True
             )
 
-    
-    
-    st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
-    #----------- Donut: pipeline stages-----------------
-    stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
-    pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
-    fig = px.pie(pie_df, names="stage", values="count", hole=0.45, color="stage")
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown("---")
-    # SLA Overdue time series (last 30 days)
-    st.subheader("SLA Overdue (last 30 days)")
-    today = datetime.utcnow().date()
-    days = [today - timedelta(days=i) for i in range(29, -1, -1)]
-    ts = []
-    for d in days:
-        start_dt = datetime.combine(d, datetime.min.time())
-        end_dt = datetime.combine(d, datetime.max.time())
-        sub = df[(df["created_at"] >= start_dt) & (df["created_at"] <= end_dt)]
-        overdue_cnt = 0
-        for _, r in sub.iterrows():
-            _, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
-            if overdue and r.get("stage") not in ("Won","Lost"):
-                overdue_cnt += 1
-        ts.append({"date": d, "overdue": overdue_cnt})
-    ts_df = pd.DataFrame(ts)
-    fig2 = px.line(ts_df, x="date", y="overdue", markers=True, title="SLA Overdue Count (30d)")
-    st.plotly_chart(fig2, use_container_width=True)
-    st.markdown("---")
-    st.subheader("Current Overdue Leads")
-    overdue_rows = []
-    for _, r in df.iterrows():
-        _, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
-        if overdue and r.get("stage") not in ("Won","Lost"):
-            overdue_rows.append({"lead_id": r.get("lead_id"), "stage": r.get("stage"), "value": r.get("estimated_value"), "assigned_to": r.get("assigned_to")})
-    if overdue_rows:
-        st.dataframe(pd.DataFrame(overdue_rows))
-    else:
-        st.info("No overdue leads currently.")
+    # =========================================================
+    # 🧠 EXECUTIVE NARRATIVE
+    # =========================================================
+    st.markdown("### 🧠 Executive Interpretation")
+
+    narrative = intelligence.get("executive_narrative", {})
+
+    for line in narrative.get("lines", []):
+        confidence = line.get("confidence", 0)
+        text = line.get("text", "")
+
+        if confidence >= 80:
+            st.success(text)
+        elif confidence >= 50:
+            st.info(text)
+        else:
+            st.warning(text)
+
+
+#------------------ANALYTICS ENDS HERE---------------------
         
 def compute_business_health_score(df, prev_df):
     if df.empty:
