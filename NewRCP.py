@@ -4192,6 +4192,46 @@ def page_analytics():
         "Business Health",
         f"{intelligence.get('health_score', 0)} / 100"
     )
+    # =========================================================
+    # EXECUTIVE SUMMARY 2
+    # =========================================================
+    st.markdown("## 🧠 Executive Summary")
+
+    k1, k2, k3, k4 = st.columns(4)
+
+    total_jobs = intelligence["volume"].get("total_jobs", 0)
+    volume_trend = intelligence["volume"].get("trend", 0)
+
+    total_revenue = intelligence["revenue"].get("total_revenue", 0)
+    revenue_trend = intelligence["revenue"].get("trend", 0)
+
+    revenue_per_job = intelligence["efficiency"].get("revenue_per_job", 0)
+    efficiency_trend = intelligence["efficiency"].get("trend", 0)
+
+    health_score = intelligence.get("health_score", 0)
+
+    k1.metric(
+        "Total Jobs",
+        total_jobs,
+        f"{volume_trend * 100:.1f}%"
+    )
+
+    k2.metric(
+        "Total Revenue",
+        f"${total_revenue:,.0f}",
+        f"{revenue_trend * 100:.1f}%"
+    )
+
+    k3.metric(
+        "Revenue / Job",
+        f"${revenue_per_job:,.0f}",
+        f"{efficiency_trend * 100:.1f}%"
+    )
+
+    k4.metric(
+        "Business Health",
+        f"{health_score} / 100"
+    )
 
     # =========================================================
     # 🚨 STRATEGIC SIGNALS
