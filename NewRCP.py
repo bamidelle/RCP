@@ -3621,7 +3621,7 @@ def page_lead_capture():
                 st.write(traceback.format_exc())
 
     # =====================================================
-    # SAVED LEADS LIST  ✅ (OUTSIDE FORM — CORRECT)
+    # SAVED LEADS LIST
     # =====================================================
     st.markdown("---")
     st.subheader("📄 Saved Leads")
@@ -3644,16 +3644,27 @@ def page_lead_capture():
     st.subheader("✏️ Edit Lead")
 
     lead_ids = df["lead_id"].tolist()
-
     selected_lead_id = st.selectbox("Select Lead ID", lead_ids)
 
     lead_row = df[df["lead_id"] == selected_lead_id].iloc[0]
 
     with st.form("edit_lead_form"):
+
+        # ------------------------------
+        # SAFE STAGE HANDLING ✅
+        # ------------------------------
+        STAGES = ["new", "contacted", "won", "lost"]
+
+        current_stage = lead_row.get("stage") or "new"
+        if current_stage not in STAGES:
+            current_stage = "new"
+
+        stage_index = STAGES.index(current_stage)
+
         stage = st.selectbox(
             "Stage",
-            ["new", "contacted", "won", "lost"],
-            STAGES = ["new", "contacted", "won", "lost"]  current_stage = lead_row.get("stage") or "new"  if current_stage not in STAGES:     current_stage = "new"  index = STAGES.index(current_stage)
+            STAGES,
+            index=stage_index
         )
 
         updated_estimated_value = st.number_input(
