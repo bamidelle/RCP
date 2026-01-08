@@ -4154,7 +4154,7 @@ def page_analytics():
 
     
     
-    st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
+    st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
     #----------- Donut: pipeline stages-----------------
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
     pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
