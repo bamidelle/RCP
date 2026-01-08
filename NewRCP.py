@@ -3295,26 +3295,26 @@ def page_overview():
 
 
 
-	st.markdown("---")
-    st.markdown("### Lead Pipeline Stages")
-    st.markdown("<em>Distribution of leads across pipeline stages.</em>", unsafe_allow_html=True)
-
-
-    if df.empty:
-        st.info("No leads yet. Create one in Lead Capture.")
-    else:
-        try:
-            stages = PIPELINE_STAGES
-        except Exception:
-            stages = ["New","Contacted","Inspection Scheduled","Inspection","Estimate Sent","Won","Lost"]
-        stage_counts = df["stage"].value_counts().reindex(stages, fill_value=0)
-        pie_df = pd.DataFrame({"status": stage_counts.index, "count": stage_counts.values})
-        try:
-            fig = px.pie(pie_df, names="status", values="count", hole=0.45, color="status")
-            fig.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig, use_container_width=True)
-        except Exception:
-            st.bar_chart(stage_counts)
+		st.markdown("---")
+	    st.markdown("### Lead Pipeline Stages")
+	    st.markdown("<em>Distribution of leads across pipeline stages.</em>", unsafe_allow_html=True)
+	
+	
+	    if df.empty:
+	        st.info("No leads yet. Create one in Lead Capture.")
+	    else:
+	        try:
+	            stages = PIPELINE_STAGES
+	        except Exception:
+	            stages = ["New","Contacted","Inspection Scheduled","Inspection","Estimate Sent","Won","Lost"]
+	        stage_counts = df["stage"].value_counts().reindex(stages, fill_value=0)
+	        pie_df = pd.DataFrame({"status": stage_counts.index, "count": stage_counts.values})
+	        try:
+	            fig = px.pie(pie_df, names="status", values="count", hole=0.45, color="status")
+	            fig.update_traces(textposition='inside', textinfo='percent+label')
+	            st.plotly_chart(fig, use_container_width=True)
+	        except Exception:
+	            st.bar_chart(stage_counts)
 
 
 
