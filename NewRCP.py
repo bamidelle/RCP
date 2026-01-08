@@ -4169,7 +4169,7 @@ def page_analytics():
     # =========================================================
     # 🧠 EXECUTIVE SUMMARY
     # =========================================================
-    st.markdown("## 🧠 Executive Summary")
+    st.markdown("## Executive Summary")
 
     k1, k2, k3, k4 = st.columns(4)
 
@@ -4217,7 +4217,7 @@ def page_analytics():
 
     
    #------------------DONUT CHART HERE--------------------- 
-    
+    st.markdown("## Pipeline Job Ratio")
     st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
     #----------- Donut: pipeline stages-----------------
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
