@@ -3296,136 +3296,136 @@ def page_overview():
 
     import plotly.graph_objects as go
 
-st.markdown("---")
-st.markdown("### 🚦 Lead Pipeline Gauge")
-st.markdown(
-    "<em>Live distribution of leads across pipeline stages. "
-    "Click a stage below to filter.</em>",
-    unsafe_allow_html=True
-)
-
-# ==============================
-# PIPELINE CONFIG
-# ==============================
-PIPELINE_STAGES = [
-    "New",
-    "Contacted",
-    "Inspection Scheduled",
-    "Inspection",
-    "Estimate Sent",
-    "Won",
-    "Lost"
-]
-
-STAGE_COLORS = {
-    "New": "#ff3b3b",
-    "Contacted": "#ff8c1a",
-    "Inspection Scheduled": "#ffd633",
-    "Inspection": "#b3ff66",
-    "Estimate Sent": "#4dff4d",
-    "Won": "#00e6e6",
-    "Lost": "#999999",
-}
-
-# ==============================
-# SAFETY CHECK
-# ==============================
-if df.empty or "stage" not in df.columns:
-    st.info("No leads yet. Create one in Lead Capture.")
-    st.stop()
-
-# Normalize stage values
-df["stage"] = df["stage"].fillna("New")
-df["stage"] = df["stage"].apply(
-    lambda x: x if x in PIPELINE_STAGES else "New"
-)
-
-# ==============================
-# COUNT STAGES
-# ==============================
-stage_counts = (
-    df["stage"]
-    .value_counts()
-    .reindex(PIPELINE_STAGES, fill_value=0)
-)
-
-# Dominant stage (for pointer)
-dominant_stage = stage_counts.idxmax()
-pointer_value = PIPELINE_STAGES.index(dominant_stage)
-
-# ==============================
-# GAUGE CHART
-# ==============================
-fig = go.Figure(go.Indicator(
-    mode="gauge+number",
-    value=pointer_value,
-    number={
-        "suffix": f" ({dominant_stage})",
-        "font": {"size": 20}
-    },
-    gauge={
-        "axis": {
-            "range": [0, len(PIPELINE_STAGES) - 1],
-            "tickvals": [],
-            "tickwidth": 0
-        },
-        "bar": {"color": "white"},
-        "bgcolor": "#0b0f1a",
-        "steps": [
-            {
-                "range": [i, i + 1],
-                "color": STAGE_COLORS[stage]
-            }
-            for i, stage in enumerate(PIPELINE_STAGES)
-        ],
-        "threshold": {
-            "line": {"color": "white", "width": 4},
-            "thickness": 0.75,
-            "value": pointer_value
-        }
+    st.markdown("---")
+    st.markdown("### 🚦 Lead Pipeline Gauge")
+    st.markdown(
+        "<em>Live distribution of leads across pipeline stages. "
+        "Click a stage below to filter.</em>",
+        unsafe_allow_html=True
+    )
+    
+    # ==============================
+    # PIPELINE CONFIG
+    # ==============================
+    PIPELINE_STAGES = [
+        "New",
+        "Contacted",
+        "Inspection Scheduled",
+        "Inspection",
+        "Estimate Sent",
+        "Won",
+        "Lost"
+    ]
+    
+    STAGE_COLORS = {
+        "New": "#ff3b3b",
+        "Contacted": "#ff8c1a",
+        "Inspection Scheduled": "#ffd633",
+        "Inspection": "#b3ff66",
+        "Estimate Sent": "#4dff4d",
+        "Won": "#00e6e6",
+        "Lost": "#999999",
     }
-))
-
-fig.update_layout(
-    paper_bgcolor="#0b0f1a",
-    font={"color": "white"},
-    height=380,
-    margin=dict(t=30, b=20, l=20, r=20)
-)
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ==============================
-# STAGE FILTER BUTTONS
-# ==============================
-st.markdown("#### 📊 Stage Breakdown")
-
-cols = st.columns(len(PIPELINE_STAGES))
-
-selected_stage = st.session_state.get("pipeline_filter")
-
-for i, stage in enumerate(PIPELINE_STAGES):
-    count = stage_counts[stage]
-
-    with cols[i]:
-        if st.button(
-            f"{stage}\n{count}",
-            key=f"stage_filter_{stage}",
-        ):
-            if selected_stage == stage:
-                st.session_state["pipeline_filter"] = None
-            else:
-                st.session_state["pipeline_filter"] = stage
-
-# ==============================
-# FILTERED TABLE VIEW
-# ==============================
-if st.session_state.get("pipeline_filter"):
-    filtered_stage = st.session_state["pipeline_filter"]
-    st.markdown(f"### 🔍 Leads in **{filtered_stage}** Stage")
-
-    filtered_df = df[df["stage"] == filtered_stage]
-    st.dataframe(filtered_df, use_container_width=True)
+    
+    # ==============================
+    # SAFETY CHECK
+    # ==============================
+    if df.empty or "stage" not in df.columns:
+        st.info("No leads yet. Create one in Lead Capture.")
+        st.stop()
+    
+    # Normalize stage values
+    df["stage"] = df["stage"].fillna("New")
+    df["stage"] = df["stage"].apply(
+        lambda x: x if x in PIPELINE_STAGES else "New"
+    )
+    
+    # ==============================
+    # COUNT STAGES
+    # ==============================
+    stage_counts = (
+        df["stage"]
+        .value_counts()
+        .reindex(PIPELINE_STAGES, fill_value=0)
+    )
+    
+    # Dominant stage (for pointer)
+    dominant_stage = stage_counts.idxmax()
+    pointer_value = PIPELINE_STAGES.index(dominant_stage)
+    
+    # ==============================
+    # GAUGE CHART
+    # ==============================
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=pointer_value,
+        number={
+            "suffix": f" ({dominant_stage})",
+            "font": {"size": 20}
+        },
+        gauge={
+            "axis": {
+                "range": [0, len(PIPELINE_STAGES) - 1],
+                "tickvals": [],
+                "tickwidth": 0
+            },
+            "bar": {"color": "white"},
+            "bgcolor": "#0b0f1a",
+            "steps": [
+                {
+                    "range": [i, i + 1],
+                    "color": STAGE_COLORS[stage]
+                }
+                for i, stage in enumerate(PIPELINE_STAGES)
+            ],
+            "threshold": {
+                "line": {"color": "white", "width": 4},
+                "thickness": 0.75,
+                "value": pointer_value
+            }
+        }
+    ))
+    
+    fig.update_layout(
+        paper_bgcolor="#0b0f1a",
+        font={"color": "white"},
+        height=380,
+        margin=dict(t=30, b=20, l=20, r=20)
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # ==============================
+    # STAGE FILTER BUTTONS
+    # ==============================
+    st.markdown("#### 📊 Stage Breakdown")
+    
+    cols = st.columns(len(PIPELINE_STAGES))
+    
+    selected_stage = st.session_state.get("pipeline_filter")
+    
+    for i, stage in enumerate(PIPELINE_STAGES):
+        count = stage_counts[stage]
+    
+        with cols[i]:
+            if st.button(
+                f"{stage}\n{count}",
+                key=f"stage_filter_{stage}",
+            ):
+                if selected_stage == stage:
+                    st.session_state["pipeline_filter"] = None
+                else:
+                    st.session_state["pipeline_filter"] = stage
+    
+    # ==============================
+    # FILTERED TABLE VIEW
+    # ==============================
+    if st.session_state.get("pipeline_filter"):
+        filtered_stage = st.session_state["pipeline_filter"]
+        st.markdown(f"### 🔍 Leads in **{filtered_stage}** Stage")
+    
+        filtered_df = df[df["stage"] == filtered_stage]
+        st.dataframe(filtered_df, use_container_width=True)
 
 
         st.markdown("---")
