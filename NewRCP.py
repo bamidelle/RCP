@@ -3574,9 +3574,6 @@ def page_lead_capture():
 
         if submitted:
             try:
-                # ==============================
-                # PLAN LIMIT ENFORCEMENT
-                # ==============================
                 plan = get_current_plan()
                 limit = PLANS.get(plan, {}).get("max_leads_per_month")
 
@@ -3589,9 +3586,6 @@ def page_lead_capture():
                         )
                         return
 
-                # ==============================
-                # UPSERT LEAD
-                # ==============================
                 upsert_lead_record(
                     {
                         "lead_id": lead_id.strip(),
@@ -3632,11 +3626,7 @@ def page_lead_capture():
         st.info("No leads created yet.")
         return
 
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True
-    )
+    st.dataframe(df, use_container_width=True, hide_index=True)
 
     # =====================================================
     # EDIT LEAD
@@ -3650,31 +3640,81 @@ def page_lead_capture():
 
     with st.form("edit_lead_form"):
 
-        # ------------------------------
-        # SAFE STAGE HANDLING ✅
-        # ------------------------------
         STAGES = ["new", "contacted", "won", "lost"]
-
         current_stage = lead_row.get("stage") or "new"
         if current_stage not in STAGES:
             current_stage = "new"
 
-        stage_index = STAGES.index(current_stage)
-
         stage = st.selectbox(
             "Stage",
             STAGES,
-            index=stage_index
+            index=STAGES.index(current_stage)
+        )
+
+        contact_name = st.text_input(
+            "Contact Name",
+            value=lead_row.get("contact_name", "")
+        )
+
+        contact_phone = st.text_input(
+            "Contact Phone",
+            value=lead_row.get("contact_phone", "")
+        )
+
+        contact_email = st.text_input(
+            "Contact Email",
+            value=lead_row.get("contact_email", "")
+        )
+
+        property_address = st.text_input(
+            "Property Address",
+            value=lead_row.get("property_address", "")
+        )
+
+        job_type = st.text_input(
+            "Job / Service Type",
+            value=lead_row.get("damage_type", "")
+        )
+
+        source = st.selectbox(
+            "Lead Source",
+            [
+                "Google Ads",
+                "Organic Search",
+                "Referral",
+                "Phone",
+                "Insurance",
+                "Facebook",
+                "Instagram",
+                "LinkedIn",
+                "Other"
+            ],
+            index=[
+                "Google Ads",
+                "Organic Search",
+                "Referral",
+                "Phone",
+                "Insurance",
+                "Facebook",
+                "Instagram",
+                "LinkedIn",
+                "Other"
+            ].index(lead_row.get("source", "Other"))
+        )
+
+        source_details = st.text_input(
+            "Source Details",
+            value=lead_row.get("source_details", "")
         )
 
         updated_estimated_value = st.number_input(
             "Estimated Value",
-            value=float(lead_row["estimated_value"])
+            value=float(lead_row.get("estimated_value", 0.0))
         )
 
         updated_assigned_to = st.text_input(
             "Assigned To",
-            value=lead_row["assigned_to"] or ""
+            value=lead_row.get("assigned_to") or ""
         )
 
         update = st.form_submit_button("Update Lead")
@@ -3684,6 +3724,13 @@ def page_lead_capture():
                 {
                     "lead_id": selected_lead_id,
                     "stage": stage,
+                    "contact_name": contact_name,
+                    "contact_phone": contact_phone,
+                    "contact_email": contact_email,
+                    "property_address": property_address,
+                    "damage_type": job_type,
+                    "source": source,
+                    "source_details": source_details,
                     "estimated_value": updated_estimated_value,
                     "assigned_to": updated_assigned_to or None
                 },
@@ -3691,6 +3738,7 @@ def page_lead_capture():
             )
             st.success("Lead updated successfully")
             st.rerun()
+
 
 
 # Pipeline Board 
