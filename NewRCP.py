@@ -4152,49 +4152,7 @@ def page_analytics():
                 unsafe_allow_html=True
             )
 
-    # =========================================================
-    # 🧠 EXECUTIVE NARRATIVE
-    # =========================================================
-    st.markdown("### 🧠 Executive Interpretation")
-
-    narrative = intelligence.get("executive_narrative", {})
-
-    for line in narrative.get("lines", []):
-        confidence = line.get("confidence", 0)
-        text = line.get("text", "")
-
-        if confidence >= 80:
-            st.success(text)
-        elif confidence >= 50:
-            st.info(text)
-        else:
-            st.warning(text)
-
-    narrative_health = narrative.get("health_score", 0)
-    business_risk = intelligence.get("business_risk_score", 0)
-
-    c1, c2 = st.columns(2)
-
-    c1.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-label">Narrative Health</div>
-            <div class="kpi-value green">{narrative_health} / 100</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    c2.markdown(
-        f"""
-        <div class="kpi-card">
-            <div class="kpi-label">⚠️ Business Risk Score</div>
-            <div class="kpi-value red">{business_risk} / 100</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
+    
     
     st.markdown("<em>Donut of pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
     #----------- Donut: pipeline stages-----------------
