@@ -4224,9 +4224,11 @@ def page_analytics():
     pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
     fig = px.pie(pie_df, names="stage", values="count", hole=0.45, color="stage")
     st.plotly_chart(fig, use_container_width=True)
+    
     st.markdown("---")
     # SLA Overdue time series (last 30 days)
     st.subheader("SLA Overdue (last 30 days)")
+    st.markdown("<em>This shows when a lead was not contacted within the agreed Service Level</em>", unsafe_allow_html=True)
     today = datetime.utcnow().date()
     days = [today - timedelta(days=i) for i in range(29, -1, -1)]
     ts = []
