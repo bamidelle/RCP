@@ -4005,7 +4005,6 @@ def page_pipeline_board():
     st.info(summary)
 
 
-# Analytics page (donut + SLA line + overdue table)
 def page_analytics():
     require_role_access("analytics")
 
@@ -4028,13 +4027,12 @@ def page_analytics():
             value=datetime.utcnow().date()
         )
 
-    # 🛡️ SAFETY GUARD
     if start > end:
         st.error("Start date cannot be after end date")
         return
 
     # =========================================================
-    # DATA LOAD (UNCHANGED)
+    # DATA LOAD
     # =========================================================
     df = leads_to_df(start, end)
 
@@ -4082,35 +4080,60 @@ def page_analytics():
         intelligence = {}
 
     # =========================================================
+    # 🛡️ BEST-PRACTICE SAFETY INITIALIZATION
+    # =========================================================
+    intelligence = intelligence or {}
+
+    intelligence.setdefault("volume", {})
+    intelligence.setdefault("revenue", {})
+    intelligence.setdefault("conversion", {})
+    intelligence.setdefault("performance", {})
+    intelligence.setdefault("efficiency", {})
+
+    # =========================================================
     # 🧠 EXECUTIVE SUMMARY
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
 
     k1, k2, k3, k4 = st.columns(4)
 
+    total_jobs = intelligence["volume"].get("total_jobs", 0)
+    volume_trend = intelligence["volume"].get("trend", 0)
+
+    total_revenue = intelligence["revenue"].get("total_revenue", 0)
+    revenue_trend = intelligence["revenue"].get("trend", 0)
+
+    revenue_per_job = intelligence["efficiency"].get("revenue_per_job", 0)
+    efficiency_trend = intelligence["efficiency"].get("trend", 0)
+
+    health_score = intelligence.get("health_score", 0)
+
     k1.metric(
         "Total Jobs",
-        intelligence["volume"]["total_jobs"],
-        f"{intelligence['volume']['trend']*100:.1f}%"
+        total_jobs,
+        f"{volume_trend * 100:.1f}%"
     )
 
     k2.metric(
         "Total Revenue",
-        f"${intelligence['revenue']['total_revenue']:,.0f}",
-        f"{intelligence['revenue']['trend']*100:.1f}%"
+        f"${total_revenue:,.0f}",
+        f"{revenue_trend * 100:.1f}%"
     )
 
     k3.metric(
         "Revenue / Job",
-        f"${intelligence['efficiency']['revenue_per_job']:,.0f}",
-        f"{intelligence['efficiency']['trend']*100:.1f}%"
+        f"${revenue_per_job:,.0f}",
+        f"{efficiency_trend * 100:.1f}%"
     )
 
     k4.metric(
         "Business Health",
-        f"{intelligence.get('health_score', 0)} / 100"
+        f"{health_score} / 100"
     )
 
+    # =========================================================
+    # 🚨 STRATEGIC SIGNALS
+    # =========================================================
     signals = intelligence.get("strategic_signals", [])
 
     if signals:
@@ -4121,9 +4144,9 @@ def page_analytics():
             col.markdown(
                 f"""
                 <div class="kpi-card">
-                    <div class="kpi-label">{sig['icon']} {sig['label']}</div>
+                    <div class="kpi-label">{sig.get('icon', '')} {sig.get('label', '')}</div>
                     <div class="kpi-value cyan">{sig.get('short', 'Active')}</div>
-                    <div class="kpi-caption">{sig['message']}</div>
+                    <div class="kpi-caption">{sig.get('message', '')}</div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -4135,17 +4158,20 @@ def page_analytics():
     st.markdown("### 🧠 Executive Interpretation")
 
     narrative = intelligence.get("executive_narrative", {})
+
     for line in narrative.get("lines", []):
         confidence = line.get("confidence", 0)
-        if confidence >= 80:
-            st.success(line["text"])
-        elif confidence >= 50:
-            st.info(line["text"])
-        else:
-            st.warning(line["text"])
+        text = line.get("text", "")
 
-    health = narrative.get("health_score", 0)
-    risk = intelligence.get("business_risk_score", 0)
+        if confidence >= 80:
+            st.success(text)
+        elif confidence >= 50:
+            st.info(text)
+        else:
+            st.warning(text)
+
+    narrative_health = narrative.get("health_score", 0)
+    business_risk = intelligence.get("business_risk_score", 0)
 
     c1, c2 = st.columns(2)
 
@@ -4153,7 +4179,7 @@ def page_analytics():
         f"""
         <div class="kpi-card">
             <div class="kpi-label">Narrative Health</div>
-            <div class="kpi-value green">{health} / 100</div>
+            <div class="kpi-value green">{narrative_health} / 100</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -4163,7 +4189,7 @@ def page_analytics():
         f"""
         <div class="kpi-card">
             <div class="kpi-label">⚠️ Business Risk Score</div>
-            <div class="kpi-value red">{risk} / 100</div>
+            <div class="kpi-value red">{business_risk} / 100</div>
         </div>
         """,
         unsafe_allow_html=True
