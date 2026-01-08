@@ -4215,24 +4215,6 @@ def page_analytics():
                 unsafe_allow_html=True
             )
 
-    # =========================================================
-    # 🧠 EXECUTIVE NARRATIVE
-    # =========================================================
-    st.markdown("### 🧠 Executive Interpretation")
-
-    narrative = intelligence.get("executive_narrative", {})
-
-    for line in narrative.get("lines", []):
-        confidence = line.get("confidence", 0)
-        text = line.get("text", "")
-
-        if confidence >= 80:
-            st.success(text)
-        elif confidence >= 50:
-            st.info(text)
-        else:
-            st.warning(text)
-
     
    #------------------DONUT CHART HERE--------------------- 
     
@@ -4273,6 +4255,25 @@ def page_analytics():
     else:
         st.info("No overdue leads currently.")
 
+
+    # =========================================================
+    # 🧠 EXECUTIVE NARRATIVE
+    # =========================================================
+    st.markdown("### Overall Interpretation")
+
+    narrative = intelligence.get("executive_narrative", {})
+
+    for line in narrative.get("lines", []):
+        confidence = line.get("confidence", 0)
+        text = line.get("text", "")
+
+        if confidence >= 80:
+            st.success(text)
+        elif confidence >= 50:
+            st.info(text)
+        else:
+            st.warning(text)
+            
 #------------------ANALYTICS ENDS HERE---------------------
         
 def compute_business_health_score(df, prev_df):
