@@ -3521,6 +3521,7 @@ def page_lead_capture():
             "Lead ID",
             value=f"L{int(datetime.utcnow().timestamp())}"
         )
+
         source = st.selectbox(
             "Lead Source",
             [
@@ -3535,10 +3536,12 @@ def page_lead_capture():
                 "Other"
             ]
         )
+
         source_details = st.text_input(
             "Source details (UTM / notes)",
             placeholder="utm_source=google..."
         )
+
         contact_name = st.text_input("Contact name")
         contact_phone = st.text_input("Contact phone")
         contact_email = st.text_input("Contact email")
@@ -3550,30 +3553,37 @@ def page_lead_capture():
         )
 
         assigned_to = st.text_input("Assigned to (username)")
+
         estimated_value = st.number_input(
             "Estimated value (USD)",
             min_value=0.0,
             value=0.0,
             step=100.0
         )
+
         ad_cost = st.number_input(
             "Cost to acquire lead (USD)",
             min_value=0.0,
             value=0.0,
             step=1.0
         )
+
         sla_hours = st.number_input(
             "SLA hours (first response)",
             min_value=1,
             value=DEFAULT_SLA_HOURS,
             step=1
         )
+
         notes = st.text_area("Notes")
 
         submitted = st.form_submit_button("Create / Update Lead")
 
         if submitted:
             try:
+                # ==============================
+                # PLAN LIMIT ENFORCEMENT
+                # ==============================
                 plan = get_current_plan()
                 limit = PLANS.get(plan, {}).get("max_leads_per_month")
 
@@ -3586,6 +3596,9 @@ def page_lead_capture():
                         )
                         return
 
+                # ==============================
+                # UPSERT LEAD
+                # ==============================
                 upsert_lead_record(
                     {
                         "lead_id": lead_id.strip(),
@@ -3615,10 +3628,10 @@ def page_lead_capture():
                 st.write(traceback.format_exc())
 
     # =====================================================
-    # SAVED LEADS LIST
+    # SAVED LEADS (INLINE EDITING)
     # =====================================================
     st.markdown("---")
-    st.subheader("📄 Saved Leads")
+    st.subheader("✏️ Edit Saved Leads")
 
     df = get_leads_df()
 
@@ -3626,119 +3639,82 @@ def page_lead_capture():
         st.info("No leads created yet.")
         return
 
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        column_config={
+            "lead_id": st.column_config.TextColumn(
+                "Lead ID",
+                disabled=True
+            ),
+            "created_at": st.column_config.DatetimeColumn(
+                "Created",
+                disabled=True
+            ),
+            "stage": st.column_config.SelectboxColumn(
+                "Stage",
+                options=["new", "contacted", "won", "lost"]
+            ),
+            "source": st.column_config.SelectboxColumn(
+                "Source",
+                options=[
+                    "Google Ads",
+                    "Organic Search",
+                    "Referral",
+                    "Phone",
+                    "Insurance",
+                    "Facebook",
+                    "Instagram",
+                    "LinkedIn",
+                    "Other"
+                ]
+            ),
+            "contact_name": st.column_config.TextColumn("Contact Name"),
+            "contact_phone": st.column_config.TextColumn("Contact Phone"),
+            "contact_email": st.column_config.TextColumn("Contact Email"),
+            "property_address": st.column_config.TextColumn("Property Address"),
+            "damage_type": st.column_config.TextColumn("Job / Service Type"),
+            "estimated_value": st.column_config.NumberColumn(
+                "Estimated Value",
+                min_value=0
+            ),
+        }
+    )
 
-    # =====================================================
-    # EDIT LEAD
-    # =====================================================
-    st.subheader("✏️ Edit Lead")
+    if st.button("💾 Save Lead Changes"):
+        try:
+            for _, row in edited_df.iterrows():
+                # ---------- SAFE STAGE HANDLING ----------
+                STAGES = ["new", "contacted", "won", "lost"]
+                stage = row.get("stage") or "new"
+                if stage not in STAGES:
+                    stage = "new"
 
-    lead_ids = df["lead_id"].tolist()
-    selected_lead_id = st.selectbox("Select Lead ID", lead_ids)
+                upsert_lead_record(
+                    {
+                        "lead_id": row["lead_id"],
+                        "stage": stage,
+                        "source": row.get("source"),
+                        "contact_name": row.get("contact_name"),
+                        "contact_phone": row.get("contact_phone"),
+                        "contact_email": row.get("contact_email"),
+                        "property_address": row.get("property_address"),
+                        "damage_type": row.get("damage_type"),
+                        "assigned_to": row.get("assigned_to"),
+                        "estimated_value": row.get("estimated_value"),
+                        "source_details": row.get("source_details"),
+                    },
+                    actor="admin"
+                )
 
-    lead_row = df[df["lead_id"] == selected_lead_id].iloc[0]
-
-    with st.form("edit_lead_form"):
-
-        STAGES = ["new", "contacted", "won", "lost"]
-        current_stage = lead_row.get("stage") or "new"
-        if current_stage not in STAGES:
-            current_stage = "new"
-
-        stage = st.selectbox(
-            "Stage",
-            STAGES,
-            index=STAGES.index(current_stage)
-        )
-
-        contact_name = st.text_input(
-            "Contact Name",
-            value=lead_row.get("contact_name", "")
-        )
-
-        contact_phone = st.text_input(
-            "Contact Phone",
-            value=lead_row.get("contact_phone", "")
-        )
-
-        contact_email = st.text_input(
-            "Contact Email",
-            value=lead_row.get("contact_email", "")
-        )
-
-        property_address = st.text_input(
-            "Property Address",
-            value=lead_row.get("property_address", "")
-        )
-
-        job_type = st.text_input(
-            "Job / Service Type",
-            value=lead_row.get("damage_type", "")
-        )
-
-        source = st.selectbox(
-            "Lead Source",
-            [
-                "Google Ads",
-                "Organic Search",
-                "Referral",
-                "Phone",
-                "Insurance",
-                "Facebook",
-                "Instagram",
-                "LinkedIn",
-                "Other"
-            ],
-            index=[
-                "Google Ads",
-                "Organic Search",
-                "Referral",
-                "Phone",
-                "Insurance",
-                "Facebook",
-                "Instagram",
-                "LinkedIn",
-                "Other"
-            ].index(lead_row.get("source", "Other"))
-        )
-
-        source_details = st.text_input(
-            "Source Details",
-            value=lead_row.get("source_details", "")
-        )
-
-        updated_estimated_value = st.number_input(
-            "Estimated Value",
-            value=float(lead_row.get("estimated_value", 0.0))
-        )
-
-        updated_assigned_to = st.text_input(
-            "Assigned To",
-            value=lead_row.get("assigned_to") or ""
-        )
-
-        update = st.form_submit_button("Update Lead")
-
-        if update:
-            upsert_lead_record(
-                {
-                    "lead_id": selected_lead_id,
-                    "stage": stage,
-                    "contact_name": contact_name,
-                    "contact_phone": contact_phone,
-                    "contact_email": contact_email,
-                    "property_address": property_address,
-                    "damage_type": job_type,
-                    "source": source,
-                    "source_details": source_details,
-                    "estimated_value": updated_estimated_value,
-                    "assigned_to": updated_assigned_to or None
-                },
-                actor="admin"
-            )
-            st.success("Lead updated successfully")
+            st.success("Leads updated successfully")
             st.rerun()
 
+        except Exception as e:
+            st.error("Failed to update leads")
+            st.write(traceback.format_exc())
 
 
 # Pipeline Board 
