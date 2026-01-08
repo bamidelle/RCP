@@ -4192,46 +4192,7 @@ def page_analytics():
         "Business Health",
         f"{intelligence.get('health_score', 0)} / 100"
     )
-    # =========================================================
-    # EXECUTIVE SUMMARY 2
-    # =========================================================
-    st.markdown("## 🧠 Executive Summary")
-
-    k1, k2, k3, k4 = st.columns(4)
-
-    total_jobs = intelligence["volume"].get("total_jobs", 0)
-    volume_trend = intelligence["volume"].get("trend", 0)
-
-    total_revenue = intelligence["revenue"].get("total_revenue", 0)
-    revenue_trend = intelligence["revenue"].get("trend", 0)
-
-    revenue_per_job = intelligence["efficiency"].get("revenue_per_job", 0)
-    efficiency_trend = intelligence["efficiency"].get("trend", 0)
-
-    health_score = intelligence.get("health_score", 0)
-
-    k1.metric(
-        "Total Jobs",
-        total_jobs,
-        f"{volume_trend * 100:.1f}%"
-    )
-
-    k2.metric(
-        "Total Revenue",
-        f"${total_revenue:,.0f}",
-        f"{revenue_trend * 100:.1f}%"
-    )
-
-    k3.metric(
-        "Revenue / Job",
-        f"${revenue_per_job:,.0f}",
-        f"{efficiency_trend * 100:.1f}%"
-    )
-
-    k4.metric(
-        "Business Health",
-        f"{health_score} / 100"
-    )
+    
 
     # =========================================================
     # 🚨 STRATEGIC SIGNALS
@@ -4272,6 +4233,45 @@ def page_analytics():
         else:
             st.warning(text)
 
+    
+   #------------------DONUT CHART HERE--------------------- 
+    
+    st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
+    #----------- Donut: pipeline stages-----------------
+    stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
+    pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
+    fig = px.pie(pie_df, names="stage", values="count", hole=0.45, color="stage")
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown("---")
+    # SLA Overdue time series (last 30 days)
+    st.subheader("SLA Overdue (last 30 days)")
+    today = datetime.utcnow().date()
+    days = [today - timedelta(days=i) for i in range(29, -1, -1)]
+    ts = []
+    for d in days:
+        start_dt = datetime.combine(d, datetime.min.time())
+        end_dt = datetime.combine(d, datetime.max.time())
+        sub = df[(df["created_at"] >= start_dt) & (df["created_at"] <= end_dt)]
+        overdue_cnt = 0
+        for _, r in sub.iterrows():
+            _, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
+            if overdue and r.get("stage") not in ("Won","Lost"):
+                overdue_cnt += 1
+        ts.append({"date": d, "overdue": overdue_cnt})
+    ts_df = pd.DataFrame(ts)
+    fig2 = px.line(ts_df, x="date", y="overdue", markers=True, title="SLA Overdue Count (30d)")
+    st.plotly_chart(fig2, use_container_width=True)
+    st.markdown("---")
+    st.subheader("Current Overdue Leads")
+    overdue_rows = []
+    for _, r in df.iterrows():
+        _, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
+        if overdue and r.get("stage") not in ("Won","Lost"):
+            overdue_rows.append({"lead_id": r.get("lead_id"), "stage": r.get("stage"), "value": r.get("estimated_value"), "assigned_to": r.get("assigned_to")})
+    if overdue_rows:
+        st.dataframe(pd.DataFrame(overdue_rows))
+    else:
+        st.info("No overdue leads currently.")
 
 #------------------ANALYTICS ENDS HERE---------------------
         
