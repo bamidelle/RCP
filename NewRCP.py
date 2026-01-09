@@ -4100,8 +4100,8 @@ def page_analytics():
     )
 
     st.plotly_chart(fig_funnel, use_container_width=True)
-    
     st.divider()
+
     # =========================================================
     # 🥈 CHART 2 — LEAD VOLUME OVER TIME
     # =========================================================
@@ -4123,18 +4123,14 @@ def page_analytics():
     )
 
     st.plotly_chart(fig_volume, use_container_width=True)
-    
     st.divider()
+
     # =========================================================
     # 🥉 CHART 3 — LEAD SOURCE PERFORMANCE
     # =========================================================
     st.markdown("## 🎯 Lead Source Performance")
 
-    source_df = (
-        df["source"]
-        .value_counts()
-        .reset_index()
-    )
+    source_df = df["source"].value_counts().reset_index()
     source_df.columns = ["source", "count"]
 
     fig_source = px.bar(
@@ -4146,8 +4142,8 @@ def page_analytics():
     )
 
     st.plotly_chart(fig_source, use_container_width=True)
-
     st.divider()
+
     # =========================================================
     # 🧠 BUSINESS INTELLIGENCE ENGINE (UNCHANGED)
     # =========================================================
@@ -4168,8 +4164,8 @@ def page_analytics():
     intelligence.setdefault("conversion", {})
     intelligence.setdefault("performance", {})
     intelligence.setdefault("efficiency", {})
-    
     st.divider()
+
     # =========================================================
     # 🧠 EXECUTIVE SUMMARY
     # =========================================================
@@ -4196,8 +4192,8 @@ def page_analytics():
         "Business Health",
         f"{intelligence.get('health_score', 0)} / 100"
     )
-    
-st.divider()
+    st.divider()
+
     # =========================================================
     # 🚨 STRATEGIC SIGNALS
     # =========================================================
@@ -4218,18 +4214,20 @@ st.divider()
                 """,
                 unsafe_allow_html=True
             )
+    st.divider()
 
-st.divider() 
-   #------------------DONUT CHART HERE--------------------- 
+    # =========================================================
+    # Pipeline Job Ratio Donut
+    # =========================================================
     st.markdown("## Pipeline Job Ratio")
     st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
-    #----------- Donut: pipeline stages-----------------
+
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
     pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
     fig = px.pie(pie_df, names="stage", values="count", hole=0.45, color="stage")
     st.plotly_chart(fig, use_container_width=True)
-    
     st.markdown("---")
+
     # SLA Overdue time series (last 30 days)
     st.subheader("SLA Overdue (last 30 days)")
     st.markdown("<em>This shows the Period when a lead was not contacted within the agreed Service Level</em>", unsafe_allow_html=True)
@@ -4249,21 +4247,26 @@ st.divider()
     ts_df = pd.DataFrame(ts)
     fig2 = px.line(ts_df, x="date", y="overdue", markers=True, title="SLA Overdue Count (30d)")
     st.plotly_chart(fig2, use_container_width=True)
+    st.divider()
 
-st.divider()
     st.markdown("---")
     st.subheader("Current Overdue Leads")
     overdue_rows = []
     for _, r in df.iterrows():
         _, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
         if overdue and r.get("stage") not in ("Won","Lost"):
-            overdue_rows.append({"lead_id": r.get("lead_id"), "stage": r.get("stage"), "value": r.get("estimated_value"), "assigned_to": r.get("assigned_to")})
+            overdue_rows.append({
+                "lead_id": r.get("lead_id"),
+                "stage": r.get("stage"),
+                "value": r.get("estimated_value"),
+                "assigned_to": r.get("assigned_to")
+            })
     if overdue_rows:
         st.dataframe(pd.DataFrame(overdue_rows))
     else:
         st.info("No overdue leads currently.")
+    st.divider()
 
-st.divider()
     # =========================================================
     # 🧠 EXECUTIVE NARRATIVE
     # =========================================================
@@ -4281,8 +4284,7 @@ st.divider()
             st.info(text)
         else:
             st.warning(text)
-            
-#------------------ANALYTICS ENDS HERE---------------------
+#----------------------------ANALYTICS END HERE------------------
         
 def compute_business_health_score(df, prev_df):
     if df.empty:
