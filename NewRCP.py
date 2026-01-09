@@ -3821,6 +3821,7 @@ def page_lead_capture():
             st.error("Failed to update leads")
             st.write(traceback.format_exc())
 
+filter_mode = st.session_state.pop("pipeline_filter", None)
 
 # Pipeline Board 
 # =============================
@@ -3830,39 +3831,65 @@ def page_lead_capture():
 
 def page_pipeline_board():
     require_role_access("pipeline")
+
     st.markdown("<div class='header'>📊 Pipeline Intelligence Board</div>", unsafe_allow_html=True)
     st.markdown(
         "<em>Operational pipeline combining urgency, value, and stage visibility.</em>",
         unsafe_allow_html=True,
     )
 
+    # =========================================================
     # ---------- LOAD DATA ----------
-    leads_df = get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
+    # =========================================================
+    df = get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
 
+    # =========================================================
+    # COMMAND CENTER FILTER HANDOFF (PASTED EXACTLY HERE)
+    # =========================================================
+    filter_mode = st.session_state.pop("pipeline_filter", None)
+
+    if filter_mode == "overdue":
+        if "sla_status" in df.columns:
+            df = df[df["sla_status"] == "overdue"]
+
+    elif filter_mode == "inspection":
+        if "stage" in df.columns:
+            df = df[df["stage"] == "Inspection"]
+
+    elif filter_mode == "follow_up":
+        if "stage" in df.columns:
+            df = df[df["stage"].isin(["New", "Contacted"])]
+
+    # ---------------------------------------------------------
+    # Continue normally using filtered dataframe
+    # ---------------------------------------------------------
+    leads_df = df.copy()
+
+    # =========================================================
+    # ---------- SEASONAL DAMAGE ANALYSIS ----------
+    # =========================================================
     st.subheader("🧱 Seasonal Damage Type Distribution")
-    
+
     if "created_at" not in leads_df.columns:
-        st.warning("⚠️ Seasonal analysis unavailable: missing created_at data, Please add new Leads.")
+        st.warning("⚠️ Seasonal analysis unavailable: missing created_at data. Please add new leads.")
         return
 
-    leads_df = leads_df.copy()
     leads_df["created_at"] = pd.to_datetime(leads_df["created_at"], errors="coerce")
     leads_df = leads_df.dropna(subset=["created_at"])
-    
+
     if leads_df.empty:
         st.warning("⚠️ No valid dates available for seasonal analysis.")
         return
-    
+
     leads_df["month"] = leads_df["created_at"].dt.month_name()
 
-    
     damage_month = (
         leads_df
         .groupby(["month", "damage_type"])
         .size()
         .reset_index(name="jobs")
     )
-    
+
     fig_damage = px.bar(
         damage_month,
         x="month",
@@ -3870,17 +3897,22 @@ def page_pipeline_board():
         color="damage_type",
         title="Damage Types by Month (Seasonal Impact)"
     )
-    
+
     st.plotly_chart(fig_damage, use_container_width=True)
 
     if leads_df.empty:
         st.info("No leads in pipeline yet.")
         return
 
+    # =========================================================
     # ---------- DERIVED METRICS ----------
+    # =========================================================
     now = datetime.utcnow()
+
     leads_df["sla_remaining_hr"] = (
-        leads_df["sla_entered_at"] + pd.to_timedelta(leads_df["sla_hours"], unit="h") - now
+        leads_df["sla_entered_at"]
+        + pd.to_timedelta(leads_df["sla_hours"], unit="h")
+        - now
     ).dt.total_seconds() / 3600
 
     leads_df["priority_score"] = (
@@ -3889,7 +3921,9 @@ def page_pipeline_board():
         + (leads_df["estimated_value"].fillna(0) / 20000).clip(0, 1) * 0.2
     )
 
+    # =========================================================
     # ---------- URGENCY BANDS ----------
+    # =========================================================
     def urgency_label(row):
         if row.sla_remaining_hr <= 6:
             return "🔴 Critical"
@@ -3901,7 +3935,9 @@ def page_pipeline_board():
 
     leads_df["urgency"] = leads_df.apply(urgency_label, axis=1)
 
+    # =========================================================
     # ---------- TOP PRIORITY QUEUE ----------
+    # =========================================================
     st.markdown("## 🔥 Priority Queue (What needs attention now)")
 
     priority_df = (
@@ -3927,7 +3963,9 @@ def page_pipeline_board():
         use_container_width=True,
     )
 
+    # =========================================================
     # ---------- STAGE OVERVIEW ----------
+    # =========================================================
     st.markdown("---")
     st.markdown("## 🧭 Pipeline by Stage")
 
@@ -3945,27 +3983,19 @@ def page_pipeline_board():
 
     with c1:
         st.plotly_chart(
-            px.bar(
-                stage_summary,
-                x="stage",
-                y="leads",
-                title="Lead Volume by Stage",
-            ),
+            px.bar(stage_summary, x="stage", y="leads", title="Lead Volume by Stage"),
             use_container_width=True,
         )
 
     with c2:
         st.plotly_chart(
-            px.bar(
-                stage_summary,
-                x="stage",
-                y="value",
-                title="Pipeline Value by Stage",
-            ),
+            px.bar(stage_summary, x="stage", y="value", title="Pipeline Value by Stage"),
             use_container_width=True,
         )
 
+    # =========================================================
     # ---------- STAGE DETAIL TABLE ----------
+    # =========================================================
     st.markdown("### 📋 Detailed Stage Breakdown")
 
     selected_stage = st.selectbox(
@@ -3973,9 +4003,9 @@ def page_pipeline_board():
         sorted(leads_df["stage"].unique()),
     )
 
-    stage_df = leads_df[leads_df["stage"] == selected_stage].sort_values(
-        "priority_score", ascending=False
-    )
+    stage_df = leads_df[
+        leads_df["stage"] == selected_stage
+    ].sort_values("priority_score", ascending=False)
 
     st.dataframe(
         stage_df[[
@@ -3993,23 +4023,27 @@ def page_pipeline_board():
         use_container_width=True,
     )
 
+    # =========================================================
     # ---------- EXECUTIVE SUMMARY ----------
+    # =========================================================
     st.markdown("---")
     st.markdown("## 🧠 Executive Pipeline Insight")
 
-    critical = (leads_df.sla_remaining_hr <= 6).sum()
-    total_value = leads_df.estimated_value.sum()
-    avg_score = leads_df.score.mean()
+    critical = (leads_df["sla_remaining_hr"] <= 6).sum()
+    total_value = leads_df["estimated_value"].sum()
+    avg_score = leads_df["score"].mean()
 
     summary = (
         f"The pipeline currently contains **{len(leads_df)} active leads** with a total "
         f"estimated value of **${total_value:,.0f}**. "
         f"There are **{critical} leads** approaching SLA breach, requiring immediate action. "
-        f"Overall conversion confidence remains {'strong' if avg_score >= 0.6 else 'moderate' if avg_score >= 0.4 else 'low'}, "
+        f"Overall conversion confidence remains "
+        f"{'strong' if avg_score >= 0.6 else 'moderate' if avg_score >= 0.4 else 'low'}, "
         f"with an average lead quality score of **{avg_score:.2f}**."
     )
 
     st.info(summary)
+
 
 
 #------------------ANALYTICS PAGE STARTS HERE--------------
@@ -6565,35 +6599,34 @@ def page_command_center():
         df = get_leads_df()
     except Exception:
         df = pd.DataFrame()
-    
+
     if df.empty:
         st.markdown(
             """
             ### 📍 Your Command Center
-    
+
             Looks like you’re just getting started 👋
-    
+
             **Here’s how ReCapture Pro works once you add data:**
             - 🔹 Capture your first lead to unlock live insights
             - 🔹 Move leads through stages in the Pipeline Board
             - 🔹 Analytics and AI insights activate automatically as data grows
-    
+
             👉 Start by creating your first lead.
             """,
             unsafe_allow_html=True
         )
-    
+
         if st.button("➕ Capture Your First Lead"):
             st.session_state["page"] = "Lead Capture"
             st.rerun()
-    
-        return
 
+        return
 
     now = datetime.utcnow()
 
     # ---------------------------------
-    # NORMALIZE STAGE DATA
+    # NORMALIZE DATA
     # ---------------------------------
     df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
     df["sla_hours"] = df["sla_hours"].fillna(24)
@@ -6609,7 +6642,6 @@ def page_command_center():
         (df["stage"].isin(["New", "Contacted", "Inspection"])) &
         (df["hours_open"] > 24)
     ]
-
     revenue_at_risk = stalled["estimated_value"].sum()
 
     # ---------------------------------
@@ -6624,7 +6656,7 @@ def page_command_center():
     actions_today = len(overdue) + len(due_soon)
 
     # ---------------------------------
-    # DISPLAY: KILLER METRICS
+    # DISPLAY METRICS
     # ---------------------------------
     c1, c2, c3 = st.columns(3)
 
@@ -6649,7 +6681,7 @@ def page_command_center():
     st.markdown("---")
 
     # ---------------------------------
-    # TODAY'S PRIORITIES TABLE
+    # TODAY'S PRIORITIES
     # ---------------------------------
     if actions_today > 0:
         st.subheader("📌 Today’s Priorities")
@@ -6665,12 +6697,35 @@ def page_command_center():
             "assigned_to"
         ]].sort_values("sla_remaining")
 
-        st.dataframe(
-            priority_df,
-            use_container_width=True
-        )
+        st.dataframe(priority_df, use_container_width=True)
     else:
         st.success("🎉 No urgent issues right now. Pipeline is healthy.")
+
+    # ---------------------------------
+    # 🚨 QUICK ACTION BUTTONS
+    # ---------------------------------
+    st.markdown("## 🚨 What Needs Attention")
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        if st.button("🔴 Overdue Leads"):
+            st.session_state["pipeline_filter"] = "overdue"
+            st.session_state["page"] = "Pipeline Board"
+            st.rerun()
+
+    with c2:
+        if st.button("🟠 Stalled Inspections"):
+            st.session_state["pipeline_filter"] = "inspection"
+            st.session_state["page"] = "Pipeline Board"
+            st.rerun()
+
+    with c3:
+        if st.button("🟡 Follow-ups Needed"):
+            st.session_state["pipeline_filter"] = "follow_up"
+            st.session_state["page"] = "Pipeline Board"
+            st.rerun()
+
 
 #-----------------------END OF COMMAND CENTER---------------------
 
