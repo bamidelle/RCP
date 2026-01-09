@@ -6559,129 +6559,103 @@ def page_command_center():
     require_role_access("overview")
 
     st.markdown("<div class='header'>🧠 Command Center</div>", unsafe_allow_html=True)
-    st.caption("Your business health at a glance. Problems, priorities, and performance — instantly.")
+    st.caption("Your real-time business health & priorities")
+
+    # ---------------------------------
+    # LOAD DATA SAFELY
+    # ---------------------------------
+    try:
+        df = get_leads_df()
+    except Exception:
+        df = pd.DataFrame()
+
+    if df.empty:
+        st.info("No activity yet. Create your first lead to activate the Command Center.")
+        st.button("➕ Create First Lead", on_click=lambda: st.session_state.update({"page": "Lead Capture"}))
+        return
 
     now = datetime.utcnow()
 
-    s = get_session()
-    try:
-        leads = s.query(Lead).filter(
-            Lead.stage.notin_(["Won", "Lost"])
-        ).all()
-    finally:
-        s.close()
+    # ---------------------------------
+    # NORMALIZE STAGE DATA
+    # ---------------------------------
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+    df["sla_hours"] = df["sla_hours"].fillna(24)
+    df["estimated_value"] = df["estimated_value"].fillna(0)
 
-    if not leads:
-        st.info("No data yet. Once you add leads, your Command Center will activate automatically.")
-        return
+    df["hours_open"] = (now - df["created_at"]).dt.total_seconds() / 3600
+    df["sla_remaining"] = df["sla_hours"] - df["hours_open"]
 
-    # =========================
-    # 🔴 REVENUE AT RISK
-    # =========================
-    revenue_at_risk = 0
-    stalled_leads = []
+    # ---------------------------------
+    # 🔴 METRIC 1 — REVENUE AT RISK
+    # ---------------------------------
+    stalled = df[
+        (df["stage"].isin(["New", "Contacted", "Inspection"])) &
+        (df["hours_open"] > 72)
+    ]
 
-    for l in leads:
-        est = l.estimated_value or 0
+    revenue_at_risk = stalled["estimated_value"].sum()
 
-        sla_overdue = (
-            l.sla_entered_at
-            and l.sla_hours
-            and now > (l.sla_entered_at + timedelta(hours=l.sla_hours))
-        )
+    # ---------------------------------
+    # ⏰ METRIC 2 — SLA ALERTS
+    # ---------------------------------
+    overdue = df[df["sla_remaining"] <= 0]
+    due_soon = df[(df["sla_remaining"] > 0) & (df["sla_remaining"] <= 6)]
 
-        days_in_stage = (now - l.created_at).days if l.created_at else 0
-        max_days = STAGE_MAX_DAYS.get(l.stage, 999)
+    # ---------------------------------
+    # 🎯 METRIC 3 — ACTIONS TODAY
+    # ---------------------------------
+    actions_today = len(overdue) + len(due_soon)
 
-        if sla_overdue or days_in_stage > max_days:
-            revenue_at_risk += est
-            stalled_leads.append(l)
-
-    if revenue_at_risk == 0:
-        st.success("🟢 No revenue currently at risk.")
-    else:
-        color = "🟡"
-        if revenue_at_risk > 500_000:
-            color = "🔴"
-
-        st.markdown(
-            f"""
-            <div class="kpi-card">
-                <div class="kpi-label">{color} Revenue at Risk</div>
-                <div class="kpi-value red">₦{revenue_at_risk:,.0f}</div>
-                <div class="kpi-caption">{len(stalled_leads)} leads need attention</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.markdown("---")
-
-    # =========================
-    # 🛎 IMMEDIATE ATTENTION
-    # =========================
-    overdue_followups = []
-    inspections_stalled = []
-    estimates_stalled = []
-
-    for l in leads:
-        days = (now - l.created_at).days if l.created_at else 0
-
-        if l.stage == "New" and days > 1:
-            overdue_followups.append(l)
-
-        if l.stage == "Inspection" and days > 7:
-            inspections_stalled.append(l)
-
-        if l.stage == "Estimate Sent" and days > 5:
-            estimates_stalled.append(l)
-
+    # ---------------------------------
+    # DISPLAY: KILLER METRICS
+    # ---------------------------------
     c1, c2, c3 = st.columns(3)
 
-    c1.metric("Overdue Follow-ups", len(overdue_followups))
-    c2.metric("Inspections Not Converted", len(inspections_stalled))
-    c3.metric("Estimates Not Followed Up", len(estimates_stalled))
+    c1.metric(
+        "🔴 Revenue at Risk",
+        f"${revenue_at_risk:,.0f}",
+        help="Estimated value stuck in stalled leads"
+    )
+
+    c2.metric(
+        "⏰ SLA Issues",
+        f"{len(overdue)} overdue",
+        delta=f"{len(due_soon)} due soon",
+        delta_color="inverse"
+    )
+
+    c3.metric(
+        "🎯 Actions Needed Today",
+        actions_today
+    )
 
     st.markdown("---")
 
-    # =========================
-    # 🔄 PIPELINE HEALTH
-    # =========================
-    total = len(leads)
+    # ---------------------------------
+    # TODAY'S PRIORITIES TABLE
+    # ---------------------------------
+    if actions_today > 0:
+        st.subheader("📌 Today’s Priorities")
 
-    contacted = len([l for l in leads if l.stage != "New"])
-    inspected = len([l for l in leads if l.stage in ["Inspection", "Estimate Sent", "Won"]])
-    won = len([l for l in leads if l.stage == "Won"])
+        priority_df = df[
+            (df["sla_remaining"] <= 6) |
+            (df["hours_open"] > 72)
+        ][[
+            "lead_id",
+            "stage",
+            "estimated_value",
+            "sla_remaining",
+            "assigned_to"
+        ]].sort_values("sla_remaining")
 
-    lead_to_contact = (contacted / total * 100) if total else 0
-    inspection_to_won = (won / inspected * 100) if inspected else 0
-
-    p1, p2, p3 = st.columns(3)
-
-    p1.metric("Lead → Contacted", f"{lead_to_contact:.1f}%")
-    p2.metric("Inspection → Won", f"{inspection_to_won:.1f}%")
-    p3.metric("Active Leads", total)
-
-    st.markdown("---")
-
-    # =========================
-    # 📌 TODAY’S PRIORITIES
-    # =========================
-    priorities = sorted(
-        stalled_leads,
-        key=lambda l: (l.estimated_value or 0),
-        reverse=True
-    )[:5]
-
-    st.markdown("### 📌 Today’s Priorities")
-
-    if not priorities:
-        st.success("No urgent actions today. You're on track.")
+        st.dataframe(
+            priority_df,
+            use_container_width=True
+        )
     else:
-        for l in priorities:
-            st.write(
-                f"• **{l.lead_id}** — {l.stage} — ₦{(l.estimated_value or 0):,.0f}"
-            )
+        st.success("🎉 No urgent issues right now. Pipeline is healthy.")
+
 #-----------------------END OF COMMAND CENTER---------------------
 
 # ----------------------
