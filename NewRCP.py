@@ -6759,7 +6759,7 @@ if (
 # NAV ICONS
 # ----------------------
 NAV_ICONS = {
-    "Command Center": "⚠️"
+    "Command Center": "⚠️",
     "Overview": "🧭",
     "Lead Capture": "🎯",
     "Pipeline Board": "🔄",
@@ -6782,7 +6782,7 @@ with st.sidebar:
     st.markdown("---")
 
     pages = [
-        "Command Center"
+        "Command Center",
         "Overview",
         "Lead Capture",
         "Pipeline Board",
