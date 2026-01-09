@@ -84,6 +84,13 @@ FRONTEND_URL = (
     if "FRONTEND_URL" in st.secrets
     else "http://localhost:8501"
 )
+STAGE_MAX_DAYS = {
+    "New": 1,
+    "Contacted": 2,
+    "Inspection Scheduled": 3,
+    "Inspection": 5,
+    "Estimate Sent": 7,
+}
 
 # ======================
 # BILLING PROVIDER (DEV)
@@ -6545,7 +6552,138 @@ The Team
         body=body
     )
 
-# ---------- END BLOCK E ----------
+# ---------- END SETTINGS AND EMAIL INVITES ----------
+
+#-----------------------START OF COMMAND CENTER---------------------
+def page_command_center():
+    require_role_access("overview")
+
+    st.markdown("<div class='header'>🧠 Command Center</div>", unsafe_allow_html=True)
+    st.caption("Your business health at a glance. Problems, priorities, and performance — instantly.")
+
+    now = datetime.utcnow()
+
+    s = get_session()
+    try:
+        leads = s.query(Lead).filter(
+            Lead.stage.notin_(["Won", "Lost"])
+        ).all()
+    finally:
+        s.close()
+
+    if not leads:
+        st.info("No data yet. Once you add leads, your Command Center will activate automatically.")
+        return
+
+    # =========================
+    # 🔴 REVENUE AT RISK
+    # =========================
+    revenue_at_risk = 0
+    stalled_leads = []
+
+    for l in leads:
+        est = l.estimated_value or 0
+
+        sla_overdue = (
+            l.sla_entered_at
+            and l.sla_hours
+            and now > (l.sla_entered_at + timedelta(hours=l.sla_hours))
+        )
+
+        days_in_stage = (now - l.created_at).days if l.created_at else 0
+        max_days = STAGE_MAX_DAYS.get(l.stage, 999)
+
+        if sla_overdue or days_in_stage > max_days:
+            revenue_at_risk += est
+            stalled_leads.append(l)
+
+    if revenue_at_risk == 0:
+        st.success("🟢 No revenue currently at risk.")
+    else:
+        color = "🟡"
+        if revenue_at_risk > 500_000:
+            color = "🔴"
+
+        st.markdown(
+            f"""
+            <div class="kpi-card">
+                <div class="kpi-label">{color} Revenue at Risk</div>
+                <div class="kpi-value red">₦{revenue_at_risk:,.0f}</div>
+                <div class="kpi-caption">{len(stalled_leads)} leads need attention</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown("---")
+
+    # =========================
+    # 🛎 IMMEDIATE ATTENTION
+    # =========================
+    overdue_followups = []
+    inspections_stalled = []
+    estimates_stalled = []
+
+    for l in leads:
+        days = (now - l.created_at).days if l.created_at else 0
+
+        if l.stage == "New" and days > 1:
+            overdue_followups.append(l)
+
+        if l.stage == "Inspection" and days > 7:
+            inspections_stalled.append(l)
+
+        if l.stage == "Estimate Sent" and days > 5:
+            estimates_stalled.append(l)
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("Overdue Follow-ups", len(overdue_followups))
+    c2.metric("Inspections Not Converted", len(inspections_stalled))
+    c3.metric("Estimates Not Followed Up", len(estimates_stalled))
+
+    st.markdown("---")
+
+    # =========================
+    # 🔄 PIPELINE HEALTH
+    # =========================
+    total = len(leads)
+
+    contacted = len([l for l in leads if l.stage != "New"])
+    inspected = len([l for l in leads if l.stage in ["Inspection", "Estimate Sent", "Won"]])
+    won = len([l for l in leads if l.stage == "Won"])
+
+    lead_to_contact = (contacted / total * 100) if total else 0
+    inspection_to_won = (won / inspected * 100) if inspected else 0
+
+    p1, p2, p3 = st.columns(3)
+
+    p1.metric("Lead → Contacted", f"{lead_to_contact:.1f}%")
+    p2.metric("Inspection → Won", f"{inspection_to_won:.1f}%")
+    p3.metric("Active Leads", total)
+
+    st.markdown("---")
+
+    # =========================
+    # 📌 TODAY’S PRIORITIES
+    # =========================
+    priorities = sorted(
+        stalled_leads,
+        key=lambda l: (l.estimated_value or 0),
+        reverse=True
+    )[:5]
+
+    st.markdown("### 📌 Today’s Priorities")
+
+    if not priorities:
+        st.success("No urgent actions today. You're on track.")
+    else:
+        for l in priorities:
+            st.write(
+                f"• **{l.lead_id}** — {l.stage} — ₦{(l.estimated_value or 0):,.0f}"
+            )
+#-----------------------END OF COMMAND CENTER---------------------
+
 # ----------------------
 # WORDPRESS AUTH BRIDGE (GLOBAL)
 # ----------------------
@@ -6621,6 +6759,7 @@ if (
 # NAV ICONS
 # ----------------------
 NAV_ICONS = {
+    "Command Center": "⚠️"
     "Overview": "🧭",
     "Lead Capture": "🎯",
     "Pipeline Board": "🔄",
@@ -6643,6 +6782,7 @@ with st.sidebar:
     st.markdown("---")
 
     pages = [
+        "Command Center"
         "Overview",
         "Lead Capture",
         "Pipeline Board",
@@ -6669,7 +6809,10 @@ with st.sidebar:
 # ----------------------
 # ROUTER (STABLE)
 # ----------------------
-if page == "Overview":
+if page == "⚠️ Command Center":
+    page_command_center()
+
+elif page == "Overview":
     page_overview()
 
 elif page == "Lead Capture":
