@@ -6568,11 +6568,30 @@ def page_command_center():
         df = get_leads_df()
     except Exception:
         df = pd.DataFrame()
-
+    
     if df.empty:
-        st.info("No activity yet. Create your first lead to activate the Command Center.")
-        st.button("➕ Create First Lead", on_click=lambda: st.session_state.update({"page": "Lead Capture"}))
+        st.markdown(
+            """
+            ### 📍 Your Command Center
+    
+            Looks like you’re just getting started 👋
+    
+            **Here’s how ReCapture Pro works once you add data:**
+            - 🔹 Capture your first lead to unlock live insights
+            - 🔹 Move leads through stages in the Pipeline Board
+            - 🔹 Analytics and AI insights activate automatically as data grows
+    
+            👉 Start by creating your first lead.
+            """,
+            unsafe_allow_html=True
+        )
+    
+        if st.button("➕ Capture Your First Lead"):
+            st.session_state["page"] = "Lead Capture"
+            st.rerun()
+    
         return
+
 
     now = datetime.utcnow()
 
