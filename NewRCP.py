@@ -4100,7 +4100,8 @@ def page_analytics():
     )
 
     st.plotly_chart(fig_funnel, use_container_width=True)
-
+    
+    st.divider()
     # =========================================================
     # 🥈 CHART 2 — LEAD VOLUME OVER TIME
     # =========================================================
@@ -4122,7 +4123,8 @@ def page_analytics():
     )
 
     st.plotly_chart(fig_volume, use_container_width=True)
-
+    
+    st.divider()
     # =========================================================
     # 🥉 CHART 3 — LEAD SOURCE PERFORMANCE
     # =========================================================
@@ -4145,6 +4147,7 @@ def page_analytics():
 
     st.plotly_chart(fig_source, use_container_width=True)
 
+    st.divider()
     # =========================================================
     # 🧠 BUSINESS INTELLIGENCE ENGINE (UNCHANGED)
     # =========================================================
@@ -4165,7 +4168,8 @@ def page_analytics():
     intelligence.setdefault("conversion", {})
     intelligence.setdefault("performance", {})
     intelligence.setdefault("efficiency", {})
-
+    
+    st.divider()
     # =========================================================
     # 🧠 EXECUTIVE SUMMARY
     # =========================================================
@@ -4193,7 +4197,7 @@ def page_analytics():
         f"{intelligence.get('health_score', 0)} / 100"
     )
     
-
+    st.divider()
     # =========================================================
     # 🚨 STRATEGIC SIGNALS
     # =========================================================
@@ -4215,7 +4219,7 @@ def page_analytics():
                 unsafe_allow_html=True
             )
 
-    
+   st.divider() 
    #------------------DONUT CHART HERE--------------------- 
     st.markdown("## Pipeline Job Ratio")
     st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
@@ -4245,6 +4249,8 @@ def page_analytics():
     ts_df = pd.DataFrame(ts)
     fig2 = px.line(ts_df, x="date", y="overdue", markers=True, title="SLA Overdue Count (30d)")
     st.plotly_chart(fig2, use_container_width=True)
+
+    st.divider()
     st.markdown("---")
     st.subheader("Current Overdue Leads")
     overdue_rows = []
@@ -4257,7 +4263,7 @@ def page_analytics():
     else:
         st.info("No overdue leads currently.")
 
-
+    st.divider()
     # =========================================================
     # 🧠 EXECUTIVE NARRATIVE
     # =========================================================
