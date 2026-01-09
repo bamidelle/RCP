@@ -6592,118 +6592,124 @@ The Team
 def page_command_center():
     require_role_access("overview")
 
-    # ---------------------------------
-    # LOAD DATA SAFELY
-    # ---------------------------------
+    st.markdown("<div class='header'>Command Center</div>", unsafe_allow_html=True)
+    st.caption("Your real-time business health & priorities")
+
+    # =========================================================
+    # LOAD DATA SAFELY (ANCHOR POINT)
+    # =========================================================
     try:
         df = get_leads_df()
     except Exception:
         df = pd.DataFrame()
 
+    # =========================================================
+    # COMMAND CENTER – CORE METRICS (EMPTY STATE FIX)
+    # =========================================================
     if df.empty:
-        st.markdown(
-            """
-            ### 📍 Your Command Center
+        st.markdown("### Command Center")
+        st.caption("Your real-time business health & priorities")
+        st.info("No activity yet. Create your first lead to activate the Command Center.")
 
-            Looks like you’re just getting started 👋
-
-            **Here’s how ReCapture Pro works once you add data:**
-            - 🔹 Capture your first lead to unlock live insights
-            - 🔹 Move leads through stages in the Pipeline Board
-            - 🔹 Analytics and AI insights activate automatically as data grows
-
-            👉 Start by creating your first lead.
-            """,
-            unsafe_allow_html=True
-        )
-
-        if st.button("➕ Capture Your First Lead"):
-            st.session_state["page"] = "Lead Capture"
+        if st.button("➕ Create First Lead"):
+            st.session_state.page = "Lead Capture"
             st.rerun()
-
         return
+
+    # =========================================================
+    # METRIC CALCULATIONS (SAFE)
+    # =========================================================
+    df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
+    df["stage"] = df.get("stage", "New")
+    df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
+    df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
     now = datetime.utcnow()
 
-    # ---------------------------------
-    # NORMALIZE DATA
-    # ---------------------------------
-    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
-    df["sla_hours"] = df["sla_hours"].fillna(24)
-    df["estimated_value"] = df["estimated_value"].fillna(0)
+    # -----------------------------
+    # 🚨 Stalled Revenue
+    # -----------------------------
+    stalled_stages = ["Inspection", "Estimate Sent"]
+    stalled_df = df[df["stage"].isin(stalled_stages)]
+    stalled_revenue = stalled_df["estimated_value"].sum()
 
-    df["hours_open"] = (now - df["created_at"]).dt.total_seconds() / 3600
-    df["sla_remaining"] = df["sla_hours"] - df["hours_open"]
+    # -----------------------------
+    # 🛎 Follow-ups due in 24h
+    # -----------------------------
+    follow_up_df = df[df["stage"].isin(["New", "Contacted"])]
+    follow_up_count = len(follow_up_df)
 
-    # ---------------------------------
-    # 🔴 METRIC 1 — REVENUE AT RISK
-    # ---------------------------------
-    stalled = df[
-        (df["stage"].isin(["New", "Contacted", "Inspection"])) &
-        (df["hours_open"] > 24)
-    ]
-    revenue_at_risk = stalled["estimated_value"].sum()
+    # -----------------------------
+    # 📊 Inspection → Won Conversion
+    # -----------------------------
+    inspection_count = len(df[df["stage"] == "Inspection"])
+    won_count = len(df[df["stage"] == "Won"])
+    conversion_rate = (won_count / inspection_count * 100) if inspection_count else 0
 
-    # ---------------------------------
-    # ⏰ METRIC 2 — SLA ALERTS
-    # ---------------------------------
-    overdue = df[df["sla_remaining"] <= 0]
-    due_soon = df[(df["sla_remaining"] > 0) & (df["sla_remaining"] <= 6)]
-
-    # ---------------------------------
-    # 🎯 METRIC 3 — ACTIONS TODAY
-    # ---------------------------------
-    actions_today = len(overdue) + len(due_soon)
-
-    # ---------------------------------
-    # DISPLAY METRICS
-    # ---------------------------------
-    c1, c2, c3 = st.columns(3)
-
-    c1.metric(
-        "🔴 Revenue at Risk",
-        f"${revenue_at_risk:,.0f}",
-        help="Estimated value stuck in stalled leads"
+    # -----------------------------
+    # ⏳ Avg Response Time (hours)
+    # -----------------------------
+    df["response_hours"] = (
+        (now - df["created_at"]).dt.total_seconds() / 3600
+    )
+    avg_response = (
+        df["response_hours"].mean()
+        if not df["response_hours"].isna().all()
+        else 0
     )
 
-    c2.metric(
-        "⏰ SLA Issues",
-        f"{len(overdue)} overdue",
-        delta=f"{len(due_soon)} due soon",
-        delta_color="inverse"
+    # =========================================================
+    # COMMAND CENTER DISPLAY (THE MAGIC)
+    # =========================================================
+    st.markdown("## ⚡ Command Center")
+    st.caption("What needs attention • What’s at risk • What’s changing")
+
+    st.markdown(
+        f"""
+        🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
+        🛎 **{follow_up_count} leads** need follow-up in the next 24 hours  
+        📊 **Inspection → Won conversion:** {conversion_rate:.0f}%  
+        ⏳ **Avg response time:** {avg_response:.1f} hours
+        """
     )
 
-    c3.metric(
-        "🎯 Actions Needed Today",
-        actions_today
-    )
+    # =========================================================
+    # TODAY'S PRIORITIES (AUTO-GENERATED)
+    # =========================================================
+    st.markdown("### 🧠 Today’s Priorities")
 
-    st.markdown("---")
+    priorities = []
 
-    # ---------------------------------
-    # TODAY'S PRIORITIES
-    # ---------------------------------
-    if actions_today > 0:
-        st.subheader("📌 Today’s Priorities")
+    # Priority 1: Oldest New/Contacted lead
+    oldest_lead = follow_up_df.sort_values("created_at").head(1)
+    if not oldest_lead.empty:
+        priorities.append(
+            f"Follow up with lead #{oldest_lead.iloc[0]['lead_id']}"
+        )
 
-        priority_df = df[
-            (df["sla_remaining"] <= 6) |
-            (df["hours_open"] > 24)
-        ][[
-            "lead_id",
-            "stage",
-            "estimated_value",
-            "sla_remaining",
-            "assigned_to"
-        ]].sort_values("sla_remaining")
+    # Priority 2: Inspection pending
+    inspection_pending = df[df["stage"] == "Inspection"].head(1)
+    if not inspection_pending.empty:
+        priorities.append(
+            f"Complete inspection for lead #{inspection_pending.iloc[0]['lead_id']}"
+        )
 
-        st.dataframe(priority_df, use_container_width=True)
+    # Priority 3: Estimates pending
+    estimate_count = len(df[df["stage"] == "Estimate Sent"])
+    if estimate_count:
+        priorities.append(
+            f"Send estimate reminders ({estimate_count} pending)"
+        )
+
+    if priorities:
+        for i, p in enumerate(priorities[:3], start=1):
+            st.write(f"{i}. {p}")
     else:
-        st.success("🎉 No urgent issues right now. Pipeline is healthy.")
+        st.success("🎉 No urgent actions today. Everything is on track.")
 
-    # ---------------------------------
+    # =========================================================
     # 🚨 QUICK ACTION BUTTONS
-    # ---------------------------------
+    # =========================================================
     st.markdown("## 🚨 What Needs Attention")
 
     c1, c2, c3 = st.columns(3)
@@ -6725,6 +6731,7 @@ def page_command_center():
             st.session_state["pipeline_filter"] = "follow_up"
             st.session_state["page"] = "Pipeline Board"
             st.rerun()
+
 
 
 #-----------------------END OF COMMAND CENTER---------------------
