@@ -6630,7 +6630,7 @@ NAV_ICONS = {
     "AI Recommendations": "🤖",
     "Seasonal Trends": "🌦",
     "Settings": "⚙️",
-    "Request Google Reviews": "⭐",
+    #"Request Google Reviews": "⭐",
     "Exports": "📤",
 }
 
@@ -6652,7 +6652,7 @@ with st.sidebar:
         "AI Recommendations",
         "Seasonal Trends",
         "Settings",
-        "Request Google Reviews",
+        #"Request Google Reviews",
         "Exports",
     ]
 
