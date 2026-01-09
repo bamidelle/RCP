@@ -6604,62 +6604,84 @@ def page_command_center():
         df = pd.DataFrame()
 
     # =========================================================
-    # COMMAND CENTER – CORE METRICS (EMPTY STATE FIX)
+    # EMPTY STATE (NEW USERS)
     # =========================================================
     if df.empty:
-        st.markdown("### Command Center")
-        st.caption("Your real-time business health & priorities")
-        st.info("No activity yet. Create your first lead to activate the Command Center.")
+        st.markdown("### 📍 Your Command Center")
+        st.info("Create your first lead to activate live insights.")
 
-        if st.button("➕ Create First Lead"):
+        if st.button("➕ Capture Your First Lead"):
             st.session_state.page = "Lead Capture"
             st.rerun()
         return
 
     # =========================================================
-    # METRIC CALCULATIONS (SAFE)
+    # SAFE NORMALIZATION
     # =========================================================
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
-    df["stage"] = df.get("stage", "New")
+    df["stage"] = df.get("stage", "New").fillna("New")
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
     df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
     now = datetime.utcnow()
 
-    # -----------------------------
-    # 🚨 Stalled Revenue
-    # -----------------------------
+    # =========================================================
+    # CORE METRICS
+    # =========================================================
     stalled_stages = ["Inspection", "Estimate Sent"]
-    stalled_df = df[df["stage"].isin(stalled_stages)]
-    stalled_revenue = stalled_df["estimated_value"].sum()
+    stalled_revenue = df[df["stage"].isin(stalled_stages)]["estimated_value"].sum()
 
-    # -----------------------------
-    # 🛎 Follow-ups due in 24h
-    # -----------------------------
     follow_up_df = df[df["stage"].isin(["New", "Contacted"])]
     follow_up_count = len(follow_up_df)
 
-    # -----------------------------
-    # 📊 Inspection → Won Conversion
-    # -----------------------------
     inspection_count = len(df[df["stage"] == "Inspection"])
     won_count = len(df[df["stage"] == "Won"])
     conversion_rate = (won_count / inspection_count * 100) if inspection_count else 0
 
-    # -----------------------------
-    # ⏳ Avg Response Time (hours)
-    # -----------------------------
     df["response_hours"] = (
         (now - df["created_at"]).dt.total_seconds() / 3600
     )
-    avg_response = (
-        df["response_hours"].mean()
-        if not df["response_hours"].isna().all()
-        else 0
+    avg_response = df["response_hours"].mean() if not df.empty else 0
+
+    # =========================================================
+    # CC-2 — TREND COMPARISON (LAST 7 DAYS)
+    # =========================================================
+    seven_days_ago = now - timedelta(days=7)
+
+    recent_df = df[df["created_at"] >= seven_days_ago]
+    previous_df = df[df["created_at"] < seven_days_ago]
+
+    def trend(current, previous):
+        if previous == 0:
+            return "—"
+        return "↑" if current > previous else "↓"
+
+    conversion_trend = trend(
+        len(recent_df[recent_df["stage"] == "Won"]),
+        len(previous_df[previous_df["stage"] == "Won"])
+    )
+
+    response_trend = trend(
+        recent_df["response_hours"].mean() if not recent_df.empty else 0,
+        previous_df["response_hours"].mean() if not previous_df.empty else 0
     )
 
     # =========================================================
-    # COMMAND CENTER DISPLAY (THE MAGIC)
+    # CC-3 — REVENUE AT RISK (72 HOURS)
+    # =========================================================
+    risk_threshold_hours = 72
+
+    df["lead_age_hours"] = (
+        (now - df["created_at"]).dt.total_seconds() / 3600
+    )
+
+    revenue_at_risk = df[
+        (df["lead_age_hours"] >= risk_threshold_hours) &
+        (df["stage"].isin(["New", "Contacted", "Inspection", "Estimate Sent"]))
+    ]["estimated_value"].sum()
+
+    # =========================================================
+    # COMMAND CENTER DISPLAY
     # =========================================================
     st.markdown("## ⚡ Command Center")
     st.caption("What needs attention • What’s at risk • What’s changing")
@@ -6667,48 +6689,44 @@ def page_command_center():
     st.markdown(
         f"""
         🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
+        💰 **Revenue at risk (72h):** ${revenue_at_risk:,.0f}  
         🛎 **{follow_up_count} leads** need follow-up in the next 24 hours  
-        📊 **Inspection → Won conversion:** {conversion_rate:.0f}%  
-        ⏳ **Avg response time:** {avg_response:.1f} hours
+        📊 **Inspection → Won conversion:** {conversion_rate:.0f}% {conversion_trend}  
+        ⏳ **Avg response time:** {avg_response:.1f} hours {response_trend}
         """
     )
 
     # =========================================================
-    # TODAY'S PRIORITIES (AUTO-GENERATED)
+    # CC-1 — CLICKABLE TODAY’S PRIORITIES
     # =========================================================
     st.markdown("### 🧠 Today’s Priorities")
 
-    priorities = []
+    def go_to_pipeline(stage):
+        st.session_state.page = "Pipeline Board"
+        st.session_state.selected_stage = stage
+        st.rerun()
 
-    # Priority 1: Oldest New/Contacted lead
     oldest_lead = follow_up_df.sort_values("created_at").head(1)
-    if not oldest_lead.empty:
-        priorities.append(
-            f"Follow up with lead #{oldest_lead.iloc[0]['lead_id']}"
-        )
-
-    # Priority 2: Inspection pending
     inspection_pending = df[df["stage"] == "Inspection"].head(1)
-    if not inspection_pending.empty:
-        priorities.append(
-            f"Complete inspection for lead #{inspection_pending.iloc[0]['lead_id']}"
-        )
-
-    # Priority 3: Estimates pending
     estimate_count = len(df[df["stage"] == "Estimate Sent"])
-    if estimate_count:
-        priorities.append(
-            f"Send estimate reminders ({estimate_count} pending)"
-        )
 
-    if priorities:
-        for i, p in enumerate(priorities[:3], start=1):
-            st.write(f"{i}. {p}")
+    if not df.empty:
+        if not oldest_lead.empty:
+            if st.button(f"1️⃣ Follow up with lead #{oldest_lead.iloc[0]['lead_id']}"):
+                go_to_pipeline("New")
+
+        if not inspection_pending.empty:
+            if st.button(f"2️⃣ Complete inspection for lead #{inspection_pending.iloc[0]['lead_id']}"):
+                go_to_pipeline("Inspection")
+
+        if estimate_count:
+            if st.button(f"3️⃣ Send estimate reminders ({estimate_count} pending)"):
+                go_to_pipeline("Estimate Sent")
     else:
-        st.success("🎉 No urgent actions today. Everything is on track.")
+        st.success("🎉 No urgent priorities today")
 
     # =========================================================
-    # 🚨 QUICK ACTION BUTTONS
+    # QUICK ACTION SHORTCUTS
     # =========================================================
     st.markdown("## 🚨 What Needs Attention")
 
@@ -6716,20 +6734,20 @@ def page_command_center():
 
     with c1:
         if st.button("🔴 Overdue Leads"):
-            st.session_state["pipeline_filter"] = "overdue"
-            st.session_state["page"] = "Pipeline Board"
+            st.session_state.page = "Pipeline Board"
+            st.session_state.selected_stage = "Overdue"
             st.rerun()
 
     with c2:
         if st.button("🟠 Stalled Inspections"):
-            st.session_state["pipeline_filter"] = "inspection"
-            st.session_state["page"] = "Pipeline Board"
+            st.session_state.page = "Pipeline Board"
+            st.session_state.selected_stage = "Inspection"
             st.rerun()
 
     with c3:
         if st.button("🟡 Follow-ups Needed"):
-            st.session_state["pipeline_filter"] = "follow_up"
-            st.session_state["page"] = "Pipeline Board"
+            st.session_state.page = "Pipeline Board"
+            st.session_state.selected_stage = "Contacted"
             st.rerun()
 
 
