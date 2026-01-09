@@ -6558,9 +6558,6 @@ The Team
 def page_command_center():
     require_role_access("overview")
 
-    st.markdown("<div class='header'>Command Center</div>", unsafe_allow_html=True)
-    st.caption("Your real-time business health & priorities")
-
     # ---------------------------------
     # LOAD DATA SAFELY
     # ---------------------------------
@@ -6752,7 +6749,7 @@ if (
 # NAV ICONS
 # ----------------------
 NAV_ICONS = {
-    "Command Center": "⚠️",
+    "Command Center": "📍",
     "Overview": "🧭",
     "Lead Capture": "🎯",
     "Pipeline Board": "🔄",
@@ -6771,7 +6768,7 @@ NAV_ICONS = {
 # NAVIGATION (STABLE MODE) - SIDEBAR
 # ----------------------
 with st.sidebar:
-    st.header("🚀 ReCapture Pro")
+    st.header("Navigation")
     st.markdown("---")
 
     pages = [
