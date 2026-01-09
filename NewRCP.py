@@ -4197,7 +4197,7 @@ def page_analytics():
         f"{intelligence.get('health_score', 0)} / 100"
     )
     
-    st.divider()
+st.divider()
     # =========================================================
     # 🚨 STRATEGIC SIGNALS
     # =========================================================
@@ -4219,7 +4219,7 @@ def page_analytics():
                 unsafe_allow_html=True
             )
 
-   st.divider() 
+st.divider() 
    #------------------DONUT CHART HERE--------------------- 
     st.markdown("## Pipeline Job Ratio")
     st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
@@ -4250,7 +4250,7 @@ def page_analytics():
     fig2 = px.line(ts_df, x="date", y="overdue", markers=True, title="SLA Overdue Count (30d)")
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.divider()
+st.divider()
     st.markdown("---")
     st.subheader("Current Overdue Leads")
     overdue_rows = []
@@ -4263,7 +4263,7 @@ def page_analytics():
     else:
         st.info("No overdue leads currently.")
 
-    st.divider()
+st.divider()
     # =========================================================
     # 🧠 EXECUTIVE NARRATIVE
     # =========================================================
