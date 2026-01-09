@@ -365,7 +365,7 @@ PIPELINE_STAGES = [
     "New", "Contacted", "Inspection Scheduled", "Inspection Completed",
     "Estimate Sent", "Qualified", "Won", "Lost"
 ]
-DEFAULT_SLA_HOURS = 72
+DEFAULT_SLA_HOURS = 24
 COMFORTAA_IMPORT = "https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;700&display=swap"
 
 
@@ -3031,7 +3031,7 @@ def compute_priority_for_row(row, weights=None):
             if isinstance(sla_entered, str):
                 sla_entered = datetime.fromisoformat(sla_entered)
             time_left_h = max((sla_entered + timedelta(hours=row.get("sla_hours") or DEFAULT_SLA_HOURS) - datetime.utcnow()).total_seconds()/3600.0, 0.0)
-            sla_score = max(0.0, (72.0 - min(time_left_h,72.0)) / 72.0)
+            sla_score = max(0.0, (24.0 - min(time_left_h,24.0)) / 24.0)
     except Exception:
         sla_score = 0.0
     total = s*weights["score_w"] + vnorm*weights["value_w"] + sla_score*weights["sla_w"]
@@ -6591,7 +6591,7 @@ def page_command_center():
     # ---------------------------------
     stalled = df[
         (df["stage"].isin(["New", "Contacted", "Inspection"])) &
-        (df["hours_open"] > 72)
+        (df["hours_open"] > 24)
     ]
 
     revenue_at_risk = stalled["estimated_value"].sum()
@@ -6640,7 +6640,7 @@ def page_command_center():
 
         priority_df = df[
             (df["sla_remaining"] <= 6) |
-            (df["hours_open"] > 72)
+            (df["hours_open"] > 24)
         ][[
             "lead_id",
             "stage",
@@ -6783,7 +6783,7 @@ with st.sidebar:
 # ----------------------
 # ROUTER (STABLE)
 # ----------------------
-if page == "⚠️ Command Center":
+if page == "Command Center":
     page_command_center()
 
 elif page == "Overview":
