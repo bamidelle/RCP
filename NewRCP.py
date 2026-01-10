@@ -4421,7 +4421,7 @@ def page_analytics():
     # =========================================================
     # 🧠 EXECUTIVE NARRATIVE
     # =========================================================
-    st.markdown("### Overall Interpretation")
+    #st.markdown("### Overall Interpretation")
 
     narrative = intelligence.get("executive_narrative", {})
 
