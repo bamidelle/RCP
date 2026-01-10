@@ -6702,12 +6702,8 @@ The Team
 def page_command_center():
     require_role_access("overview")
 
-    # =========================================================
-    # HEADER (UPDATED)
-    # =========================================================
-    st.markdown("## ⚡ Command Center")
-    st.caption("Real-time business health & priorities")
-    st.markdown("---")
+    st.markdown("<div class='header'>Command Center</div>", unsafe_allow_html=True)
+    st.caption("Your real-time business health & priorities")
 
     # =========================================================
     # LOAD DATA SAFELY
@@ -6718,58 +6714,41 @@ def page_command_center():
         df = pd.DataFrame()
 
     # =========================================================
-    # EMPTY STATE
+    # EMPTY STATE — FIRST TIME USERS
     # =========================================================
     if df.empty:
-        st.markdown(
-            """
-            ### 📍 Your Command Center
-
-            Looks like you’re just getting started 👋
-
-            **Once you add leads, this page will show:**
-            - 💰 Revenue at risk
-            - ⏰ SLA & follow-up alerts
-            - 📊 Conversion performance
-            - 🎯 Daily priorities
-
-            👉 Start by creating your first lead.
-            """,
-            unsafe_allow_html=True
+        st.markdown("## 📍 Welcome to your Command Center")
+        st.info(
+            "Once you start capturing leads, this page will show:\n"
+            "- 💰 Revenue at risk\n"
+            "- 🛎 Follow-ups due\n"
+            "- 📊 Conversion performance\n"
+            "- 🧠 Daily priorities"
         )
 
-        if st.button("➕ Capture Your First Lead"):
+        if st.button("➕ Capture your first lead"):
             st.session_state.page = "Lead Capture"
             st.rerun()
 
         return
 
     # =========================================================
-    # NORMALIZATION
+    # SAFE NORMALIZATION (NON-DESTRUCTIVE)
     # =========================================================
-    now = datetime.utcnow()
-
-    df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
     df["stage"] = df.get("stage", "New").fillna("New")
-    df["sla_hours"] = df.get("sla_hours", 24).fillna(24)
+    df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
+    df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
-    df["lead_age_hours"] = (
-        (now - df["created_at"]).dt.total_seconds() / 3600
-    )
+    now = datetime.utcnow()
 
     # =========================================================
-    # CORE METRICS LOGIC
+    # CORE BUSINESS METRICS (LOCKED DEFINITIONS)
     # =========================================================
 
-    # ---- Follow-ups (24h rule)
-    follow_up_24h = df[
-        (df["stage"].isin(["New", "Contacted"])) &
-        (df["lead_age_hours"] >= 24)
-    ]
-    follow_up_24h_count = len(follow_up_24h)
-
-    # ---- Response Time
+    # ---------------------------------------------------------
+    # ⏱ Response Time (Lead Created → First Contact)
+    # ---------------------------------------------------------
     if "first_contacted_at" in df.columns:
         df["first_contacted_at"] = pd.to_datetime(
             df["first_contacted_at"], errors="coerce"
@@ -6782,184 +6761,182 @@ def page_command_center():
     else:
         avg_response_time = 0
 
-    # ---- Inspection → Won conversion
+    # ---------------------------------------------------------
+    # 📊 Inspection → Won Conversion
+    # ---------------------------------------------------------
     inspection_count = len(df[df["stage"] == "Inspection"])
-    won_count = len(df[df["stage"] == "Won"])
+    won_from_inspection = len(df[df["stage"] == "Won"])
+
     inspection_conversion = (
-        (won_count / inspection_count) * 100
+        (won_from_inspection / inspection_count) * 100
         if inspection_count > 0 else 0
     )
 
-    # ---- Stalled Revenue (SLA breached)
+    # ---------------------------------------------------------
+    # 🛎 Leads Needing Follow-up (24h rule)
+    # ---------------------------------------------------------
+    follow_up_stages = ["New", "Contacted"]
+
+    df["lead_age_hours"] = (
+        (now - df["created_at"]).dt.total_seconds() / 3600
+    )
+
+    follow_up_24h = df[
+        (df["stage"].isin(follow_up_stages)) &
+        (df["lead_age_hours"] >= 24)
+    ]
+
+    follow_up_24h_count = len(follow_up_24h)
+
+    # ---------------------------------------------------------
+    # 🚨 Stalled Revenue (SLA BREACH)
+    # Definition:
+    # Any Inspection or Estimate lead that has exceeded its SLA
+    # ---------------------------------------------------------
+    stalled_stages = ["Inspection", "Estimate Sent"]
+
     stalled_revenue = df[
-        (df["stage"].isin(["Inspection", "Estimate Sent"])) &
+        (df["stage"].isin(stalled_stages)) &
         (df["lead_age_hours"] > df["sla_hours"])
     ]["estimated_value"].sum()
 
-    # ---- Revenue at Risk (72h early warning)
+    # ---------------------------------------------------------
+    # 💰 Revenue at Risk (EARLY WARNING – 72 HOURS)
+    # Definition:
+    # Any lead older than 72 hours that is NOT closed (Won/Lost)
+    # This is NOT an SLA breach yet — it signals financial danger.
+    #
+    # Business Question Answered:
+    # "How much money is exposed because leads are aging too long?"
+    # ---------------------------------------------------------
     REVENUE_RISK_THRESHOLD_HOURS = 72
+
     revenue_at_risk = df[
         (df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS) &
         (df["stage"].isin([
-            "New", "Contacted", "Inspection", "Estimate Sent"
+            "New",
+            "Contacted",
+            "Inspection",
+            "Estimate Sent"
         ]))
     ]["estimated_value"].sum()
 
     # =========================================================
-    # SECTION 2 — KPI OVERVIEW ROW
+    # AI INSIGHTS (GENERATE ONCE PER SESSION)
+    # =========================================================
+    if "ai_insights" not in st.session_state:
+        st.session_state.ai_insights = generate_ai_advice(df)
+
     # =========================================================
     # COMMAND CENTER DISPLAY
+    # =========================================================
+    st.markdown("## ⚡ Command Center")
+    st.caption("What needs attention • What’s at risk • What’s changing")
 
-    c1, c2, c3, c4 = st.columns(4)
+    st.markdown(
+        f"""
+        🚨 **Stalled Revenue (SLA Breached):** ${stalled_revenue:,.0f}  
+        💰 **Revenue at Risk (≥ {REVENUE_RISK_THRESHOLD_HOURS}h aging):** ${revenue_at_risk:,.0f}  
+        🛎 **{follow_up_24h_count} leads** need follow-up within 24 hours  
+        📊 **Inspection → Won conversion:** {inspection_conversion:.0f}%  
+        ⏳ **Avg response time:** {avg_response_time:.1f} hours
+        """
+    )
+
+    st.caption(
+        "💡 *Revenue at Risk highlights money that is not lost yet — but becoming increasingly unlikely to close if no action is taken.*"
+    )
+
+    # =========================================================
+    # AI BUSINESS INSIGHTS
+    # =========================================================
+    st.markdown("## 🤖 AI Business Insights")
+
+    if st.session_state.ai_insights:
+        for insight in st.session_state.ai_insights:
+            st.info(f"💡 {insight}")
+    else:
+        st.success("Everything looks healthy. No urgent AI recommendations.")
+
+    # =========================================================
+    # TODAY’S PRIORITIES (CLICKABLE)
+    # =========================================================
+    st.markdown("### 🧠 Today’s Priorities")
+
+    def go_to_pipeline(stage):
+        st.session_state.page = "Pipeline Board"
+        st.session_state.selected_stage = stage
+        st.rerun()
+
+    priorities = []
+
+    # 1️⃣ Oldest follow-up overdue
+    oldest_follow_up = follow_up_24h.sort_values("created_at").head(1)
+    if not oldest_follow_up.empty:
+        lead = oldest_follow_up.iloc[0]
+        priorities.append(
+            (f"Follow up with lead #{lead['lead_id']}", "New")
+        )
+
+    # 2️⃣ Oldest inspection pending
+    inspection_pending = (
+        df[df["stage"] == "Inspection"]
+        .sort_values("created_at")
+        .head(1)
+    )
+
+    if not inspection_pending.empty:
+        lead = inspection_pending.iloc[0]
+        priorities.append(
+            (f"Complete inspection for lead #{lead['lead_id']}", "Inspection")
+        )
+
+    # 3️⃣ Estimates pending
+    estimate_pending = df[df["stage"] == "Estimate Sent"]
+    if len(estimate_pending) > 0:
+        priorities.append(
+            (f"Send estimate reminders ({len(estimate_pending)} pending)", "Estimate Sent")
+        )
+
+    if priorities:
+        for i, (label, stage) in enumerate(priorities[:3], start=1):
+            if st.button(f"{i}. {label}"):
+                go_to_pipeline(stage)
+    else:
+        st.success("🎉 No urgent priorities today")
+
+    # =========================================================
+    # QUICK ACTION SHORTCUTS
+    # =========================================================
+    st.markdown("## 🚨 What Needs Attention")
+
+    c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.metric(
-            "Stalled Revenue",
-            f"${stalled_revenue:,.0f}",
-            help="Deals stuck beyond SLA"
-        )
+        if st.button("🔴 Overdue Leads"):
+            go_to_pipeline("Overdue")
 
     with c2:
-        st.metric(
-            "At Risk (72h)",
-            f"${revenue_at_risk:,.0f}",
-            help="Revenue likely to slip if no action"
-        )
+        if st.button("🟠 Stalled Inspections"):
+            go_to_pipeline("Inspection")
 
     with c3:
-        st.metric(
-            "Follow-ups Due",
-            follow_up_24h_count,
-            help="Leads awaiting response in 24h"
-        )
-
-    with c4:
-        st.metric(
-            "Response Time",
-            f"{avg_response_time:.1f}h",
-            help="Average first response time"
-        )
-
-    st.markdown("---")
+        if st.button("🟡 Follow-ups Needed"):
+            go_to_pipeline("Contacted")
 
     # =========================================================
-    # SECTION 3 — NEEDS ATTENTION + TODAY
+    # WEEKLY BUSINESS PULSE
     # =========================================================
-    left, right = st.columns([2, 1])
+    st.markdown("## 📬 Weekly Business Pulse")
 
-    # --------------------------
-    # NEEDS ATTENTION (LEFT)
-    # --------------------------
-    with left:
-        st.subheader("Needs Attention")
-
-        if follow_up_24h_count > 0:
-            st.warning(
-                f"📞 **{follow_up_24h_count} leads need follow-up**\n\n"
-                "High-priority leads awaiting response within 24 hours."
-            )
-
-        st.info(
-            f"📊 **Inspection → Won: {inspection_conversion:.0f}%**\n\n"
-            "Review inspection outcomes and lost opportunities."
+    if st.button("Send Weekly Pulse Now"):
+        pulse = generate_weekly_business_pulse(df)
+        send_email_to_user(
+            subject="Your Weekly Business Pulse",
+            body=pulse
         )
+        st.success("Weekly pulse sent successfully.")
 
-        st.success(
-            "📈 **Revenue velocity tracking**\n\n"
-            "Monitor deal movement toward monthly targets."
-        )
-
-        st.success(
-            "👥 **Team capacity optimization**\n\n"
-            "Workload balanced. Consider new assignments if volume increases."
-        )
-
-    # --------------------------
-    # TODAY (RIGHT)
-    # --------------------------
-    with right:
-        st.subheader("Today")
-
-        def go_to_pipeline(stage):
-            st.session_state.page = "Pipeline Board"
-            st.session_state.selected_stage = stage
-            st.rerun()
-
-        if follow_up_24h_count:
-            if st.button("📞 Call overdue lead"):
-                go_to_pipeline("Contacted")
-
-        if inspection_count:
-            if st.button("📝 Complete inspection"):
-                go_to_pipeline("Inspection")
-
-        if len(df[df["stage"] == "Estimate Sent"]) > 0:
-            if st.button("📨 Send proposal follow-up"):
-                go_to_pipeline("Estimate Sent")
-
-    st.markdown("---")
-
-    # =========================================================
-    # SECTION 4 — THIS WEEK
-    # =========================================================
-    st.subheader("This Week")
-
-    w1, w2, w3, w4 = st.columns(4)
-
-    with w1:
-        st.metric(
-            "New Leads",
-            len(df[df["created_at"] >= now - timedelta(days=7)])
-        )
-
-    with w2:
-        st.metric(
-            "Inspections",
-            len(df[df["stage"] == "Inspection"])
-        )
-
-    with w3:
-        st.metric(
-            "Proposals",
-            len(df[df["stage"] == "Estimate Sent"])
-        )
-
-    with w4:
-        st.metric(
-            "Closed",
-            len(df[df["stage"] == "Won"])
-        )
-
-    # =========================================================
-    # SECTION 5 — BOTTOM SUMMARY STRIP
-    # =========================================================
-    st.markdown("---")
-
-    b1, b2, b3, b4 = st.columns(4)
-
-    with b1:
-        st.metric(
-            "Active Deals",
-            len(df[df["stage"].isin(["Inspection", "Estimate Sent"])])
-        )
-
-    with b2:
-        st.metric(
-            "Pipeline Value",
-            f"${df['estimated_value'].sum():,.0f}"
-        )
-
-    with b3:
-        st.metric(
-            "Win Rate",
-            f"{inspection_conversion:.0f}%"
-        )
-
-    with b4:
-        st.metric(
-            "Hot Leads",
-            len(follow_up_24h)
-        )
 
 
 #-----------------------END OF COMMAND CENTER---------------------
