@@ -452,6 +452,7 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     last_login_at = Column(DateTime, nullable=True)
 
+    
     # =========================
     # AUTH / SECURITY
     # =========================
@@ -1865,6 +1866,45 @@ def compute_job_volume_metrics(df):
         "job_types": safe_col(df, "job_type").value_counts().to_dict(),
         "lead_sources": safe_col(df, "lead_source").value_counts().to_dict(),
     }
+
+
+def generate_weekly_business_pulse(df):
+    stalled_revenue = df[df["stage"].isin(["Inspection", "Estimate Sent"])]["estimated_value"].sum()
+    follow_ups = len(df[df["stage"].isin(["New", "Contacted"])])
+    won = len(df[df["stage"] == "Won"])
+    inspections = len(df[df["stage"] == "Inspection"])
+    conversion = (won / inspections * 100) if inspections else 0
+
+    return f"""
+    Weekly Business Pulse 🚨
+
+    💰 Stalled Revenue: ${stalled_revenue:,.0f}
+    🛎 Leads needing follow-up: {follow_ups}
+    📊 Inspection → Won conversion: {conversion:.0f}%
+
+    Log in to ReCapture Pro to take action.
+    """
+
+
+def generate_ai_advice(df):
+    insights = []
+
+    if len(df[df["stage"].isin(["New", "Contacted"])]) > 5:
+        insights.append("You have several new leads awaiting follow-up. Faster response may increase close rates.")
+
+    stalled = df[df["stage"].isin(["Inspection", "Estimate Sent"])]
+    if not stalled.empty:
+        insights.append("Some high-value leads appear stalled. Prioritize inspections and estimates to unlock revenue.")
+
+    avg_response = (
+        (datetime.utcnow() - pd.to_datetime(df["created_at"], errors="coerce"))
+        .dt.total_seconds().mean() / 3600
+    )
+
+    if avg_response > 4:
+        insights.append("Your average response time is slower than optimal. Aim for under 2 hours for better conversions.")
+
+    return insights
 
 
 
@@ -6696,6 +6736,17 @@ def page_command_center():
         """
     )
 
+    st.markdown("## 🤖 AI Business Insights")
+
+    advice = generate_ai_advice(df)
+    
+    if advice:
+        for tip in advice:
+            st.info(f"💡 {tip}")
+    else:
+        st.success("Everything looks healthy. No urgent AI recommendations.")
+
+
     # =========================================================
     # CC-1 — CLICKABLE TODAY’S PRIORITIES
     # =========================================================
@@ -6749,6 +6800,19 @@ def page_command_center():
             st.session_state.page = "Pipeline Board"
             st.session_state.selected_stage = "Contacted"
             st.rerun()
+
+    # =========================================================
+    # WEEKLY BUSINESS PULSE (NEW)
+    # =========================================================
+    st.markdown("## 📬 Weekly Business Pulse")
+
+    if st.button("Send Weekly Pulse Now"):
+        pulse = generate_weekly_business_pulse(df)
+        send_email_to_user(
+            subject="Your Weekly Business Pulse",
+            body=pulse
+        )
+        st.success("Weekly pulse sent successfully.")
 
 
 
@@ -6875,10 +6939,17 @@ with st.sidebar:
     # Extract page name (strip emoji)
     page = page_label.split("  ", 1)[1]
 
+# =========================================================
+# SESSION DEFAULTS (AFTER AUTH)
+# =========================================================
+if "page" not in st.session_state:
+    st.session_state.page = "Command Center"
 
 # ----------------------
 # ROUTER (STABLE)
 # ----------------------
+page = st.session_state.page  # <-- ensure router reads session_state
+
 if page == "Command Center":
     page_command_center()
 
@@ -6917,9 +6988,6 @@ elif page == "Exports":
 
 else:
     st.info("Page not implemented yet.")
-
-
-
 
 # Footer
 st.markdown("---")
