@@ -6751,15 +6751,7 @@ def page_command_center():
         """
     )
 
-    st.markdown("## 🤖 AI Business Insights")
 
-    advice = generate_ai_advice(df)
-    
-    if advice:
-        for tip in advice:
-            st.info(f"💡 {tip}")
-    else:
-        st.success("Everything looks healthy. No urgent AI recommendations.")
 
 
     # =========================================================
