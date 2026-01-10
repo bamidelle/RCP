@@ -1889,22 +1889,30 @@ def generate_weekly_business_pulse(df):
 def generate_ai_advice(df):
     insights = []
 
-    if len(df[df["stage"].isin(["New", "Contacted"])]) > 5:
-        insights.append("You have several new leads awaiting follow-up. Faster response may increase close rates.")
+    follow_up_count = len(df[df["stage"].isin(["New", "Contacted"])])
+    if follow_up_count >= 5:
+        insights.append(
+            "You have multiple new leads awaiting follow-up. Faster response times may significantly increase close rates."
+        )
 
     stalled = df[df["stage"].isin(["Inspection", "Estimate Sent"])]
     if not stalled.empty:
-        insights.append("Some high-value leads appear stalled. Prioritize inspections and estimates to unlock revenue.")
+        insights.append(
+            "Several high-value leads appear stalled. Completing inspections and sending estimates could unlock revenue."
+        )
 
-    avg_response = (
-        (datetime.utcnow() - pd.to_datetime(df["created_at"], errors="coerce"))
-        .dt.total_seconds().mean() / 3600
-    )
-
-    if avg_response > 4:
-        insights.append("Your average response time is slower than optimal. Aim for under 2 hours for better conversions.")
+    if "created_at" in df.columns:
+        avg_response = (
+            (datetime.utcnow() - pd.to_datetime(df["created_at"], errors="coerce"))
+            .dt.total_seconds().mean() / 3600
+        )
+        if avg_response and avg_response > 4:
+            insights.append(
+                "Your average response time is slower than optimal. Aim for under 2 hours to improve conversions."
+            )
 
     return insights
+
 
 
 
@@ -6720,6 +6728,13 @@ def page_command_center():
         (df["stage"].isin(["New", "Contacted", "Inspection", "Estimate Sent"]))
     ]["estimated_value"].sum()
 
+    
+    # =========================================================
+    # AI INSIGHTS (GENERATE ONCE PER SESSION)
+    # =========================================================
+    if not st.session_state.ai_insights:
+        st.session_state.ai_insights = generate_ai_advice(df)
+
     # =========================================================
     # COMMAND CENTER DISPLAY
     # =========================================================
@@ -6746,6 +6761,17 @@ def page_command_center():
     else:
         st.success("Everything looks healthy. No urgent AI recommendations.")
 
+
+    # =========================================================
+    # AI BUSINESS INSIGHTS
+    # =========================================================
+    st.markdown("## 🤖 AI Business Insights")
+    
+    if st.session_state.ai_insights:
+        for insight in st.session_state.ai_insights:
+            st.info(f"💡 {insight}")
+    else:
+        st.success("Everything looks healthy. No urgent AI recommendations.")
 
     # =========================================================
     # CC-1 — CLICKABLE TODAY’S PRIORITIES
@@ -6957,6 +6983,10 @@ with st.sidebar:
 # =========================================================
 if "page" not in st.session_state:
     st.session_state.page = "Command Center"
+
+#-----------------Persit AI-----------------------
+if "ai_insights" not in st.session_state:
+    st.session_state.ai_insights = []
 
 # ----------------------
 # ROUTER (STABLE)
