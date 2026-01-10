@@ -684,6 +684,19 @@ class ReviewEmailTemplate(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class AIInsight(Base):
+    __tablename__ = "ai_insights"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+
+    insight_key = Column(String, index=True)
+    message = Column(Text)
+
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
 # ---------- END BLOCK A ----------
 
 
@@ -1603,6 +1616,43 @@ def get_total_leads_for_account(user):
     with SessionLocal() as s:
         return s.query(Lead).count()
 
+def sync_ai_insights(user_id, generated_insights):
+    from models import AIInsight
+
+    with SessionLocal() as s:
+        existing = {
+            i.insight_key: i
+            for i in s.query(AIInsight)
+            .filter(
+                AIInsight.user_id == user_id,
+                AIInsight.is_active == True
+            )
+            .all()
+        }
+
+        generated_keys = set()
+
+        for insight in generated_insights:
+            key = insight["key"]
+            generated_keys.add(key)
+
+            if key not in existing:
+                s.add(AIInsight(
+                    user_id=user_id,
+                    insight_key=key,
+                    message=insight["message"]
+                ))
+            else:
+                if existing[key].message != insight["message"]:
+                    existing[key].message = insight["message"]
+
+        for key, record in existing.items():
+            if key not in generated_keys:
+                record.is_active = False
+                record.resolved_at = datetime.utcnow()
+
+        s.commit()
+
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
 def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
     s = get_session()
@@ -1891,15 +1941,23 @@ def generate_ai_advice(df):
 
     follow_up_count = len(df[df["stage"].isin(["New", "Contacted"])])
     if follow_up_count >= 5:
-        insights.append(
-            "You have multiple new leads awaiting follow-up. Faster response times may significantly increase close rates."
-        )
+        insights.append({
+            "key": "follow_up_delay",
+            "message": (
+                "You have multiple new leads awaiting follow-up. "
+                "Reducing response time could significantly increase close rates."
+            )
+        })
 
     stalled = df[df["stage"].isin(["Inspection", "Estimate Sent"])]
     if not stalled.empty:
-        insights.append(
-            "Several high-value leads appear stalled. Completing inspections and sending estimates could unlock revenue."
-        )
+        insights.append({
+            "key": "stalled_revenue",
+            "message": (
+                "Several high-value leads appear stalled. "
+                "Completing inspections and sending estimates could unlock revenue."
+            )
+        })
 
     if "created_at" in df.columns:
         avg_response = (
@@ -1907,9 +1965,13 @@ def generate_ai_advice(df):
             .dt.total_seconds().mean() / 3600
         )
         if avg_response and avg_response > 4:
-            insights.append(
-                "Your average response time is slower than optimal. Aim for under 2 hours to improve conversions."
-            )
+            insights.append({
+                "key": "slow_response_time",
+                "message": (
+                    "Your average response time is slower than optimal. "
+                    "Aim for under 2 hours to improve conversions."
+                )
+            })
 
     return insights
 
@@ -6644,7 +6706,7 @@ def page_command_center():
     st.caption("Your real-time business health & priorities")
 
     # =========================================================
-    # LOAD DATA SAFELY (ANCHOR POINT)
+    # LOAD DATA SAFELY
     # =========================================================
     try:
         df = get_leads_df()
@@ -6652,16 +6714,24 @@ def page_command_center():
         df = pd.DataFrame()
 
     # =========================================================
-    # EMPTY STATE (NEW USERS)
+    # WHEN COMMAND CENTER PAGE LEAD: EMPTY STATE
     # =========================================================
     if df.empty:
-        st.markdown("### 📍 Your Command Center")
-        st.info("Create your first lead to activate live insights.")
-
-        if st.button("➕ Capture Your First Lead"):
+        st.markdown("## 📍 Welcome to your Command Center")
+        st.info(
+            "Once you start capturing leads, this page will show:\n"
+            "- Revenue at risk\n"
+            "- Follow-ups due\n"
+            "- Conversion performance\n"
+            "- Daily priorities"
+        )
+    
+        if st.button("➕ Capture your first lead"):
             st.session_state.page = "Lead Capture"
             st.rerun()
+    
         return
+
 
     # =========================================================
     # SAFE NORMALIZATION
@@ -6671,68 +6741,65 @@ def page_command_center():
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
     df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
+    # =========================================================
+    # CORE BUSINESS METRICS (LOCKED DEFINITIONS)
+    # =========================================================
     now = datetime.utcnow()
 
-    # =========================================================
-    # CORE METRICS
-    # =========================================================
-    stalled_stages = ["Inspection", "Estimate Sent"]
-    stalled_revenue = df[df["stage"].isin(stalled_stages)]["estimated_value"].sum()
+    # --- Response time (lead created → first contact)
+    if "first_contacted_at" in df.columns:
+        df["first_contacted_at"] = pd.to_datetime(
+            df["first_contacted_at"], errors="coerce"
+        )
+        df["response_hours"] = (
+            (df["first_contacted_at"] - df["created_at"])
+            .dt.total_seconds() / 3600
+        )
+        avg_response_time = df["response_hours"].dropna().mean()
+    else:
+        avg_response_time = 0
 
-    follow_up_df = df[df["stage"].isin(["New", "Contacted"])]
-    follow_up_count = len(follow_up_df)
-
+    # --- Inspection → Won conversion
     inspection_count = len(df[df["stage"] == "Inspection"])
-    won_count = len(df[df["stage"] == "Won"])
-    conversion_rate = (won_count / inspection_count * 100) if inspection_count else 0
-
-    df["response_hours"] = (
-        (now - df["created_at"]).dt.total_seconds() / 3600
-    )
-    avg_response = df["response_hours"].mean() if not df.empty else 0
-
-    # =========================================================
-    # CC-2 — TREND COMPARISON (LAST 7 DAYS)
-    # =========================================================
-    seven_days_ago = now - timedelta(days=7)
-
-    recent_df = df[df["created_at"] >= seven_days_ago]
-    previous_df = df[df["created_at"] < seven_days_ago]
-
-    def trend(current, previous):
-        if previous == 0:
-            return "—"
-        return "↑" if current > previous else "↓"
-
-    conversion_trend = trend(
-        len(recent_df[recent_df["stage"] == "Won"]),
-        len(previous_df[previous_df["stage"] == "Won"])
+    won_from_inspection = len(df[df["stage"] == "Won"])
+    inspection_conversion = (
+        (won_from_inspection / inspection_count) * 100
+        if inspection_count > 0 else 0
     )
 
-    response_trend = trend(
-        recent_df["response_hours"].mean() if not recent_df.empty else 0,
-        previous_df["response_hours"].mean() if not previous_df.empty else 0
-    )
-
-    # =========================================================
-    # CC-3 — REVENUE AT RISK (72 HOURS)
-    # =========================================================
-    risk_threshold_hours = 72
-
+    # --- Leads needing follow-up within 24h
+    follow_up_stages = ["New", "Contacted"]
     df["lead_age_hours"] = (
         (now - df["created_at"]).dt.total_seconds() / 3600
     )
 
-    revenue_at_risk = df[
-        (df["lead_age_hours"] >= risk_threshold_hours) &
-        (df["stage"].isin(["New", "Contacted", "Inspection", "Estimate Sent"]))
+    follow_up_24h = df[
+        (df["stage"].isin(follow_up_stages)) &
+        (df["lead_age_hours"] >= 24)
+    ]
+    follow_up_24h_count = len(follow_up_24h)
+
+    # --- Stalled revenue (SLA breach)
+    stalled_stages = ["Inspection", "Estimate Sent"]
+    df["sla_hours"] = df.get("sla_hours", 48)
+
+    stalled_revenue = df[
+        (df["stage"].isin(stalled_stages)) &
+        (df["lead_age_hours"] > df["sla_hours"])
     ]["estimated_value"].sum()
 
-    
+    # --- Revenue at risk (72h)
+    revenue_at_risk = df[
+        (df["lead_age_hours"] >= 72) &
+        (df["stage"].isin(
+            ["New", "Contacted", "Inspection", "Estimate Sent"]
+        ))
+    ]["estimated_value"].sum()
+
     # =========================================================
     # AI INSIGHTS (GENERATE ONCE PER SESSION)
     # =========================================================
-    if not st.session_state.ai_insights:
+    if "ai_insights" not in st.session_state:
         st.session_state.ai_insights = generate_ai_advice(df)
 
     # =========================================================
@@ -6744,21 +6811,18 @@ def page_command_center():
     st.markdown(
         f"""
         🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
-        💰 **Revenue at risk (72h):** ${revenue_at_risk:,.0f}  
-        🛎 **{follow_up_count} leads** need follow-up in the next 24 hours  
-        📊 **Inspection → Won conversion:** {conversion_rate:.0f}% {conversion_trend}  
-        ⏳ **Avg response time:** {avg_response:.1f} hours {response_trend}
+        💰 **Revenue at Risk (72h):** ${revenue_at_risk:,.0f}  
+        🛎 **{follow_up_24h_count} leads** need follow-up within 24 hours  
+        📊 **Inspection → Won conversion:** {inspection_conversion:.0f}%  
+        ⏳ **Avg response time:** {avg_response_time:.1f} hours
         """
     )
-
-
-
 
     # =========================================================
     # AI BUSINESS INSIGHTS
     # =========================================================
     st.markdown("## 🤖 AI Business Insights")
-    
+
     if st.session_state.ai_insights:
         for insight in st.session_state.ai_insights:
             st.info(f"💡 {insight}")
@@ -6766,33 +6830,47 @@ def page_command_center():
         st.success("Everything looks healthy. No urgent AI recommendations.")
 
     # =========================================================
-    # CC-1 — CLICKABLE TODAY’S PRIORITIES
+    # TODAY’S PRIORITIES
     # =========================================================
-    st.markdown("### 🧠 Today’s Priorities")
-
+    st.markdown("### Today’s Priorities")
+    
+    priorities = []
+    
+    # 1️⃣ Oldest uncontacted lead
+    oldest_follow_up = follow_up_24h.sort_values("created_at").head(1)
+    if not oldest_follow_up.empty:
+        lead = oldest_follow_up.iloc[0]
+        priorities.append(
+            (f"Follow up with lead #{lead['lead_id']}", "New")
+        )
+    
+    # 2️⃣ Oldest inspection pending
+    inspection_pending = df[df["stage"] == "Inspection"].sort_values("created_at").head(1)
+    if not inspection_pending.empty:
+        lead = inspection_pending.iloc[0]
+        priorities.append(
+            (f"Complete inspection for lead #{lead['lead_id']}", "Inspection")
+        )
+    
+    # 3️⃣ Estimates pending
+    estimate_pending = df[df["stage"] == "Estimate Sent"]
+    if len(estimate_pending) > 0:
+        priorities.append(
+            (f"Send estimate reminders ({len(estimate_pending)} pending)", "Estimate Sent")
+        )
+    
     def go_to_pipeline(stage):
         st.session_state.page = "Pipeline Board"
         st.session_state.selected_stage = stage
         st.rerun()
-
-    oldest_lead = follow_up_df.sort_values("created_at").head(1)
-    inspection_pending = df[df["stage"] == "Inspection"].head(1)
-    estimate_count = len(df[df["stage"] == "Estimate Sent"])
-
-    if not df.empty:
-        if not oldest_lead.empty:
-            if st.button(f"1️⃣ Follow up with lead #{oldest_lead.iloc[0]['lead_id']}"):
-                go_to_pipeline("New")
-
-        if not inspection_pending.empty:
-            if st.button(f"2️⃣ Complete inspection for lead #{inspection_pending.iloc[0]['lead_id']}"):
-                go_to_pipeline("Inspection")
-
-        if estimate_count:
-            if st.button(f"3️⃣ Send estimate reminders ({estimate_count} pending)"):
-                go_to_pipeline("Estimate Sent")
+    
+    if priorities:
+        for i, (label, stage) in enumerate(priorities[:3], start=1):
+            if st.button(f"{i}. {label}"):
+                go_to_pipeline(stage)
     else:
         st.success("🎉 No urgent priorities today")
+
 
     # =========================================================
     # QUICK ACTION SHORTCUTS
@@ -6803,24 +6881,18 @@ def page_command_center():
 
     with c1:
         if st.button("🔴 Overdue Leads"):
-            st.session_state.page = "Pipeline Board"
-            st.session_state.selected_stage = "Overdue"
-            st.rerun()
+            go_to_pipeline("Overdue")
 
     with c2:
         if st.button("🟠 Stalled Inspections"):
-            st.session_state.page = "Pipeline Board"
-            st.session_state.selected_stage = "Inspection"
-            st.rerun()
+            go_to_pipeline("Inspection")
 
     with c3:
         if st.button("🟡 Follow-ups Needed"):
-            st.session_state.page = "Pipeline Board"
-            st.session_state.selected_stage = "Contacted"
-            st.rerun()
+            go_to_pipeline("Contacted")
 
     # =========================================================
-    # WEEKLY BUSINESS PULSE (NEW)
+    # WEEKLY BUSINESS PULSE
     # =========================================================
     st.markdown("## 📬 Weekly Business Pulse")
 
@@ -6831,7 +6903,6 @@ def page_command_center():
             body=pulse
         )
         st.success("Weekly pulse sent successfully.")
-
 
 
 #-----------------------END OF COMMAND CENTER---------------------
