@@ -6926,18 +6926,31 @@ with st.sidebar:
         "AI Recommendations",
         "Seasonal Trends",
         "Settings",
-        #"Request Google Reviews",
         "Exports",
     ]
 
-    page_label = st.radio(
+    # 🔑 Ensure page exists
+    if "page" not in st.session_state:
+        st.session_state.page = "Command Center"
+
+    # Build labeled options
+    page_labels = [f"{NAV_ICONS[p]}  {p}" for p in pages]
+
+    # Find current index safely
+    current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
+
+    selected_label = st.radio(
         "Navigate",
-        [f"{NAV_ICONS[p]}  {p}" for p in pages],
-        index=0,
+        page_labels,
+        index=current_index,
     )
 
-    # Extract page name (strip emoji)
-    page = page_label.split("  ", 1)[1]
+    selected_page = selected_label.split("  ", 1)[1]
+
+    # 🔑 WRITE BACK TO SESSION STATE
+    if selected_page != st.session_state.page:
+        st.session_state.page = selected_page
+        st.rerun()
 
 # =========================================================
 # SESSION DEFAULTS (AFTER AUTH)
