@@ -6714,39 +6714,41 @@ def page_command_center():
         df = pd.DataFrame()
 
     # =========================================================
-    # WHEN COMMAND CENTER PAGE LEAD: EMPTY STATE
+    # EMPTY STATE — FIRST TIME USERS
     # =========================================================
     if df.empty:
         st.markdown("## 📍 Welcome to your Command Center")
         st.info(
             "Once you start capturing leads, this page will show:\n"
-            "- Revenue at risk\n"
-            "- Follow-ups due\n"
-            "- Conversion performance\n"
-            "- Daily priorities"
+            "- 💰 Revenue at risk\n"
+            "- 🛎 Follow-ups due\n"
+            "- 📊 Conversion performance\n"
+            "- 🧠 Daily priorities"
         )
-    
+
         if st.button("➕ Capture your first lead"):
             st.session_state.page = "Lead Capture"
             st.rerun()
-    
+
         return
 
-
     # =========================================================
-    # SAFE NORMALIZATION
+    # SAFE NORMALIZATION (NON-DESTRUCTIVE)
     # =========================================================
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
     df["stage"] = df.get("stage", "New").fillna("New")
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
     df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
+    now = datetime.utcnow()
+
     # =========================================================
     # CORE BUSINESS METRICS (LOCKED DEFINITIONS)
     # =========================================================
-    now = datetime.utcnow()
 
-    # --- Response time (lead created → first contact)
+    # ---------------------------------------------------------
+    # ⏱ Response Time (Lead Created → First Contact)
+    # ---------------------------------------------------------
     if "first_contacted_at" in df.columns:
         df["first_contacted_at"] = pd.to_datetime(
             df["first_contacted_at"], errors="coerce"
@@ -6759,16 +6761,22 @@ def page_command_center():
     else:
         avg_response_time = 0
 
-    # --- Inspection → Won conversion
+    # ---------------------------------------------------------
+    # 📊 Inspection → Won Conversion
+    # ---------------------------------------------------------
     inspection_count = len(df[df["stage"] == "Inspection"])
     won_from_inspection = len(df[df["stage"] == "Won"])
+
     inspection_conversion = (
         (won_from_inspection / inspection_count) * 100
         if inspection_count > 0 else 0
     )
 
-    # --- Leads needing follow-up within 24h
+    # ---------------------------------------------------------
+    # 🛎 Leads Needing Follow-up (24h rule)
+    # ---------------------------------------------------------
     follow_up_stages = ["New", "Contacted"]
+
     df["lead_age_hours"] = (
         (now - df["created_at"]).dt.total_seconds() / 3600
     )
@@ -6777,23 +6785,40 @@ def page_command_center():
         (df["stage"].isin(follow_up_stages)) &
         (df["lead_age_hours"] >= 24)
     ]
+
     follow_up_24h_count = len(follow_up_24h)
 
-    # --- Stalled revenue (SLA breach)
+    # ---------------------------------------------------------
+    # 🚨 Stalled Revenue (SLA BREACH)
+    # Definition:
+    # Any Inspection or Estimate lead that has exceeded its SLA
+    # ---------------------------------------------------------
     stalled_stages = ["Inspection", "Estimate Sent"]
-    df["sla_hours"] = df.get("sla_hours", 48)
 
     stalled_revenue = df[
         (df["stage"].isin(stalled_stages)) &
         (df["lead_age_hours"] > df["sla_hours"])
     ]["estimated_value"].sum()
 
-    # --- Revenue at risk (72h)
+    # ---------------------------------------------------------
+    # 💰 Revenue at Risk (EARLY WARNING – 72 HOURS)
+    # Definition:
+    # Any lead older than 72 hours that is NOT closed (Won/Lost)
+    # This is NOT an SLA breach yet — it signals financial danger.
+    #
+    # Business Question Answered:
+    # "How much money is exposed because leads are aging too long?"
+    # ---------------------------------------------------------
+    REVENUE_RISK_THRESHOLD_HOURS = 72
+
     revenue_at_risk = df[
-        (df["lead_age_hours"] >= 72) &
-        (df["stage"].isin(
-            ["New", "Contacted", "Inspection", "Estimate Sent"]
-        ))
+        (df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS) &
+        (df["stage"].isin([
+            "New",
+            "Contacted",
+            "Inspection",
+            "Estimate Sent"
+        ]))
     ]["estimated_value"].sum()
 
     # =========================================================
@@ -6810,12 +6835,16 @@ def page_command_center():
 
     st.markdown(
         f"""
-        🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
-        💰 **Revenue at Risk (72h):** ${revenue_at_risk:,.0f}  
+        🚨 **Stalled Revenue (SLA Breached):** ${stalled_revenue:,.0f}  
+        💰 **Revenue at Risk (≥ {REVENUE_RISK_THRESHOLD_HOURS}h aging):** ${revenue_at_risk:,.0f}  
         🛎 **{follow_up_24h_count} leads** need follow-up within 24 hours  
         📊 **Inspection → Won conversion:** {inspection_conversion:.0f}%  
         ⏳ **Avg response time:** {avg_response_time:.1f} hours
         """
+    )
+
+    st.caption(
+        "💡 *Revenue at Risk highlights money that is not lost yet — but becoming increasingly unlikely to close if no action is taken.*"
     )
 
     # =========================================================
@@ -6830,47 +6859,51 @@ def page_command_center():
         st.success("Everything looks healthy. No urgent AI recommendations.")
 
     # =========================================================
-    # TODAY’S PRIORITIES
+    # TODAY’S PRIORITIES (CLICKABLE)
     # =========================================================
-    st.markdown("### Today’s Priorities")
-    
+    st.markdown("### 🧠 Today’s Priorities")
+
+    def go_to_pipeline(stage):
+        st.session_state.page = "Pipeline Board"
+        st.session_state.selected_stage = stage
+        st.rerun()
+
     priorities = []
-    
-    # 1️⃣ Oldest uncontacted lead
+
+    # 1️⃣ Oldest follow-up overdue
     oldest_follow_up = follow_up_24h.sort_values("created_at").head(1)
     if not oldest_follow_up.empty:
         lead = oldest_follow_up.iloc[0]
         priorities.append(
             (f"Follow up with lead #{lead['lead_id']}", "New")
         )
-    
+
     # 2️⃣ Oldest inspection pending
-    inspection_pending = df[df["stage"] == "Inspection"].sort_values("created_at").head(1)
+    inspection_pending = (
+        df[df["stage"] == "Inspection"]
+        .sort_values("created_at")
+        .head(1)
+    )
+
     if not inspection_pending.empty:
         lead = inspection_pending.iloc[0]
         priorities.append(
             (f"Complete inspection for lead #{lead['lead_id']}", "Inspection")
         )
-    
+
     # 3️⃣ Estimates pending
     estimate_pending = df[df["stage"] == "Estimate Sent"]
     if len(estimate_pending) > 0:
         priorities.append(
             (f"Send estimate reminders ({len(estimate_pending)} pending)", "Estimate Sent")
         )
-    
-    def go_to_pipeline(stage):
-        st.session_state.page = "Pipeline Board"
-        st.session_state.selected_stage = stage
-        st.rerun()
-    
+
     if priorities:
         for i, (label, stage) in enumerate(priorities[:3], start=1):
             if st.button(f"{i}. {label}"):
                 go_to_pipeline(stage)
     else:
         st.success("🎉 No urgent priorities today")
-
 
     # =========================================================
     # QUICK ACTION SHORTCUTS
