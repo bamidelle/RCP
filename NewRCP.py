@@ -6189,18 +6189,17 @@ def page_seasonal_trends():
     st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
     st.markdown(
         """
-    <em>
-    Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations for the property damage industry only. Get:
-    <br>
-    • <strong>Seasonal & Historical Weather Analysis</strong> → Identifies recurring weather-driven risk patterns that affect property damage volume<br>
-    • <strong>Damage Risk Forecasting</strong> → Predicts surge periods and exposure levels to enable proactive planning<br>
-    • <strong>Weather-to-Business Impact Mapping</strong> → Explains how weather trends influence claims, leads, and operational costs<br>
-    • <strong>Strategic Recommendations Engine</strong> → Provides time-based guidance for staffing, marketing, and operational decisions<br><br>
-    </em>
+        <em>
+        Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations for the property damage industry only. Get:
+        <br>
+        • <strong>Seasonal & Historical Weather Analysis</strong> → Identifies recurring weather-driven risk patterns that affect property damage volume<br>
+        • <strong>Damage Risk Forecasting</strong> → Predicts surge periods and exposure levels to enable proactive planning<br>
+        • <strong>Weather-to-Business Impact Mapping</strong> → Explains how weather trends influence claims, leads, and operational costs<br>
+        • <strong>Strategic Recommendations Engine</strong> → Provides time-based guidance for staffing, marketing, and operational decisions<br><br>
+        </em>
         """,
         unsafe_allow_html=True
     )
-
 
     # =========================================================
     # 1. LOCATION SELECTION
@@ -6222,7 +6221,6 @@ def page_seasonal_trends():
     ]
     selected = st.selectbox("Select city", labels)
     chosen = matches[labels.index(selected)]
-
     st.success(f"📍 {selected}, {country}")
 
     # =========================================================
@@ -6414,11 +6412,20 @@ def page_seasonal_trends():
         st.info(n)
 
     # =========================================================
-    # ✅ 12a. EXECUTIVE NARRATIVE (INSERT HERE)
+    # 12a. EXECUTIVE NARRATIVE (SAFE DEFAULTS)
     # =========================================================
     st.markdown("## 🧠 Executive Summary")
+    data = compute_business_intelligence(chosen["lat"], chosen["lon"], months)
+    data = data or {}  # ensure dictionary
+    data.setdefault("executive_narrative", [])
+
+    if not data["executive_narrative"]:
+        st.info("No insights available yet. Start capturing leads to generate seasonal trends.")
+
     for line in data["executive_narrative"]:
-        st.info(line)
+        confidence = line.get("confidence", 0)
+        text = line.get("text", "")
+        st.info(f"{text} (Confidence: {confidence:.0%})")
 
     # =========================================================
     # 13. DAMAGE RISK OUTLOOK & RECOMMENDATIONS
@@ -6454,7 +6461,6 @@ def page_seasonal_trends():
     st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
     techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
     st.metric("Recommended Technicians", techs)
-
 
 
 # ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
