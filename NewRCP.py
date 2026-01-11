@@ -6798,8 +6798,8 @@ def page_command_center():
 
     st.markdown(
         f"""
-        🚨 **Stalled Revenue:** ₦{stalled_revenue:,.0f}  
-        💰 **Revenue at Risk:** ₦{revenue_at_risk:,.0f}  
+        🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
+        💰 **Revenue at Risk:** ${revenue_at_risk:,.0f}  
         🛎 **Follow-ups Needed:** {follow_up_count}  
         📊 **Inspection → Won:** {inspection_conversion:.0f}%  
         ⏳ **Avg Response:** {avg_response_time:.1f}h
@@ -6889,7 +6889,7 @@ def page_command_center():
     st.markdown(
         f"""
         • **Leads captured:** {len(today_df)} today vs {len(yesterday_df)} yesterday {arrow(len(today_df), len(yesterday_df))}  
-        • **Revenue at risk:** ₦{risk_today:,.0f} today vs ₦{risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
+        • **Revenue at risk:** ${risk_today:,.0f} today vs ${risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
         • **Follow-ups due:** {follow_today} today vs {follow_yesterday} yesterday {arrow(follow_today, follow_yesterday, inverse=True)}
         """
     )
