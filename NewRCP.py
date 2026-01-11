@@ -6012,36 +6012,75 @@ def page_technician_mobile():
         s.close()
 
 
-# Exports page
+#---------------------------Exports page--------------------------------------------
 def page_exports():
     require_role_access("exports")
-    st.markdown("<div class='header'>📤 Exports & Imports</div>", unsafe_allow_html=True)
 
-    st.markdown("<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>", unsafe_allow_html=True)
+    st.markdown("<div class='header'>📤 Exports & Imports</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>",
+        unsafe_allow_html=True
+    )
+
+    # =========================================================
+    # EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
+    # =========================================================
     df = leads_to_df(None, None)
+
     if not df.empty:
         towrite = io.BytesIO()
-        df.to_excel(towrite, index=False, engine="openpyxl")
-        towrite.seek(0)
-        b64 = base64.b64encode(towrite.read()).decode()
-        href = f"data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{b64}"
-        st.markdown(f'<a href="{href}" download="leads_export.xlsx">Download leads_export.xlsx</a>', unsafe_allow_html=True)
-    uploaded = st.file_uploader("Upload leads (CSV/XLSX) for import/upsert", type=["csv","xlsx"])
+
+        try:
+            # Preferred: Excel export
+            df.to_excel(towrite, index=False, engine="openpyxl")
+            file_type = "xlsx"
+        except ModuleNotFoundError:
+            # Fallback: CSV export
+            towrite = io.StringIO()
+            df.to_csv(towrite, index=False)
+            file_type = "csv"
+
+        st.download_button(
+            label=f"📤 Download leads ({file_type.upper()})",
+            data=towrite.getvalue(),
+            file_name=f"leads_export.{file_type}",
+            mime="application/octet-stream"
+        )
+    else:
+        st.info("No leads available to export.")
+
+    st.divider()
+
+    # =========================================================
+    # IMPORT / UPSERT LEADS
+    # =========================================================
+    uploaded = st.file_uploader(
+        "Upload leads (CSV/XLSX) for import/upsert",
+        type=["csv", "xlsx"]
+    )
+
     if uploaded:
         try:
             if uploaded.name.lower().endswith(".csv"):
                 df_in = pd.read_csv(uploaded)
             else:
                 df_in = pd.read_excel(uploaded)
+
             if "lead_id" not in df_in.columns:
-                st.error("File must include a lead_id column")
-            else:
-                count = 0
-                for _, r in df_in.iterrows():
-                    try:
-                        upsert_lead_record({
+                st.error("❌ File must include a lead_id column")
+                return
+
+            count = 0
+            for _, r in df_in.iterrows():
+                try:
+                    upsert_lead_record(
+                        {
                             "lead_id": str(r["lead_id"]),
-                            "created_at": pd.to_datetime(r.get("created_at")) if r.get("created_at") is not None else datetime.utcnow(),
+                            "created_at": (
+                                pd.to_datetime(r.get("created_at"))
+                                if r.get("created_at") is not None
+                                else datetime.utcnow()
+                            ),
                             "source": r.get("source"),
                             "contact_name": r.get("contact_name"),
                             "contact_phone": r.get("contact_phone"),
@@ -6053,15 +6092,18 @@ def page_exports():
                             "estimated_value": float(r.get("estimated_value") or 0.0),
                             "ad_cost": float(r.get("ad_cost") or 0.0),
                             "stage": r.get("stage") or "New",
-                            "converted": bool(r.get("converted") or False)
-                        }, actor="admin")
-                        count += 1
-                    except Exception:
-                        continue
-                st.success(f"Imported/Upserted {count} rows.")
-        except Exception as e:
-            st.error("Failed to import: " + str(e))
+                            "converted": bool(r.get("converted") or False),
+                        },
+                        actor="admin"
+                    )
+                    count += 1
+                except Exception:
+                    continue
 
+            st.success(f"✅ Imported / Upserted {count} rows.")
+
+        except Exception as e:
+            st.error("❌ Failed to import: " + str(e))
 
 # ---------- BEGIN BLOCK F: FLASK API FOR LOCATION PINGS (optional but ready) ----------
 try:
