@@ -6853,6 +6853,24 @@ def page_command_center():
         • **Pipeline health:** {'Stable' if not bottlenecks else 'Attention needed'}
         """
     )
+        # =========================================================
+        # 🕒 RECENT ACTIVITY TIMELINE
+        # =========================================================
+        st.markdown("## 🕒 Recent Activity")
+        st.caption("Latest business events across your pipeline")
+    
+        timeline_df = (
+            df[["lead_id", "stage", "updated_at"]]
+            .dropna()
+            .sort_values("updated_at", ascending=False)
+            .head(8)
+        )
+    
+        for _, row in timeline_df.iterrows():
+            st.markdown(
+                f"• **Lead #{row['lead_id']}** → moved to **{row['stage']}**  \n"
+                f"  _{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
+            )
 
 
 
