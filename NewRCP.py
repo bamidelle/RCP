@@ -6836,8 +6836,8 @@ def page_command_center():
 
     st.markdown(
         f"""
-        🚨 **Stalled Revenue:**${stalled_revenue:,.0f}  
-        💰 **Revenue at Risk:**${revenue_at_risk:,.0f}  
+        🚨 **Stalled Revenue:** ₦{stalled_revenue:,.0f}  
+        💰 **Revenue at Risk:** ₦{revenue_at_risk:,.0f}  
         🛎 **Follow-ups Needed:** {follow_up_count}  
         📊 **Inspection → Won:** {inspection_conversion:.0f}%  
         ⏳ **Avg Response:** {avg_response_time:.1f}h
@@ -6852,7 +6852,7 @@ def page_command_center():
     st.markdown(
         f"""
         • **Leads captured:** {leads_today} today vs {leads_yesterday} yesterday {arrow(leads_today, leads_yesterday)}  
-        • **Revenue at risk:**${risk_today:,.0f} today vs${risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
+        • **Revenue at risk:** ₦{risk_today:,.0f} today vs ₦{risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
         • **Follow-ups due:** {follow_today} today vs {follow_yesterday} yesterday {arrow(follow_today, follow_yesterday, inverse=True)}
         """
     )
@@ -6875,6 +6875,63 @@ def page_command_center():
             f"• **Lead #{row['lead_id']}** → moved to **{row['stage']}**  \n"
             f"  _{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
         )
+
+    # =========================================================
+    # AI BUSINESS INSIGHTS
+    # =========================================================
+    st.markdown("## 🤖 AI Business Insights")
+    if st.session_state.ai_insights:
+        for insight in st.session_state.ai_insights:
+            st.info(f"💡 {insight}")
+    else:
+        st.success("Everything looks healthy. No urgent AI recommendations.")
+
+    # =========================================================
+    # TODAY’S PRIORITIES (CLICKABLE)
+    # =========================================================
+    st.markdown("### 🧠 Today’s Priorities")
+
+    def go_to_pipeline(stage):
+        st.session_state.page = "Pipeline Board"
+        st.session_state.selected_stage = stage
+        st.rerun()
+
+    priorities = []
+
+    # 1️⃣ Oldest follow-up overdue
+    oldest_follow_up = follow_up_24h.sort_values("created_at").head(1)
+    if not oldest_follow_up.empty:
+        lead = oldest_follow_up.iloc[0]
+        priorities.append(
+            (f"Follow up with lead #{lead['lead_id']}", "New")
+        )
+
+    # 2️⃣ Oldest inspection pending
+    inspection_pending = (
+        df[df["stage"] == "Inspection"]
+        .sort_values("created_at")
+        .head(1)
+    )
+    if not inspection_pending.empty:
+        lead = inspection_pending.iloc[0]
+        priorities.append(
+            (f"Complete inspection for lead #{lead['lead_id']}", "Inspection")
+        )
+
+    # 3️⃣ Estimates pending
+    estimate_pending = df[df["stage"] == "Estimate Sent"]
+    if len(estimate_pending) > 0:
+        priorities.append(
+            (f"Send estimate reminders ({len(estimate_pending)} pending)", "Estimate Sent")
+        )
+
+    if priorities:
+        for i, (label, stage) in enumerate(priorities[:3], start=1):
+            if st.button(f"{i}. {label}"):
+                go_to_pipeline(stage)
+    else:
+        st.success("🎉 No urgent priorities today")
+
 
 
 
