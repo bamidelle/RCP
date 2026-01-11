@@ -6710,23 +6710,28 @@ def page_command_center():
     except Exception:
         df = pd.DataFrame()
 
+    # =========================================================
+    # HEADER
+    # =========================================================
     st.markdown("## ⚡ Command Center")
     st.caption("What needs attention • What’s at risk • What’s changing")
+    st.markdown("---")
 
     # =========================================================
     # EMPTY STATE
     # =========================================================
     if df.empty:
         st.info(
-            "Once you start capturing leads, this page will show:\n"
-            "- 💰 Revenue at risk\n"
+            "No activity yet.\n\n"
+            "Once you start capturing leads, this dashboard will show:\n"
+            "- 💰 Revenue at risk & recovered\n"
             "- 🛎 Follow-ups due\n"
             "- 📊 Conversion performance\n"
-            "- 🤖 Bottlenecks\n"
-            "- 📈 Today vs Yesterday"
+            "- 🤖 Bottlenecks & insights\n"
+            "- 📈 Daily performance trends"
         )
 
-        if st.button("➕ Capture your first lead"):
+        if st.button("➕ Capture your first lead", use_container_width=True):
             st.session_state.page = "Lead Capture"
             st.rerun()
         return
@@ -6743,11 +6748,10 @@ def page_command_center():
     now = datetime.utcnow()
     today = now.date()
     yesterday = today - timedelta(days=1)
-
     df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
 
     # =========================================================
-    # CORE KPI CALCULATIONS
+    # KPI CALCULATIONS
     # =========================================================
     inspection_count = len(df[df["stage"] == "Inspection"])
     won_count = len(df[df["stage"] == "Won"])
@@ -6763,9 +6767,6 @@ def page_command_center():
         (df["lead_age_hours"] > df["sla_hours"])
     ]["estimated_value"].sum()
 
-    # =========================================================
-    # 💰 REVENUE RECOVERED TODAY (NEW)
-    # =========================================================
     recovered_today = df[
         (df["stage"] == "Won") &
         (df["updated_at"].dt.date == today)
@@ -6779,7 +6780,7 @@ def page_command_center():
     recovered_delta = recovered_today - recovered_yesterday
 
     # =========================================================
-    # 🚨 BOTTLENECK DETECTION (NEW)
+    # 🚨 BOTTLENECK DETECTION
     # =========================================================
     bottlenecks = []
 
@@ -6790,29 +6791,33 @@ def page_command_center():
             if avg_age > sla:
                 blocked_value = subset["estimated_value"].sum()
                 bottlenecks.append(
-                    f"⚠️ {stage} bottleneck: {len(subset)} leads blocked "
+                    f"{stage}: {len(subset)} leads stalled "
                     f"(avg {avg_age:.1f}h, ${blocked_value:,.0f} at risk)"
                 )
 
-    detect_bottleneck("Inspection", limit=3, sla=24)
-    detect_bottleneck("Estimate Sent", limit=3, sla=48)
+    detect_bottleneck("Inspection", 3, 24)
+    detect_bottleneck("Estimate Sent", 3, 48)
 
     # =========================================================
-    # KPI DISPLAY
+    # 📊 KPI CARDS (FIGMA-STYLE ROW)
     # =========================================================
-    st.markdown(
-        f"""
-        🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
-        💰 **Revenue Recovered Today:** ${recovered_today:,.0f} ({'+' if recovered_delta >= 0 else ''}{recovered_delta:,.0f})  
-        🛎 **Follow-ups Needed:** {len(follow_up_24h)}  
-        📊 **Inspection → Won:** {inspection_conversion:.0f}%
-        """
+    k1, k2, k3, k4 = st.columns(4)
+
+    k1.metric("🚨 Stalled Revenue", f"${stalled_revenue:,.0f}")
+    k2.metric(
+        "💰 Revenue Recovered Today",
+        f"${recovered_today:,.0f}",
+        f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}"
     )
+    k3.metric("🛎 Follow-ups Needed", len(follow_up_24h))
+    k4.metric("📊 Inspection → Won", f"{inspection_conversion:.0f}%")
+
+    st.markdown("---")
 
     # =========================================================
-    # 🧠 TODAY’S PRIORITIES + ONE-CLICK ACTIONS
+    # 🧠 TODAY’S PRIORITIES (ACTION-FIRST)
     # =========================================================
-    st.markdown("## 🧠 Today’s Priorities")
+    st.markdown("### 🧠 Today’s Priorities")
 
     def whatsapp_link(phone, msg):
         return f"https://wa.me/{phone}?text={msg.replace(' ', '%20')}"
@@ -6823,41 +6828,48 @@ def page_command_center():
         st.success("🎉 No urgent actions required today")
     else:
         for _, lead in priorities.iterrows():
-            msg = f"Hello, just following up on your request. Let us know how we can help."
-            col1, col2, col3 = st.columns([4, 1, 1])
+            msg = "Hello, just following up on your request. Let us know how we can help."
+            c1, c2, c3 = st.columns([5, 1, 1])
 
-            col1.markdown(f"**Follow up with Lead #{lead['lead_id']}**")
-            col2.link_button("💬 WhatsApp", whatsapp_link(lead.get("contact_phone", ""), msg))
-            col3.link_button("✉️ Email", f"mailto:{lead.get('contact_email', '')}?subject=Follow%20Up")
+            c1.markdown(f"**Follow up with Lead #{lead['lead_id']}**")
+            c2.link_button("💬 WhatsApp", whatsapp_link(lead.get("contact_phone", ""), msg))
+            c3.link_button("✉️ Email", f"mailto:{lead.get('contact_email', '')}")
+
+    st.markdown("---")
 
     # =========================================================
-    # 🤖 AI BUSINESS INSIGHTS + BOTTLENECKS
+    # 🤖 BUSINESS INSIGHTS & BOTTLENECKS
     # =========================================================
-    st.markdown("## 🤖 Business Insights")
+    st.markdown("### 🤖 Business Insights")
 
     if bottlenecks:
         for b in bottlenecks:
-            st.error(b)
+            st.warning(f"⚠️ Bottleneck detected — {b}")
     else:
-        st.success("No operational bottlenecks detected")
+        st.success("All systems operating smoothly. No bottlenecks detected.")
+
+    st.markdown("---")
 
     # =========================================================
     # 📈 TODAY vs YESTERDAY
     # =========================================================
-    st.markdown("## 📈 Today vs Yesterday")
+    st.markdown("### 📈 Today vs Yesterday")
 
     st.markdown(
         f"""
         • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f} yesterday  
         • **Follow-ups due:** {len(follow_up_24h)} active  
-        • **Pipeline health:** {'Stable' if not bottlenecks else 'Attention needed'}
+        • **Pipeline health:** {'🟢 Stable' if not bottlenecks else '🔴 Needs attention'}
         """
     )
+
+    st.markdown("---")
+
     # =========================================================
-    # 🕒 RECENT ACTIVITY TIMELINE
+    # 🕒 RECENT ACTIVITY
     # =========================================================
-    st.markdown("## 🕒 Recent Activity")
-    st.caption("Latest business events across your pipeline")
+    st.markdown("### 🕒 Recent Activity")
+    st.caption("Latest movements across your pipeline")
 
     timeline_df = (
         df[["lead_id", "stage", "updated_at"]]
@@ -6868,11 +6880,9 @@ def page_command_center():
 
     for _, row in timeline_df.iterrows():
         st.markdown(
-            f"• **Lead #{row['lead_id']}** → moved to **{row['stage']}**  \n"
-            f"  _{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
+            f"• **Lead #{row['lead_id']}** → **{row['stage']}**  \n"
+            f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
         )
-
-
 
 
 
