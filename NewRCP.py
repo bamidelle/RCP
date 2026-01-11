@@ -6791,7 +6791,7 @@ def page_command_center():
                 blocked_value = subset["estimated_value"].sum()
                 bottlenecks.append(
                     f"⚠️ {stage} bottleneck: {len(subset)} leads blocked "
-                    f"(avg {avg_age:.1f}h, ₦{blocked_value:,.0f} at risk)"
+                    f"(avg {avg_age:.1f}h, ${blocked_value:,.0f} at risk)"
                 )
 
     detect_bottleneck("Inspection", limit=3, sla=24)
@@ -6802,8 +6802,8 @@ def page_command_center():
     # =========================================================
     st.markdown(
         f"""
-        🚨 **Stalled Revenue:** ₦{stalled_revenue:,.0f}  
-        💰 **Revenue Recovered Today:** ₦{recovered_today:,.0f} ({'+' if recovered_delta >= 0 else ''}{recovered_delta:,.0f})  
+        🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
+        💰 **Revenue Recovered Today:** ${recovered_today:,.0f} ({'+' if recovered_delta >= 0 else ''}{recovered_delta:,.0f})  
         🛎 **Follow-ups Needed:** {len(follow_up_24h)}  
         📊 **Inspection → Won:** {inspection_conversion:.0f}%
         """
@@ -6848,7 +6848,7 @@ def page_command_center():
 
     st.markdown(
         f"""
-        • **Revenue recovered:** ₦{recovered_today:,.0f} today vs ₦{recovered_yesterday:,.0f} yesterday  
+        • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f} yesterday  
         • **Follow-ups due:** {len(follow_up_24h)} active  
         • **Pipeline health:** {'Stable' if not bottlenecks else 'Attention needed'}
         """
