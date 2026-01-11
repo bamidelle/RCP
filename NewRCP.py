@@ -6791,6 +6791,44 @@ def page_command_center():
     ]["estimated_value"].sum()
 
     # =========================================================
+    # 📈 YESTERDAY vs TODAY MICRO-SUMMARY (NEW)
+    # =========================================================
+    today_df = df[df["created_at"].dt.date == today]
+    yesterday_df = df[df["created_at"].dt.date == yesterday]
+
+    leads_today = len(today_df)
+    leads_yesterday = len(yesterday_df)
+
+    risk_today = today_df[
+        today_df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS
+    ]["estimated_value"].sum()
+
+    risk_yesterday = yesterday_df[
+        yesterday_df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS
+    ]["estimated_value"].sum()
+
+    follow_today = len(
+        today_df[
+            (today_df["stage"].isin(["New", "Contacted"])) &
+            (today_df["lead_age_hours"] >= 24)
+        ]
+    )
+
+    follow_yesterday = len(
+        yesterday_df[
+            (yesterday_df["stage"].isin(["New", "Contacted"])) &
+            (yesterday_df["lead_age_hours"] >= 24)
+        ]
+    )
+
+    def arrow(curr, prev, inverse=False):
+        if curr == prev:
+            return "—"
+        if inverse:
+            return "↓" if curr < prev else "↑"
+        return "↑" if curr > prev else "↓"
+
+    # =========================================================
     # KPI DISPLAY
     # =========================================================
     st.markdown("## ⚡ Command Center")
@@ -6798,13 +6836,55 @@ def page_command_center():
 
     st.markdown(
         f"""
-        🚨 **Stalled Revenue:** ${stalled_revenue:,.0f}  
-        💰 **Revenue at Risk:** ${revenue_at_risk:,.0f}  
+        🚨 **Stalled Revenue:** ₦{stalled_revenue:,.0f}  
+        💰 **Revenue at Risk:** ₦{revenue_at_risk:,.0f}  
         🛎 **Follow-ups Needed:** {follow_up_count}  
         📊 **Inspection → Won:** {inspection_conversion:.0f}%  
         ⏳ **Avg Response:** {avg_response_time:.1f}h
         """
     )
+
+    # =========================================================
+    # 📈 TODAY vs YESTERDAY
+    # =========================================================
+    st.markdown("## 📈 Today vs Yesterday")
+
+    st.markdown(
+        f"""
+        • **Leads captured:** {leads_today} today vs {leads_yesterday} yesterday {arrow(leads_today, leads_yesterday)}  
+        • **Revenue at risk:** ₦{risk_today:,.0f} today vs ₦{risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
+        • **Follow-ups due:** {follow_today} today vs {follow_yesterday} yesterday {arrow(follow_today, follow_yesterday, inverse=True)}
+        """
+    )
+
+    # =========================================================
+    # 🕒 RECENT ACTIVITY TIMELINE
+    # =========================================================
+    st.markdown("## 🕒 Recent Activity")
+    st.caption("Latest business events across your pipeline")
+
+    timeline_df = (
+        df[["lead_id", "stage", "updated_at"]]
+        .dropna()
+        .sort_values("updated_at", ascending=False)
+        .head(8)
+    )
+
+    for _, row in timeline_df.iterrows():
+        st.markdown(
+            f"• **Lead #{row['lead_id']}** → moved to **{row['stage']}**  \n"
+            f"  _{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
+        )
+
+    # =========================================================
+    # AI BUSINESS INSIGHTS
+    # =========================================================
+    st.markdown("## 🤖 AI Business Insights")
+    if st.session_state.ai_insights:
+        for insight in st.session_state.ai_insights:
+            st.info(f"💡 {insight}")
+    else:
+        st.success("Everything looks healthy. No urgent AI recommendations.")
 
     # =========================================================
     # TODAY’S PRIORITIES (CLICKABLE)
@@ -6851,48 +6931,6 @@ def page_command_center():
                 go_to_pipeline(stage)
     else:
         st.success("🎉 No urgent priorities today")
-
-    # =========================================================
-    # AI BUSINESS INSIGHTS
-    # =========================================================
-    st.markdown("## 🤖 AI Business Insights")
-    if st.session_state.ai_insights:
-        for insight in st.session_state.ai_insights:
-            st.info(f"💡 {insight}")
-    else:
-        st.success("Everything looks healthy. No urgent AI recommendations.")
-
-    # =========================================================
-    # 🕒 RECENT ACTIVITY TIMELINE
-    # =========================================================
-    st.markdown("## 🕒 Recent Activity")
-    st.caption("Latest business events across your pipeline")
-
-    timeline_df = (
-        df[["lead_id", "stage", "updated_at"]]
-        .dropna()
-        .sort_values("updated_at", ascending=False)
-        .head(8)
-    )
-
-    for _, row in timeline_df.iterrows():
-        st.markdown(
-            f"• **Lead #{row['lead_id']}** → moved to **{row['stage']}**  \n"
-            f"  _{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
-        )
-
-    # =========================================================
-    # 📈 TODAY vs YESTERDAY
-    # =========================================================
-    st.markdown("## 📈 Today vs Yesterday")
-
-    st.markdown(
-        f"""
-        • **Leads captured:** {len(today_df)} today vs {len(yesterday_df)} yesterday {arrow(len(today_df), len(yesterday_df))}  
-        • **Revenue at risk:** ${risk_today:,.0f} today vs ${risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
-        • **Follow-ups due:** {follow_today} today vs {follow_yesterday} yesterday {arrow(follow_today, follow_yesterday, inverse=True)}
-        """
-    )
 
 
 
