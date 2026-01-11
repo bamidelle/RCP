@@ -6710,20 +6710,19 @@ def page_command_center():
     except Exception:
         df = pd.DataFrame()
 
+    st.markdown("## ⚡ Command Center")
+    st.caption("What needs attention • What’s at risk • What’s changing")
+
     # =========================================================
     # EMPTY STATE
     # =========================================================
     if df.empty:
-        st.markdown("## ⚡ Command Center")
-        st.caption("Your real-time business health & priorities")
-
         st.info(
             "Once you start capturing leads, this page will show:\n"
             "- 💰 Revenue at risk\n"
             "- 🛎 Follow-ups due\n"
             "- 📊 Conversion performance\n"
-            "- 🧠 Daily priorities\n"
-            "- 🕒 Recent activity\n"
+            "- 🤖 Bottlenecks\n"
             "- 📈 Today vs Yesterday"
         )
 
@@ -6738,111 +6737,109 @@ def page_command_center():
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
     df["stage"] = df.get("stage", "New").fillna("New")
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-    df["updated_at"] = pd.to_datetime(
-        df.get("updated_at", df["created_at"]), errors="coerce"
-    )
+    df["updated_at"] = pd.to_datetime(df.get("updated_at", df["created_at"]), errors="coerce")
     df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
     now = datetime.utcnow()
     today = now.date()
     yesterday = today - timedelta(days=1)
 
-    df["lead_age_hours"] = (
-        (now - df["created_at"]).dt.total_seconds() / 3600
-    )
+    df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
 
     # =========================================================
     # CORE KPI CALCULATIONS
     # =========================================================
-    if "first_contacted_at" in df.columns:
-        df["first_contacted_at"] = pd.to_datetime(
-            df["first_contacted_at"], errors="coerce"
-        )
-        df["response_hours"] = (
-            (df["first_contacted_at"] - df["created_at"])
-            .dt.total_seconds() / 3600
-        )
-        avg_response_time = df["response_hours"].dropna().mean()
-    else:
-        avg_response_time = 0
-
     inspection_count = len(df[df["stage"] == "Inspection"])
     won_count = len(df[df["stage"] == "Won"])
-    inspection_conversion = (
-        (won_count / inspection_count) * 100
-        if inspection_count else 0
-    )
+    inspection_conversion = (won_count / inspection_count * 100) if inspection_count else 0
 
     follow_up_24h = df[
         (df["stage"].isin(["New", "Contacted"])) &
         (df["lead_age_hours"] >= 24)
     ]
-    follow_up_count = len(follow_up_24h)
 
     stalled_revenue = df[
         (df["stage"].isin(["Inspection", "Estimate Sent"])) &
         (df["lead_age_hours"] > df["sla_hours"])
     ]["estimated_value"].sum()
 
-    REVENUE_RISK_THRESHOLD_HOURS = 72
-    revenue_at_risk = df[
-        (df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS) &
-        (df["stage"].isin(["New", "Contacted", "Inspection", "Estimate Sent"]))
+    # =========================================================
+    # 💰 REVENUE RECOVERED TODAY (NEW)
+    # =========================================================
+    recovered_today = df[
+        (df["stage"] == "Won") &
+        (df["updated_at"].dt.date == today)
     ]["estimated_value"].sum()
+
+    recovered_yesterday = df[
+        (df["stage"] == "Won") &
+        (df["updated_at"].dt.date == yesterday)
+    ]["estimated_value"].sum()
+
+    recovered_delta = recovered_today - recovered_yesterday
 
     # =========================================================
-    # 📈 YESTERDAY vs TODAY MICRO-SUMMARY (NEW)
+    # 🚨 BOTTLENECK DETECTION (NEW)
     # =========================================================
-    today_df = df[df["created_at"].dt.date == today]
-    yesterday_df = df[df["created_at"].dt.date == yesterday]
+    bottlenecks = []
 
-    leads_today = len(today_df)
-    leads_yesterday = len(yesterday_df)
+    def detect_bottleneck(stage, limit, sla):
+        subset = df[df["stage"] == stage]
+        if len(subset) >= limit:
+            avg_age = subset["lead_age_hours"].mean()
+            if avg_age > sla:
+                blocked_value = subset["estimated_value"].sum()
+                bottlenecks.append(
+                    f"⚠️ {stage} bottleneck: {len(subset)} leads blocked "
+                    f"(avg {avg_age:.1f}h, ₦{blocked_value:,.0f} at risk)"
+                )
 
-    risk_today = today_df[
-        today_df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS
-    ]["estimated_value"].sum()
-
-    risk_yesterday = yesterday_df[
-        yesterday_df["lead_age_hours"] >= REVENUE_RISK_THRESHOLD_HOURS
-    ]["estimated_value"].sum()
-
-    follow_today = len(
-        today_df[
-            (today_df["stage"].isin(["New", "Contacted"])) &
-            (today_df["lead_age_hours"] >= 24)
-        ]
-    )
-
-    follow_yesterday = len(
-        yesterday_df[
-            (yesterday_df["stage"].isin(["New", "Contacted"])) &
-            (yesterday_df["lead_age_hours"] >= 24)
-        ]
-    )
-
-    def arrow(curr, prev, inverse=False):
-        if curr == prev:
-            return "—"
-        if inverse:
-            return "↓" if curr < prev else "↑"
-        return "↑" if curr > prev else "↓"
+    detect_bottleneck("Inspection", limit=3, sla=24)
+    detect_bottleneck("Estimate Sent", limit=3, sla=48)
 
     # =========================================================
     # KPI DISPLAY
     # =========================================================
-    st.markdown("## ⚡ Command Center")
-    st.caption("What needs attention • What’s at risk • What’s changing")
-
     st.markdown(
         f"""
         🚨 **Stalled Revenue:** ₦{stalled_revenue:,.0f}  
-        💰 **Revenue at Risk:** ₦{revenue_at_risk:,.0f}  
-        🛎 **Follow-ups Needed:** {follow_up_count}  
-        📊 **Inspection → Won:** {inspection_conversion:.0f}%  
-        ⏳ **Avg Response:** {avg_response_time:.1f}h
+        💰 **Revenue Recovered Today:** ₦{recovered_today:,.0f} ({'+' if recovered_delta >= 0 else ''}{recovered_delta:,.0f})  
+        🛎 **Follow-ups Needed:** {len(follow_up_24h)}  
+        📊 **Inspection → Won:** {inspection_conversion:.0f}%
         """
     )
+
+    # =========================================================
+    # 🧠 TODAY’S PRIORITIES + ONE-CLICK ACTIONS
+    # =========================================================
+    st.markdown("## 🧠 Today’s Priorities")
+
+    def whatsapp_link(phone, msg):
+        return f"https://wa.me/{phone}?text={msg.replace(' ', '%20')}"
+
+    priorities = follow_up_24h.sort_values("created_at").head(3)
+
+    if priorities.empty:
+        st.success("🎉 No urgent actions required today")
+    else:
+        for _, lead in priorities.iterrows():
+            msg = f"Hello, just following up on your request. Let us know how we can help."
+            col1, col2, col3 = st.columns([4, 1, 1])
+
+            col1.markdown(f"**Follow up with Lead #{lead['lead_id']}**")
+            col2.link_button("💬 WhatsApp", whatsapp_link(lead.get("contact_phone", ""), msg))
+            col3.link_button("✉️ Email", f"mailto:{lead.get('contact_email', '')}?subject=Follow%20Up")
+
+    # =========================================================
+    # 🤖 AI BUSINESS INSIGHTS + BOTTLENECKS
+    # =========================================================
+    st.markdown("## 🤖 Business Insights")
+
+    if bottlenecks:
+        for b in bottlenecks:
+            st.error(b)
+    else:
+        st.success("No operational bottlenecks detected")
 
     # =========================================================
     # 📈 TODAY vs YESTERDAY
@@ -6851,87 +6848,11 @@ def page_command_center():
 
     st.markdown(
         f"""
-        • **Leads captured:** {leads_today} today vs {leads_yesterday} yesterday {arrow(leads_today, leads_yesterday)}  
-        • **Revenue at risk:** ₦{risk_today:,.0f} today vs ₦{risk_yesterday:,.0f} yesterday {arrow(risk_today, risk_yesterday, inverse=True)}  
-        • **Follow-ups due:** {follow_today} today vs {follow_yesterday} yesterday {arrow(follow_today, follow_yesterday, inverse=True)}
+        • **Revenue recovered:** ₦{recovered_today:,.0f} today vs ₦{recovered_yesterday:,.0f} yesterday  
+        • **Follow-ups due:** {len(follow_up_24h)} active  
+        • **Pipeline health:** {'Stable' if not bottlenecks else 'Attention needed'}
         """
     )
-
-    # =========================================================
-    # 🕒 RECENT ACTIVITY TIMELINE
-    # =========================================================
-    st.markdown("## 🕒 Recent Activity")
-    st.caption("Latest business events across your pipeline")
-
-    timeline_df = (
-        df[["lead_id", "stage", "updated_at"]]
-        .dropna()
-        .sort_values("updated_at", ascending=False)
-        .head(8)
-    )
-
-    for _, row in timeline_df.iterrows():
-        st.markdown(
-            f"• **Lead #{row['lead_id']}** → moved to **{row['stage']}**  \n"
-            f"  _{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
-        )
-
-    # =========================================================
-    # AI BUSINESS INSIGHTS
-    # =========================================================
-    st.markdown("## 🤖 AI Business Insights")
-    if st.session_state.ai_insights:
-        for insight in st.session_state.ai_insights:
-            st.info(f"💡 {insight}")
-    else:
-        st.success("Everything looks healthy. No urgent AI recommendations.")
-
-    # =========================================================
-    # TODAY’S PRIORITIES (CLICKABLE)
-    # =========================================================
-    st.markdown("### 🧠 Today’s Priorities")
-
-    def go_to_pipeline(stage):
-        st.session_state.page = "Pipeline Board"
-        st.session_state.selected_stage = stage
-        st.rerun()
-
-    priorities = []
-
-    # 1️⃣ Oldest follow-up overdue
-    oldest_follow_up = follow_up_24h.sort_values("created_at").head(1)
-    if not oldest_follow_up.empty:
-        lead = oldest_follow_up.iloc[0]
-        priorities.append(
-            (f"Follow up with lead #{lead['lead_id']}", "New")
-        )
-
-    # 2️⃣ Oldest inspection pending
-    inspection_pending = (
-        df[df["stage"] == "Inspection"]
-        .sort_values("created_at")
-        .head(1)
-    )
-    if not inspection_pending.empty:
-        lead = inspection_pending.iloc[0]
-        priorities.append(
-            (f"Complete inspection for lead #{lead['lead_id']}", "Inspection")
-        )
-
-    # 3️⃣ Estimates pending
-    estimate_pending = df[df["stage"] == "Estimate Sent"]
-    if len(estimate_pending) > 0:
-        priorities.append(
-            (f"Send estimate reminders ({len(estimate_pending)} pending)", "Estimate Sent")
-        )
-
-    if priorities:
-        for i, (label, stage) in enumerate(priorities[:3], start=1):
-            if st.button(f"{i}. {label}"):
-                go_to_pipeline(stage)
-    else:
-        st.success("🎉 No urgent priorities today")
-
 
 
 
