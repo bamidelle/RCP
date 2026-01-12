@@ -6954,25 +6954,38 @@ def page_command_center():
     # =========================================================
     # 📊 KPI CARDS
     # =========================================================
-    if "cc_filter" not in st.session_state:
-        st.session_state.cc_filter = None
-
+        st.markdown("### Overview")
+    
     c1, c2, c3, c4 = st.columns(4)
-
-    with c1:
-        if st.button(f"🚨 Stalled\n${stalled_revenue:,.0f}", use_container_width=True):
-            st.session_state.cc_filter = "stalled"
-
-    with c2:
-        if st.button(f"💰 Recovered Today\n${recovered_today:,.0f}", use_container_width=True):
-            st.session_state.cc_filter = "won_today"
-
-    with c3:
-        if st.button(f"🛎 Follow-ups\n{len(follow_up_24h)}", use_container_width=True):
-            st.session_state.cc_filter = "follow_up"
-
-    with c4:
-        st.metric("📊 Inspection → Won", f"{inspection_conversion:.0f}%")
+    
+    c1.markdown(f"""
+    <div class="kpi-card kpi-purple">
+      <div class="kpi-title">Stalled Revenue</div>
+      <div class="kpi-value">${stalled_revenue:,.0f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    c2.markdown(f"""
+    <div class="kpi-card kpi-blue">
+      <div class="kpi-title">At Risk (72h)</div>
+      <div class="kpi-value">${stalled_revenue:,.0f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    c3.markdown(f"""
+    <div class="kpi-card kpi-yellow">
+      <div class="kpi-title">Follow-ups Due</div>
+      <div class="kpi-value">{len(follow_up_24h)}</div>
+      <div class="kpi-sub">Next 24 hours</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    c4.markdown(f"""
+    <div class="kpi-card kpi-green">
+      <div class="kpi-title">Avg Response Time</div>
+      <div class="kpi-value">{avg_response_time:.1f}h</div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # =========================================================
     # 🔍 APPLY COMMAND CENTER FILTER
