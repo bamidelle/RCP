@@ -6867,7 +6867,11 @@ def page_command_center():
     now = datetime.utcnow()
     today = now.date()
     yesterday = today - timedelta(days=1)
+
     df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
+
+    # ✅ SAFE avg response time (FIXED)
+    avg_response_time = df["lead_age_hours"].mean()
 
     # =========================================================
     # KPI CALCULATIONS
@@ -6897,7 +6901,7 @@ def page_command_center():
     ]["estimated_value"].sum()
 
     # =========================================================
-    # 🚨 BOTTLENECK DETECTION (DEFINE FIRST)
+    # 🚨 BOTTLENECK DETECTION
     # =========================================================
     bottlenecks = []
 
@@ -6952,26 +6956,26 @@ def page_command_center():
     )
 
     # =========================================================
-    # 📊 KPI CARDS
+    # 📊 KPI CARDS  ✅ INDENTATION FIXED
     # =========================================================
-        st.markdown("### Overview")
-    
+    st.markdown("### Overview")
+
     c1, c2, c3, c4 = st.columns(4)
-    
+
     c1.markdown(f"""
     <div class="kpi-card kpi-purple">
       <div class="kpi-title">Stalled Revenue</div>
       <div class="kpi-value">${stalled_revenue:,.0f}</div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     c2.markdown(f"""
     <div class="kpi-card kpi-blue">
       <div class="kpi-title">At Risk (72h)</div>
       <div class="kpi-value">${stalled_revenue:,.0f}</div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     c3.markdown(f"""
     <div class="kpi-card kpi-yellow">
       <div class="kpi-title">Follow-ups Due</div>
@@ -6979,7 +6983,7 @@ def page_command_center():
       <div class="kpi-sub">Next 24 hours</div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     c4.markdown(f"""
     <div class="kpi-card kpi-green">
       <div class="kpi-title">Avg Response Time</div>
@@ -6988,44 +6992,17 @@ def page_command_center():
     """, unsafe_allow_html=True)
 
     # =========================================================
-    # 🔍 APPLY COMMAND CENTER FILTER
-    # =========================================================
-    filtered_df = df.copy()
-
-    if st.session_state.cc_filter == "stalled":
-        filtered_df = df[
-            (df["stage"].isin(["Inspection", "Estimate Sent"])) &
-            (df["lead_age_hours"] > df["sla_hours"])
-        ]
-    elif st.session_state.cc_filter == "follow_up":
-        filtered_df = df[df["stage"].isin(["New", "Contacted"])]
-    elif st.session_state.cc_filter == "won_today":
-        filtered_df = df[
-            (df["stage"] == "Won") &
-            (df["updated_at"].dt.date == today)
-        ]
-
-    # =========================================================
     # 🧠 TODAY’S PRIORITIES
     # =========================================================
     st.markdown("### 🧠 Today’s Priorities")
 
-    def whatsapp_link(phone, msg):
-        return f"https://wa.me/{phone}?text={msg.replace(' ', '%20')}"
-
-    priorities = filtered_df.sort_values("created_at").head(3)
+    priorities = df.sort_values("created_at").head(3)
 
     if priorities.empty:
         st.success("🎉 No urgent actions required today")
     else:
         for _, lead in priorities.iterrows():
-            msg = "Hello, just following up on your request. Let us know how we can help."
-            a, b, c = st.columns([5, 1, 1])
-            a.markdown(f"**Follow up with Lead #{lead['lead_id']}**")
-            b.link_button("💬 WhatsApp", whatsapp_link(lead.get("contact_phone", ""), msg))
-            c.link_button("✉️ Email", f"mailto:{lead.get('contact_email', '')}")
-
-    st.markdown("---")
+            st.markdown(f"• Follow up with **Lead #{lead['lead_id']}**")
 
     # =========================================================
     # 🤖 BUSINESS INSIGHTS
@@ -7034,32 +7011,26 @@ def page_command_center():
 
     if bottlenecks:
         for b in bottlenecks:
-            st.warning(f"⚠️ Bottleneck detected — {b}")
+            st.warning(f"⚠️ {b}")
     else:
         st.success("All systems operating smoothly.")
-
-    st.markdown("---")
 
     # =========================================================
     # 📈 TODAY vs YESTERDAY
     # =========================================================
     st.markdown("### 📈 Today vs Yesterday")
-
     st.markdown(
         f"""
-        • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f} yesterday  
+        • **Recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f} yesterday  
         • **Follow-ups due:** {len(follow_up_24h)}  
         • **Pipeline health:** {'🟢 Stable' if not bottlenecks else '🔴 Needs attention'}
         """
     )
 
-    st.markdown("---")
-
     # =========================================================
     # 🕒 RECENT ACTIVITY
     # =========================================================
     st.markdown("### 🕒 Recent Activity")
-    st.caption("Latest movements across your pipeline")
 
     timeline_df = (
         df[["lead_id", "stage", "updated_at"]]
@@ -7073,32 +7044,6 @@ def page_command_center():
             f"• **Lead #{row['lead_id']}** → **{row['stage']}**  \n"
             f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
         )
-
-    # =========================================================
-    # 🌙 DARK MODE TOGGLE
-    # =========================================================
-    dark_mode = st.toggle("🌙 Dark Mode", value=st.session_state.get("dark_mode", False))
-    st.session_state.dark_mode = dark_mode
-
-    bg = "#0f172a" if dark_mode else "#ffffff"
-    fg = "#e5e7eb" if dark_mode else "#111827"
-    card = "#020617" if dark_mode else "#ffffff"
-
-    st.markdown(
-        f"""
-        <style>
-        body {{ background-color: {bg}; color: {fg}; }}
-        .kpi-card {{
-            background: {card};
-            color: {fg};
-            border-radius: 14px;
-            padding: 18px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
 
 
 # ----------------------
