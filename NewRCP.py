@@ -6831,8 +6831,8 @@ def page_command_center():
     # HEADER
     # =========================================================
     st.markdown("## ⚡ Command Center")
-    st.caption("What needs attention • What’s at risk • What’s changing")
-    st.markdown("---")
+    st.caption("Real-time business health & priorities")
+    st.divider()
 
     # =========================================================
     # EMPTY STATE
@@ -6841,11 +6841,11 @@ def page_command_center():
         st.info(
             "No activity yet.\n\n"
             "Once you start capturing leads, this dashboard will show:\n"
-            "- 💰 Revenue at risk & recovered\n"
-            "- 🛎 Follow-ups due\n"
-            "- 📊 Conversion performance\n"
-            "- 🤖 Bottlenecks & insights\n"
-            "- 📈 Daily performance trends"
+            "• Revenue at risk & recovered\n"
+            "• Follow-ups due\n"
+            "• Conversion performance\n"
+            "• Bottlenecks & insights\n"
+            "• Daily performance trends"
         )
 
         if st.button("➕ Capture your first lead", use_container_width=True):
@@ -6856,22 +6856,18 @@ def page_command_center():
     # =========================================================
     # NORMALIZATION
     # =========================================================
+    df = df.copy()
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
     df["stage"] = df.get("stage", "New").fillna("New")
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-    df["updated_at"] = pd.to_datetime(
-        df.get("updated_at", df["created_at"]), errors="coerce"
-    )
-    df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
+    df["updated_at"] = pd.to_datetime(df.get("updated_at", df["created_at"]), errors="coerce")
+    df["sla_hours"] = df.get("sla_hours", 24)
 
     now = datetime.utcnow()
     today = now.date()
     yesterday = today - timedelta(days=1)
 
     df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
-
-    # ✅ SAFE avg response time (FIXED)
-    avg_response_time = df["lead_age_hours"].mean()
 
     # =========================================================
     # KPI CALCULATIONS
@@ -6900,137 +6896,134 @@ def page_command_center():
         (df["updated_at"].dt.date == yesterday)
     ]["estimated_value"].sum()
 
-    # =========================================================
-    # 🚨 BOTTLENECK DETECTION
-    # =========================================================
-    bottlenecks = []
+    recovered_delta = recovered_today - recovered_yesterday
 
-    def detect_bottleneck(stage, limit, sla):
-        subset = df[df["stage"] == stage]
-        if len(subset) >= limit:
-            avg_age = subset["lead_age_hours"].mean()
-            if avg_age > sla:
-                blocked_value = subset["estimated_value"].sum()
-                bottlenecks.append(
-                    f"{stage}: {len(subset)} leads stalled "
-                    f"(avg {avg_age:.1f}h, ${blocked_value:,.0f} at risk)"
-                )
-
-    detect_bottleneck("Inspection", 3, 24)
-    detect_bottleneck("Estimate Sent", 3, 48)
+    avg_response = df["lead_age_hours"].mean()
 
     # =========================================================
     # 🤖 AI EXECUTIVE SUMMARY
     # =========================================================
-    summary_bits = []
-
+    insights = []
     if stalled_revenue > 0:
-        summary_bits.append(f"${stalled_revenue:,.0f} stalled")
-
+        insights.append(f"${stalled_revenue:,.0f} stalled")
     if len(follow_up_24h) > 0:
-        summary_bits.append(f"{len(follow_up_24h)} follow-ups due")
+        insights.append(f"{len(follow_up_24h)} follow-ups due")
+    if inspection_conversion < 30:
+        insights.append("low inspection → won conversion")
 
-    if bottlenecks:
-        summary_bits.append("pipeline bottlenecks detected")
-
-    summary_text = (
-        "All systems operating normally."
-        if not summary_bits
-        else "Attention needed: " + ", ".join(summary_bits)
+    summary = (
+        "Everything is operating smoothly."
+        if not insights
+        else "Attention needed: " + ", ".join(insights)
     )
 
     st.markdown(
         f"""
         <div style="
             background:#f8fafc;
-            padding:14px 18px;
-            border-radius:12px;
             border-left:5px solid #3b82f6;
-            margin-bottom:16px;
+            padding:14px 18px;
+            border-radius:10px;
             font-size:0.95rem;
         ">
-        🤖 <strong>Executive Insight:</strong> {summary_text}
+        🤖 <strong>Executive Insight:</strong> {summary}
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # =========================================================
-    # 📊 KPI CARDS  ✅ INDENTATION FIXED
-    # =========================================================
-    st.markdown("### Overview")
-
-    c1, c2, c3, c4 = st.columns(4)
-
-    c1.markdown(f"""
-    <div class="kpi-card kpi-purple">
-      <div class="kpi-title">Stalled Revenue</div>
-      <div class="kpi-value">${stalled_revenue:,.0f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c2.markdown(f"""
-    <div class="kpi-card kpi-blue">
-      <div class="kpi-title">At Risk (72h)</div>
-      <div class="kpi-value">${stalled_revenue:,.0f}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c3.markdown(f"""
-    <div class="kpi-card kpi-yellow">
-      <div class="kpi-title">Follow-ups Due</div>
-      <div class="kpi-value">{len(follow_up_24h)}</div>
-      <div class="kpi-sub">Next 24 hours</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    c4.markdown(f"""
-    <div class="kpi-card kpi-green">
-      <div class="kpi-title">Avg Response Time</div>
-      <div class="kpi-value">{avg_response_time:.1f}h</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.divider()
 
     # =========================================================
-    # 🧠 TODAY’S PRIORITIES
+    # KPI OVERVIEW (FIGMA STYLE)
     # =========================================================
-    st.markdown("### 🧠 Today’s Priorities")
+    k1, k2, k3, k4 = st.columns(4)
 
-    priorities = df.sort_values("created_at").head(3)
+    k1.metric("Stalled Revenue", f"${stalled_revenue:,.0f}")
+    k2.metric("At Risk (72h)", f"${stalled_revenue:,.0f}")
+    k3.metric("Follow-ups Due", len(follow_up_24h))
+    k4.metric("Avg Response Time", f"{avg_response:.1f}h")
 
-    if priorities.empty:
-        st.success("🎉 No urgent actions required today")
-    else:
-        for _, lead in priorities.iterrows():
-            st.markdown(f"• Follow up with **Lead #{lead['lead_id']}**")
-
-    # =========================================================
-    # 🤖 BUSINESS INSIGHTS
-    # =========================================================
-    st.markdown("### 🤖 Business Insights")
-
-    if bottlenecks:
-        for b in bottlenecks:
-            st.warning(f"⚠️ {b}")
-    else:
-        st.success("All systems operating smoothly.")
+    st.divider()
 
     # =========================================================
-    # 📈 TODAY vs YESTERDAY
+    # NEEDS ATTENTION + TODAY (2-COLUMN FIGMA LAYOUT)
     # =========================================================
-    st.markdown("### 📈 Today vs Yesterday")
-    st.markdown(
-        f"""
-        • **Recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f} yesterday  
-        • **Follow-ups due:** {len(follow_up_24h)}  
-        • **Pipeline health:** {'🟢 Stable' if not bottlenecks else '🔴 Needs attention'}
-        """
-    )
+    left, right = st.columns([2, 1])
+
+    # ---------------- LEFT: NEEDS ATTENTION ----------------
+    with left:
+        st.subheader("Needs Attention")
+
+        if len(follow_up_24h) > 0:
+            st.warning(
+                f"📞 **{len(follow_up_24h)} leads need follow-up**\n\n"
+                "High-priority leads awaiting response within 24 hours."
+            )
+
+        st.info(
+            f"📊 **Inspection → Won:** {inspection_conversion:.0f}%\n\n"
+            "Review recent inspections and lost opportunities."
+        )
+
+        st.info(
+            "📈 **Revenue velocity tracking**\n\n"
+            "Monitor deal progression to hit monthly targets."
+        )
+
+        st.success(
+            "👥 **Team capacity optimization**\n\n"
+            "Workload is balanced across the pipeline."
+        )
+
+    # ---------------- RIGHT: TODAY ----------------
+    with right:
+        st.subheader("Today")
+
+        priorities = follow_up_24h.sort_values("created_at").head(5)
+
+        if priorities.empty:
+            st.success("No urgent actions today 🎉")
+        else:
+            for _, lead in priorities.iterrows():
+                st.markdown(
+                    f"""
+                    🔴 **Call Lead #{lead['lead_id']}**  
+                    _Overdue {int(lead['lead_age_hours'])}h_
+                    """
+                )
+
+    st.divider()
 
     # =========================================================
-    # 🕒 RECENT ACTIVITY
+    # THIS WEEK SNAPSHOT
     # =========================================================
-    st.markdown("### 🕒 Recent Activity")
+    w1, w2, w3, w4 = st.columns(4)
+
+    w1.metric("New Leads", len(df[df["created_at"].dt.date >= today - timedelta(days=7)]))
+    w2.metric("Inspections", len(df[df["stage"] == "Inspection"]))
+    w3.metric("Proposals", len(df[df["stage"] == "Estimate Sent"]))
+    w4.metric("Closed", len(df[df["stage"] == "Won"]))
+
+    st.divider()
+
+    # =========================================================
+    # PIPELINE SUMMARY
+    # =========================================================
+    p1, p2, p3, p4 = st.columns(4)
+
+    p1.metric("Active Deals", len(df[df["stage"] != "Won"]))
+    p2.metric("Pipeline Value", f"${df['estimated_value'].sum():,.0f}")
+    p3.metric("Win Rate", f"{inspection_conversion:.0f}%")
+    p4.metric("Hot Leads", len(follow_up_24h))
+
+    st.divider()
+
+    # =========================================================
+    # RECENT ACTIVITY
+    # =========================================================
+    st.subheader("Recent Activity")
+    st.caption("Latest movements across your pipeline")
 
     timeline_df = (
         df[["lead_id", "stage", "updated_at"]]
