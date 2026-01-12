@@ -70,6 +70,75 @@ from sqlalchemy.orm import relationship
 
 from passlib.context import CryptContext
 
+st.markdown("""
+<style>
+/* Page spacing */
+.block-container {
+    padding-top: 1.5rem;
+}
+
+/* KPI cards */
+.kpi-card {
+    background: white;
+    border-radius: 12px;
+    padding: 18px;
+    border-left: 5px solid #eee;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.04);
+}
+
+.kpi-title {
+    font-size: 0.85rem;
+    color: #777;
+}
+
+.kpi-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-top: 6px;
+}
+
+.kpi-sub {
+    font-size: 0.75rem;
+    color: #999;
+}
+
+/* Colored borders */
+.kpi-purple { border-left-color: #8b5cf6; }
+.kpi-blue   { border-left-color: #3b82f6; }
+.kpi-yellow { border-left-color: #f59e0b; }
+.kpi-green  { border-left-color: #22c55e; }
+.kpi-red    { border-left-color: #ef4444; }
+
+/* Attention list */
+.attention-item {
+    padding: 14px;
+    border-left: 4px solid;
+    margin-bottom: 12px;
+    background: #fff;
+    border-radius: 10px;
+}
+
+.attention-red { border-color: #ef4444; }
+.attention-yellow { border-color: #f59e0b; }
+.attention-blue { border-color: #3b82f6; }
+.attention-green { border-color: #22c55e; }
+
+/* Timeline */
+.timeline-item {
+    padding: 10px 0;
+    border-bottom: 1px solid #eee;
+    font-size: 0.9rem;
+}
+
+/* Section headers */
+.section-title {
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # -----------------------------
 # DEV MODE: Unlock all features
 # -----------------------------
@@ -6790,7 +6859,9 @@ def page_command_center():
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
     df["stage"] = df.get("stage", "New").fillna("New")
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-    df["updated_at"] = pd.to_datetime(df.get("updated_at", df["created_at"]), errors="coerce")
+    df["updated_at"] = pd.to_datetime(
+        df.get("updated_at", df["created_at"]), errors="coerce"
+    )
     df["sla_hours"] = df.get("sla_hours", DEFAULT_SLA_HOURS)
 
     now = datetime.utcnow()
@@ -6825,10 +6896,8 @@ def page_command_center():
         (df["updated_at"].dt.date == yesterday)
     ]["estimated_value"].sum()
 
-    recovered_delta = recovered_today - recovered_yesterday
-
     # =========================================================
-    # 🚨 BOTTLENECK DETECTION
+    # 🚨 BOTTLENECK DETECTION (DEFINE FIRST)
     # =========================================================
     bottlenecks = []
 
@@ -6847,46 +6916,106 @@ def page_command_center():
     detect_bottleneck("Estimate Sent", 3, 48)
 
     # =========================================================
-    # 📊 KPI CARDS (FIGMA-STYLE ROW)
+    # 🤖 AI EXECUTIVE SUMMARY
     # =========================================================
-    k1, k2, k3, k4 = st.columns(4)
+    summary_bits = []
 
-    k1.metric("🚨 Stalled Revenue", f"${stalled_revenue:,.0f}")
-    k2.metric(
-        "💰 Revenue Recovered Today",
-        f"${recovered_today:,.0f}",
-        f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}"
+    if stalled_revenue > 0:
+        summary_bits.append(f"${stalled_revenue:,.0f} stalled")
+
+    if len(follow_up_24h) > 0:
+        summary_bits.append(f"{len(follow_up_24h)} follow-ups due")
+
+    if bottlenecks:
+        summary_bits.append("pipeline bottlenecks detected")
+
+    summary_text = (
+        "All systems operating normally."
+        if not summary_bits
+        else "Attention needed: " + ", ".join(summary_bits)
     )
-    k3.metric("🛎 Follow-ups Needed", len(follow_up_24h))
-    k4.metric("📊 Inspection → Won", f"{inspection_conversion:.0f}%")
 
-    st.markdown("---")
+    st.markdown(
+        f"""
+        <div style="
+            background:#f8fafc;
+            padding:14px 18px;
+            border-radius:12px;
+            border-left:5px solid #3b82f6;
+            margin-bottom:16px;
+            font-size:0.95rem;
+        ">
+        🤖 <strong>Executive Insight:</strong> {summary_text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # =========================================================
-    # 🧠 TODAY’S PRIORITIES (ACTION-FIRST)
+    # 📊 KPI CARDS
+    # =========================================================
+    if "cc_filter" not in st.session_state:
+        st.session_state.cc_filter = None
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    with c1:
+        if st.button(f"🚨 Stalled\n${stalled_revenue:,.0f}", use_container_width=True):
+            st.session_state.cc_filter = "stalled"
+
+    with c2:
+        if st.button(f"💰 Recovered Today\n${recovered_today:,.0f}", use_container_width=True):
+            st.session_state.cc_filter = "won_today"
+
+    with c3:
+        if st.button(f"🛎 Follow-ups\n{len(follow_up_24h)}", use_container_width=True):
+            st.session_state.cc_filter = "follow_up"
+
+    with c4:
+        st.metric("📊 Inspection → Won", f"{inspection_conversion:.0f}%")
+
+    # =========================================================
+    # 🔍 APPLY COMMAND CENTER FILTER
+    # =========================================================
+    filtered_df = df.copy()
+
+    if st.session_state.cc_filter == "stalled":
+        filtered_df = df[
+            (df["stage"].isin(["Inspection", "Estimate Sent"])) &
+            (df["lead_age_hours"] > df["sla_hours"])
+        ]
+    elif st.session_state.cc_filter == "follow_up":
+        filtered_df = df[df["stage"].isin(["New", "Contacted"])]
+    elif st.session_state.cc_filter == "won_today":
+        filtered_df = df[
+            (df["stage"] == "Won") &
+            (df["updated_at"].dt.date == today)
+        ]
+
+    # =========================================================
+    # 🧠 TODAY’S PRIORITIES
     # =========================================================
     st.markdown("### 🧠 Today’s Priorities")
 
     def whatsapp_link(phone, msg):
         return f"https://wa.me/{phone}?text={msg.replace(' ', '%20')}"
 
-    priorities = follow_up_24h.sort_values("created_at").head(3)
+    priorities = filtered_df.sort_values("created_at").head(3)
 
     if priorities.empty:
         st.success("🎉 No urgent actions required today")
     else:
         for _, lead in priorities.iterrows():
             msg = "Hello, just following up on your request. Let us know how we can help."
-            c1, c2, c3 = st.columns([5, 1, 1])
-
-            c1.markdown(f"**Follow up with Lead #{lead['lead_id']}**")
-            c2.link_button("💬 WhatsApp", whatsapp_link(lead.get("contact_phone", ""), msg))
-            c3.link_button("✉️ Email", f"mailto:{lead.get('contact_email', '')}")
+            a, b, c = st.columns([5, 1, 1])
+            a.markdown(f"**Follow up with Lead #{lead['lead_id']}**")
+            b.link_button("💬 WhatsApp", whatsapp_link(lead.get("contact_phone", ""), msg))
+            c.link_button("✉️ Email", f"mailto:{lead.get('contact_email', '')}")
 
     st.markdown("---")
 
     # =========================================================
-    # 🤖 BUSINESS INSIGHTS & BOTTLENECKS
+    # 🤖 BUSINESS INSIGHTS
     # =========================================================
     st.markdown("### 🤖 Business Insights")
 
@@ -6894,7 +7023,7 @@ def page_command_center():
         for b in bottlenecks:
             st.warning(f"⚠️ Bottleneck detected — {b}")
     else:
-        st.success("All systems operating smoothly. No bottlenecks detected.")
+        st.success("All systems operating smoothly.")
 
     st.markdown("---")
 
@@ -6906,7 +7035,7 @@ def page_command_center():
     st.markdown(
         f"""
         • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f} yesterday  
-        • **Follow-ups due:** {len(follow_up_24h)} active  
+        • **Follow-ups due:** {len(follow_up_24h)}  
         • **Pipeline health:** {'🟢 Stable' if not bottlenecks else '🔴 Needs attention'}
         """
     )
@@ -6932,9 +7061,32 @@ def page_command_center():
             f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
         )
 
+    # =========================================================
+    # 🌙 DARK MODE TOGGLE
+    # =========================================================
+    dark_mode = st.toggle("🌙 Dark Mode", value=st.session_state.get("dark_mode", False))
+    st.session_state.dark_mode = dark_mode
 
+    bg = "#0f172a" if dark_mode else "#ffffff"
+    fg = "#e5e7eb" if dark_mode else "#111827"
+    card = "#020617" if dark_mode else "#ffffff"
 
-#-----------------------END OF COMMAND CENTER---------------------
+    st.markdown(
+        f"""
+        <style>
+        body {{ background-color: {bg}; color: {fg}; }}
+        .kpi-card {{
+            background: {card};
+            color: {fg};
+            border-radius: 14px;
+            padding: 18px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 # ----------------------
 # WORDPRESS AUTH BRIDGE (GLOBAL)
