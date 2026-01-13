@@ -6537,10 +6537,10 @@ def page_seasonal_trends():
     # =========================================================
     BASE_MONTHLY_LEADS = 40
     expected_total_leads = int(BASE_MONTHLY_LEADS * (0.6 + season_score) * forecast_months)
-    st.markdown("## 🔢 Expected Lead Volume")
+    st.markdown("## 🔢 Estimated Job Volume")
     st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
     techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
-    st.metric("Recommended Technicians", techs)
+    st.metric("Minimum Recommended Technicians Required", techs)
 
 
 # ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
