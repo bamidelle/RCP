@@ -6483,28 +6483,28 @@ def page_seasonal_trends():
     # =========================================================
     # 12a. EXECUTIVE NARRATIVE (SAFE DEFAULTS)
     # =========================================================
-    st.markdown("## Executive Summary")
+    #st.markdown("## Executive Summary")
     
-    data = compute_business_intelligence(chosen["lat"], chosen["lon"], months)
-    data = data or {}  # ensure dictionary
-    data.setdefault("executive_narrative", [])
+    #data = compute_business_intelligence(chosen["lat"], chosen["lon"], months)
+    #data = data or {}  # ensure dictionary
+    #data.setdefault("executive_narrative", [])
     
-    if not data["executive_narrative"]:
-        st.info("No insights available yet. Start capturing leads to generate seasonal trends.")
+    #if not data["executive_narrative"]:
+        #st.info("No insights available yet. Start capturing leads to generate seasonal trends.")
     
-    for line in data["executive_narrative"]:
+     #for line in data["executive_narrative"]:
     
         # ---- SAFETY: ensure dict-like object ----
-        if isinstance(line, dict):
-            text = line.get("text", "")
-            confidence = float(line.get("confidence", 0))
-        else:
+        #if isinstance(line, dict):
+            #text = line.get("text", "")
+            #confidence = float(line.get("confidence", 0))
+        #else:
             # fallback if AI returns a string or other object
-            text = str(line)
-            confidence = 0.0
+            #text = str(line)
+            #confidence = 0.0
     
-        if text:
-            st.info(f"{text} (Confidence: {confidence:.0%})")
+        #if text:
+            #st.info(f"{text} (Confidence: {confidence:.0%})")
 
 
     # =========================================================
