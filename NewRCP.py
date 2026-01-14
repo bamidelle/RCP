@@ -75,12 +75,20 @@ from passlib.context import CryptContext
 
 
 import json
+
+
+
 from datetime import datetime
 from uuid import uuid4
 from pathlib import Path
 
 EVENT_LOG_FILE = Path("platform_events.log")
 
+import uuid
+from datetime import datetime
+
+def generate_review_token():
+    return f"rvw_{uuid.uuid4().hex[:10]}"
 
 
 st.markdown("""
@@ -6806,6 +6814,140 @@ The Team
     )
 
 # ---------- END SETTINGS AND EMAIL INVITES ----------
+st.info(
+    "Works even without a saved lead. "
+    "Perfect for technicians requesting reviews on-site."
+)
+
+
+def page_request_review():
+    require_role_access("overview")
+
+    st.markdown("## ⭐ Request Google Review")
+    st.caption("Instant on-site review request via Tap or QR")
+
+    # ---------------------------------------
+    # Load business review link
+    # ---------------------------------------
+    settings = get_user_settings_safe()  # your existing settings helper
+    review_url = settings.get("google_review_url")
+
+    if not review_url:
+        st.warning("Google Review link not set. Add it in Settings.")
+        return
+
+    # ---------------------------------------
+    # Optional Lead Association
+    # ---------------------------------------
+    lead_id = st.session_state.get("active_lead_id")
+    token = generate_review_token()
+
+    # ---------------------------------------
+    # Build review redirect URL
+    # ---------------------------------------
+    base_url = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
+    review_request_url = f"{base_url}/?page=review_redirect&token={token}"
+
+    # ---------------------------------------
+    # LOG EVENT (SAFE)
+    # ---------------------------------------
+    try:
+        log_event(
+            "review_requested",
+            entity_type="lead" if lead_id else "session",
+            entity_id=lead_id,
+            metadata={"method": "manual"}
+        )
+    except Exception:
+        pass
+
+    # ---------------------------------------
+    # DISPLAY
+    # ---------------------------------------
+    st.markdown("---")
+    st.divider()
+    st.markdown("### 📲 Tap Card Preview")
+
+    st.markdown(
+        """
+        <div style="
+            border-radius:16px;
+            padding:24px;
+            background:linear-gradient(135deg,#f9fafb,#eef2ff);
+            border:1px solid #e5e7eb;
+            text-align:center;
+        ">
+            <h3 style="margin-bottom:8px;">ReCapture Pro</h3>
+            <p style="opacity:0.7;">Tap phone here to leave a review</p>
+            <div style="
+                margin:20px auto;
+                width:120px;
+                height:120px;
+                border-radius:50%;
+                border:2px dashed #6366f1;
+                display:flex;
+                align-items:center;
+                justify-content:center;
+                font-size:40px;
+            ">📱</div>
+            <small>Google Review Tap Card</small>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        st.text_input(
+            "Review Link (Tap / NFC / Share)",
+            review_request_url,
+            disabled=True
+        )
+
+        st.link_button(
+            "⭐ Open Google Review Page",
+            review_url,
+            use_container_width=True
+        )
+
+    with col2:
+        qr = qrcode.make(review_request_url)
+        st.image(qr, caption="Scan to leave a review", use_column_width=True)
+
+    st.markdown("---")
+    st.info(
+        "💡 Tip: Program your NFC cards with this link.\n\n"
+        "Customers just tap → review opens instantly."
+    )
+
+
+def page_review_redirect():
+    token = st.query_params.get("token")
+
+    settings = get_user_settings_safe()
+    review_url = settings.get("google_review_url")
+
+    if not review_url:
+        st.error("Review link not configured.")
+        return
+
+    try:
+        log_event(
+            "review_tap",
+            entity_type="review",
+            entity_id=token,
+            metadata={"source": "nfc_or_qr"}
+        )
+    except Exception:
+        pass
+
+    st.markdown("Redirecting to review page…")
+    st.markdown(
+        f"<meta http-equiv='refresh' content='1;url={review_url}'>",
+        unsafe_allow_html=True
+    )
+
 
 #-----------------------START OF COMMAND CENTER---------------------
 def page_command_center():
@@ -7107,6 +7249,8 @@ NAV_ICONS = {
     "AI Recommendations": "🤖",
     "Seasonal Trends": "🌦",
     "Settings": "⚙️",
+    "Request Review": "⭐",
+
     #"Request Google Reviews": "⭐",
     "Exports": "📤",
 }
@@ -7129,6 +7273,7 @@ with st.sidebar:
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
+        "Request Review"
         "Settings",
         "Exports",
     ]
@@ -7203,6 +7348,13 @@ elif page == "Settings":
 
 elif page == "Request Google Reviews":
     page_google_reviews()
+
+elif page == "Request Review":
+    page_request_review()
+
+elif page == "review_redirect":
+    page_review_redirect()
+
 
 elif page == "Exports":
     page_exports()
