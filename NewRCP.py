@@ -31,6 +31,9 @@ import smtplib
 from email.message import EmailMessage
 
 import re
+from uuid import uuid4
+from datetime import datetime
+import json
 
 import jwt
 from datetime import datetime, timedelta
@@ -69,6 +72,16 @@ from sqlalchemy import ForeignKey
 from sqlalchemy.orm import relationship
 
 from passlib.context import CryptContext
+
+
+import json
+from datetime import datetime
+from uuid import uuid4
+from pathlib import Path
+
+EVENT_LOG_FILE = Path("platform_events.log")
+
+
 
 st.markdown("""
 <style>
@@ -2322,6 +2335,60 @@ def require_role_access(page_key):
         st.warning("🔒 This feature requires an upgrade.")
         st.stop()
 
+def log_event(
+    *,
+    event_type: str,
+    user_id: str | None = None,
+    org_id: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    metadata: dict | None = None,
+    severity: str = "info",
+    source: str = "app"
+):
+    try:
+        payload = {
+            "id": str(uuid4()),
+            "event_type": event_type,
+            "metadata": json.dumps(metadata or {}),
+            "created_at": datetime.utcnow()
+        }
+
+        if user_id:
+            payload.update({
+                "user_id": user_id,
+                "org_id": org_id,
+                "entity_type": entity_type,
+                "entity_id": entity_id
+            })
+
+            run_query(
+                """
+                INSERT INTO platform_user_events
+                (id, user_id, org_id, event_type, entity_type, entity_id, metadata, created_at)
+                VALUES (%(id)s, %(user_id)s, %(org_id)s, %(event_type)s, %(entity_type)s, %(entity_id)s, %(metadata)s, %(created_at)s)
+                """,
+                payload
+            )
+
+        else:
+            payload.update({
+                "severity": severity,
+                "source": source
+            })
+
+            run_query(
+                """
+                INSERT INTO platform_events
+                (id, event_type, severity, source, metadata, created_at)
+                VALUES (%(id)s, %(event_type)s, %(severity)s, %(source)s, %(metadata)s, %(created_at)s)
+                """,
+                payload
+            )
+
+    except Exception:
+        # NEVER crash the app because of logging
+        pass
 
 
     
