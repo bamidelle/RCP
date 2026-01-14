@@ -6814,6 +6814,39 @@ The Team
     )
 
 # ---------- END SETTINGS AND EMAIL INVITES ----------
+def page_request_review_settings():
+    require_role_access("settings")
+
+    st.markdown("## ⭐ Request Review Settings")
+    st.caption("Configure how you collect Google reviews")
+
+    st.markdown("---")
+
+    review_link = st.text_input(
+        "Google Review Link",
+        placeholder="https://g.page/your-business/review"
+    )
+
+    st.markdown(
+        """
+        ℹ️ This link will be used for:
+        - NFC tap cards  
+        - QR codes  
+        - Manual review requests  
+        """
+    )
+
+    if st.button("💾 Save Review Link"):
+        st.success("Review link saved (settings storage coming next).")
+
+    st.markdown("---")
+
+    st.markdown("### 📲 NFC & QR Review Tools")
+    st.info(
+        "NFC tap cards and QR codes will redirect customers "
+        "to your saved Google review link.\n\n"
+        "No paid API required."
+    )
 
 
 
@@ -7353,6 +7386,9 @@ elif page == "Request Review":
 
 elif page == "review_redirect":
     page_review_redirect()
+
+elif page == "Request Review Settings":
+    page_request_review_settings()
 
 elif page == "Exports":
     page_exports()
