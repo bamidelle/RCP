@@ -6814,10 +6814,10 @@ The Team
     )
 
 # ---------- END SETTINGS AND EMAIL INVITES ----------
-st.info(
-    "Works even without a saved lead. "
-    "Perfect for technicians requesting reviews on-site."
-)
+    st.info(
+        "Works even without a saved lead. "
+        "Perfect for technicians requesting reviews on-site."
+    )
 
 
 def page_request_review():
