@@ -7247,6 +7247,7 @@ NAV_ICONS = {
     "Seasonal Trends": "🌦",
     "Settings": "⚙️",
     "Request Review": "⭐",
+    "review_redirect": "🔁",
 
     #"Request Google Reviews": "⭐",
     "Exports": "📤",
@@ -7280,7 +7281,8 @@ with st.sidebar:
         st.session_state.page = "Command Center"
 
     # Build labeled options
-    page_labels = [f"{NAV_ICONS[p]}  {p}" for p in pages]
+    page_labels = [f"{NAV_ICONS.get(p, '📄')}  {p}" for p in pages]
+
 
     # Find current index safely
     current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
