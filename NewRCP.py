@@ -6249,298 +6249,212 @@ def add_time_windows(hist_df):
 # -------------------------------------------------------------
 def page_seasonal_trends():
     require_role_access("business_intelligence")
+
     import numpy as np
     import pandas as pd
     import plotly.express as px
     import plotly.graph_objects as go
     import streamlit as st
-
-    st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
-    st.markdown(
-        """
-        <em>
-        Analyze historical weather patterns, forecast damage risk, and receive strategic recommendations for the property damage industry only. Get:
-        <br>
-        • <strong>Seasonal & Historical Weather Analysis</strong> → Identifies recurring weather-driven risk patterns that affect property damage volume<br>
-        • <strong>Damage Risk Forecasting</strong> → Predicts surge periods and exposure levels to enable proactive planning<br>
-        • <strong>Weather-to-Business Impact Mapping</strong> → Explains how weather trends influence claims, leads, and operational costs<br>
-        • <strong>Strategic Recommendations Engine</strong> → Provides time-based guidance for staffing, marketing, and operational decisions<br><br>
-        </em>
-        """,
-        unsafe_allow_html=True
-    )
+    from datetime import datetime, timedelta
 
     # =========================================================
-    # 1. LOCATION SELECTION
+    # 🔐 DEMO MODE (NO API COST)
+    # =========================================================
+    DEMO_MODE = st.toggle("🎬 Demo Mode (No API usage)", value=False)
+
+    # =========================================================
+    # SAFE HELPERS (PATCHED)
+    # =========================================================
+    def safe_df(df):
+        return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
+
+    def confidence(score):
+        if score >= 0.75:
+            return "High"
+        if score >= 0.5:
+            return "Medium"
+        return "Low"
+
+    # =========================================================
+    # LOW-COST CACHED API WRAPPERS
+    # =========================================================
+    @st.cache_data(ttl=86400)
+    def fetch_weather_cached(lat, lon, months):
+        if DEMO_MODE:
+            return demo_weather(months)
+        return fetch_weather(lat, lon, months)
+
+    @st.cache_data(ttl=86400)
+    def fetch_forecast_cached(lat, lon, days):
+        if DEMO_MODE:
+            return demo_weather(days // 30)
+        return fetch_forecast_weather(lat, lon, days)
+
+    def demo_weather(months):
+        dates = pd.date_range(end=datetime.utcnow(), periods=months * 30)
+        return pd.DataFrame({
+            "date": dates,
+            "temperature_c": np.random.normal(25, 4, len(dates)),
+            "rainfall_mm": np.abs(np.random.normal(6, 3, len(dates)))
+        })
+
+    # =========================================================
+    # HEADER
+    # =========================================================
+    st.markdown("## 🌦️ Seasonal Trends & Weather-Based Damage Insights")
+    st.caption("Location-based risk forecasting with business impact intelligence")
+
+    st.divider()
+
+    # =========================================================
+    # LOCATION SELECTION
     # =========================================================
     countries = get_all_countries()
     country = st.selectbox("Country", [c["name"] for c in countries])
     country_code = next(c["code"] for c in countries if c["name"] == country)
 
-    city_query = st.text_input("City (e.g. Miami, London, Toronto)")
-    matches = search_cities(country_code, city_query)
+    city_query = st.text_input("City", placeholder="Type at least 3 letters")
 
-    if not matches:
-        st.info("Start typing a city name.")
+    if len(city_query) < 3:
+        st.info("Start typing a city name (3+ characters)")
         return
 
-    labels = [
-        f"{m['name']}, {m['admin1']}" if m["admin1"] else m["name"]
-        for m in matches
-    ]
-    selected = st.selectbox("Select city", labels)
+    matches = search_cities(country_code, city_query)
+    if not matches:
+        st.warning("No cities found")
+        return
+
+    labels = [f"{m['name']}, {m.get('admin1','')}" for m in matches]
+    selected = st.selectbox("Select City", labels)
     chosen = matches[labels.index(selected)]
-    st.success(f"📍 {selected}, {country}")
+
+    st.success(f"📍 {selected}")
+
+    st.divider()
 
     # =========================================================
-    # 2. CONTROLS
+    # CONTROLS (CAPPED FOR COST)
     # =========================================================
-    hist_range = st.selectbox(
-        "Historical window",
-        ["3 months", "6 months", "12 months"],
-        index=1
-    )
-
-    forecast_range = st.selectbox(
-        "Forecast horizon",
-        ["3 months", "6 months", "12 months"]
-    )
+    hist_range = st.selectbox("Historical Window", ["3 months", "6 months", "12 months"], index=1)
+    forecast_range = st.selectbox("Forecast Horizon", ["3 months", "6 months"])
 
     months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-    forecast_months = {"3 months": 3, "6 months": 6, "12 months": 12}[forecast_range]
+    forecast_months = {"3 months": 3, "6 months": 6}[forecast_range]
 
-    if not st.button("Generate Insights"):
+    if not st.button("Generate Insights", use_container_width=True):
         return
 
+    st.divider()
+
     # =========================================================
-    # 3. DATA FETCH
+    # DATA FETCH (SAFE + CAPPED)
     # =========================================================
     with st.spinner("Generating insights..."):
-        hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
-        forecast_days = forecast_months * 30
-        forecast_df = fetch_forecast_weather(chosen["lat"], chosen["lon"], forecast_days)
+        hist_df = fetch_weather_cached(chosen["lat"], chosen["lon"], months)
+        forecast_days = min(forecast_months * 30, 90)
+        forecast_df = fetch_forecast_cached(chosen["lat"], chosen["lon"], forecast_days)
 
-    # =========================================================
-    # 4. SAFETY CHECKS
-    # =========================================================
+    hist_df = safe_df(hist_df)
+    forecast_df = safe_df(forecast_df)
+
     if hist_df.empty:
-        st.error("Historical weather data unavailable for this location.")
+        st.error("No historical data available")
         return
 
-    if forecast_df.empty:
-        st.warning(
-            "⚠️ Forecast limited by API. Longer-range outlook inferred from historical patterns."
-        )
-        forecast_df = hist_df.copy()
-
     # =========================================================
-    # 5. FEATURE ENGINEERING (SINGLE PASS)
+    # FEATURE ENGINEERING
     # =========================================================
     for df_ in [hist_df, forecast_df]:
         df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
-        df_["storm_flag"] = (df_["rainfall_mm"] >= 20).astype(int)
-        df_["water_damage_prob"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
-        df_["mold_prob"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
-        df_["roof_storm_prob"] = df_["storm_flag"]
-        df_["freeze_burst_prob"] = np.clip((df_["temperature_c"] < 1).astype(int), 0, 1)
+        df_["water_risk"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
+        df_["mold_risk"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
+        df_["storm_risk"] = (df_["rainfall_mm"] > 20).astype(int)
+        df_["freeze_risk"] = (df_["temperature_c"] < 1).astype(int)
+
+    st.divider()
 
     # =========================================================
-    # 6. DEMAND DISTRIBUTION & SEASON SCORE
+    # KPI SUMMARY
     # =========================================================
-    demand = {
-        "Water Damage": float(forecast_df["water_damage_prob"].mean()),
-        "Mold Remediation": float(forecast_df["mold_prob"].mean()),
-        "Storm / Roof": float(forecast_df["roof_storm_prob"].mean()),
-        "Freeze / Pipe Burst": float(forecast_df["freeze_burst_prob"].mean()),
+    risk_scores = {
+        "Water Damage": forecast_df["water_risk"].mean(),
+        "Mold Growth": forecast_df["mold_risk"].mean(),
+        "Storm Damage": forecast_df["storm_risk"].mean(),
+        "Freeze Burst": forecast_df["freeze_risk"].mean()
     }
-    demand = {k: max(0.0, min(v, 1.0)) for k, v in demand.items()}
-    season_score = round(np.mean(list(demand.values())), 2)
+
+    k1, k2, k3, k4 = st.columns(4)
+    for col, (label, val) in zip([k1, k2, k3, k4], risk_scores.items()):
+        col.metric(label, f"{val:.2f}", confidence(val))
+
+    st.divider()
 
     # =========================================================
-    # 7. TIME WINDOWS (3 / 6 / 12 MONTHS)
+    # TRENDS VISUALS
     # =========================================================
-    windows = add_time_windows(hist_df)
+    st.subheader("📊 Weather & Risk Trends")
 
-    for i, (label, wdf) in enumerate(windows.items()):
-        st.markdown(f"**Last {label.upper()}**")
-        col1, col2 = st.columns(2)
-        with col1:
-            fig_temp = px.line(
-                wdf, x="date", y="temperature_c", title=f"Average Temperature ({label})"
-            )
-            st.plotly_chart(fig_temp, use_container_width=True, key=f"temp_chart_{i}")
-        with col2:
-            fig_hum = px.line(
-                wdf, x="date", y="humidity_pct", title=f"Average Humidity ({label})"
-            )
-            st.plotly_chart(fig_hum, use_container_width=True, key=f"hum_chart_{i}")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=hist_df["date"], y=hist_df["rainfall_mm"], name="Rainfall (History)"))
+    fig.add_trace(go.Scatter(x=forecast_df["date"], y=forecast_df["rainfall_mm"],
+                             name="Rainfall (Forecast)", line=dict(dash="dash")))
+    fig.update_layout(height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
 
     # =========================================================
-    # 8. SEASONAL TREND ANALYSIS — HISTORY VS FORECAST
-    # =========================================================
-    trend_fig = go.Figure()
-    trend_fig.add_trace(go.Scatter(
-        x=hist_df["date"], y=hist_df["rainfall_mm"], name="Rainfall (Historical)", mode="lines"
-    ))
-    trend_fig.add_trace(go.Scatter(
-        x=forecast_df["date"], y=forecast_df["rainfall_mm"], name="Rainfall (Forecast)", mode="lines", line=dict(dash="dash")
-    ))
-    trend_fig.add_trace(go.Scatter(
-        x=hist_df["date"], y=hist_df["temperature_c"], name="Temperature (Historical)", mode="lines", yaxis="y2"
-    ))
-    trend_fig.add_trace(go.Scatter(
-        x=forecast_df["date"], y=forecast_df["temperature_c"], name="Temperature (Forecast)", mode="lines", line=dict(dash="dash"), yaxis="y2"
-    ))
-    trend_fig.update_layout(
-        xaxis_title="Date",
-        yaxis=dict(title="Rainfall (mm)"),
-        yaxis2=dict(title="Temperature (°C)", overlaying="y", side="right"),
-        legend=dict(orientation="h"),
-        height=450
-    )
-    st.plotly_chart(trend_fig, use_container_width=True, key="trend_fig")
-
-    # =========================================================
-    # 9. DAMAGE RISK TRENDS
-    # =========================================================
-    risk_fig = go.Figure()
-    for col, label_ in [
-        ("water_damage_prob", "Water Damage"),
-        ("mold_prob", "Mold"),
-        ("roof_storm_prob", "Storm / Roof"),
-        ("freeze_burst_prob", "Freeze / Pipe Burst"),
-    ]:
-        risk_fig.add_trace(go.Scatter(
-            x=hist_df["date"], y=hist_df[col], name=f"{label_} (History)", mode="lines"
-        ))
-        risk_fig.add_trace(go.Scatter(
-            x=forecast_df["date"], y=forecast_df[col], name=f"{label_} (Forecast)", mode="lines", line=dict(dash="dash")
-        ))
-    risk_fig.update_layout(yaxis=dict(range=[0,1]), legend=dict(orientation="h"), height=450)
-    st.plotly_chart(risk_fig, use_container_width=True, key="risk_fig")
-
-    # =========================================================
-    # 10. WEATHER CHARTS — HISTORICAL
-    # =========================================================
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(
-            px.line(hist_df, x="date", y="rainfall_mm", title="Historical Rainfall"),
-            use_container_width=True,
-            key="hist_rainfall"
-        )
-    with c2:
-        st.plotly_chart(
-            px.line(hist_df, x="date", y="temperature_c", title="Historical Temperature"),
-            use_container_width=True,
-            key="hist_temp"
-        )
-
-    # =========================================================
-    # 11. EXECUTIVE SEASONAL INSIGHTS
+    # EXECUTIVE INSIGHTS (WITH CONFIDENCE)
     # =========================================================
     st.subheader("🧠 Executive Seasonal Insights")
-    insights = generate_seasonal_insights(leads_df, hist_df)
+
+    insights = []
+
+    if risk_scores["Water Damage"] > 0.6:
+        insights.append(("High water intrusion risk expected", confidence(risk_scores["Water Damage"])))
+
+    if risk_scores["Mold Growth"] > 0.5:
+        insights.append(("Elevated mold remediation demand likely", confidence(risk_scores["Mold Growth"])))
+
+    if risk_scores["Storm Damage"] > 0.4:
+        insights.append(("Storm-related damage frequency increasing", confidence(risk_scores["Storm Damage"])))
+
     if not insights:
-        st.info("No significant seasonal signals detected for the selected period.")
+        st.success("No significant seasonal risk signals detected")
     else:
-        for i, insight in enumerate(insights):
-            st.info(insight, icon="💡")
+        for text, conf in insights:
+            st.info(f"💡 {text} — Confidence: **{conf}**")
+
+    st.divider()
 
     # =========================================================
-    # 12. SUMMARY METRICS & NARRATIVE
+    # STRATEGIC RECOMMENDATIONS
     # =========================================================
-    summary = {
-        "avg_rain_hist": hist_df["rainfall_mm"].mean(),
-        "avg_rain_forecast": forecast_df["rainfall_mm"].mean(),
-        "avg_temp_hist": hist_df["temperature_c"].mean(),
-        "avg_temp_forecast": forecast_df["temperature_c"].mean(),
-        "avg_water_risk": forecast_df["water_damage_prob"].mean(),
-        "avg_mold_risk": forecast_df["mold_prob"].mean(),
-        "avg_storm_risk": forecast_df["roof_storm_prob"].mean(),
-        "avg_freeze_risk": forecast_df["freeze_burst_prob"].mean(),
-    }
+    st.subheader("🎯 Strategic Recommendations")
 
-    st.markdown("## 📝 Narrative Analysis")
-    notes = []
-    if summary["avg_rain_forecast"] > summary["avg_rain_hist"] * 1.15:
-        notes.append("🌧️ Rainfall is trending above seasonal norms — water intrusion risk rising.")
-    elif summary["avg_rain_forecast"] < summary["avg_rain_hist"] * 0.85:
-        notes.append("🌤️ Rainfall below normal — flood exposure reduced.")
+    avg_risk = np.mean(list(risk_scores.values()))
+
+    if avg_risk >= 0.6:
+        st.error("🔥 Peak season detected — increase staffing, emergency inventory, and ad spend")
+    elif avg_risk >= 0.4:
+        st.warning("⚠️ Elevated demand expected — prepare flexible schedules")
     else:
-        notes.append("🌦️ Rainfall is seasonally stable.")
+        st.success("🟢 Normal season — focus on marketing, SEO, and internal optimization")
 
-    if summary["avg_temp_forecast"] > summary["avg_temp_hist"] + 2:
-        notes.append("🔥 Warmer temperatures may elevate mold risk.")
-    elif summary["avg_temp_forecast"] < summary["avg_temp_hist"] - 2:
-        notes.append("❄️ Colder temperatures increase freeze/pipe burst risk.")
-    else:
-        notes.append("🌡️ Temperatures remain within seasonal norms.")
-
-    for n in notes:
-        st.info(n)
+    st.divider()
 
     # =========================================================
-    # 12a. EXECUTIVE NARRATIVE (SAFE DEFAULTS)
-    # =========================================================
-    #st.markdown("## Executive Summary")
-    
-    #data = compute_business_intelligence(chosen["lat"], chosen["lon"], months)
-    #data = data or {}  # ensure dictionary
-    #data.setdefault("executive_narrative", [])
-    
-    #if not data["executive_narrative"]:
-        #st.info("No insights available yet. Start capturing leads to generate seasonal trends.")
-    
-     #for line in data["executive_narrative"]:
-    
-        # ---- SAFETY: ensure dict-like object ----
-        #if isinstance(line, dict):
-            #text = line.get("text", "")
-            #confidence = float(line.get("confidence", 0))
-        #else:
-            # fallback if AI returns a string or other object
-            #text = str(line)
-            #confidence = 0.0
-    
-        #if text:
-            #st.info(f"{text} (Confidence: {confidence:.0%})")
-
-
-    # =========================================================
-    # 13. DAMAGE RISK OUTLOOK & RECOMMENDATIONS
-    # =========================================================
-    st.markdown("## 🧠 Damage Risk & Recommendations")
-    risk_notes = []
-    if summary["avg_water_risk"] > 0.55:
-        risk_notes.append("💧 High likelihood of water damage events.")
-    if summary["avg_mold_risk"] > 0.45:
-        risk_notes.append("🦠 Elevated mold growth risk.")
-    if summary["avg_storm_risk"] > 0.4:
-        risk_notes.append("🌪️ Storm-related roof damage risk.")
-    if summary["avg_freeze_risk"] > 0.3:
-        risk_notes.append("❄️ Freeze/pipe burst risk present.")
-    if not risk_notes:
-        risk_notes.append("🟢 Overall weather-driven damage risk is low.")
-    for r in risk_notes:
-        st.warning(r)
-
-    if season_score >= 0.6:
-        st.error("🔥 Peak Season — increase staffing, pre-stage equipment, boost emergency marketing.")
-    elif season_score >= 0.4:
-        st.warning("⚠️ Elevated Activity — flexible scheduling and monitor leads closely.")
-    else:
-        st.success("🟢 Low / Normal Season — focus on branding, SEO, and internal optimization.")
-
-    # =========================================================
-    # 14. EXPECTED LEADS & STAFFING
+    # EXPECTED JOB VOLUME
     # =========================================================
     BASE_MONTHLY_LEADS = 40
-    expected_total_leads = int(BASE_MONTHLY_LEADS * (0.6 + season_score) * forecast_months)
-    st.markdown("## 🔢 Estimated Job Volume")
-    st.success(f"📈 ~{expected_total_leads} jobs over {forecast_months} months")
-    techs = max(1, int(np.ceil(expected_total_leads / (18 * forecast_months))))
-    st.metric("Minimum Recommended Technicians Required", techs)
+    expected_jobs = int(BASE_MONTHLY_LEADS * (0.6 + avg_risk) * forecast_months)
+
+    st.subheader("🔢 Estimated Job Volume")
+    st.metric("Expected Jobs", expected_jobs)
+
+    techs = max(1, int(np.ceil(expected_jobs / (18 * forecast_months))))
+    st.metric("Recommended Technicians", techs)
+
 
 
 # ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
