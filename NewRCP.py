@@ -6814,10 +6814,7 @@ The Team
     )
 
 # ---------- END SETTINGS AND EMAIL INVITES ----------
-    st.info(
-        "Works even without a saved lead. "
-        "Perfect for technicians requesting reviews on-site."
-    )
+
 
 
 def page_request_review():
@@ -7354,7 +7351,6 @@ elif page == "Request Review":
 
 elif page == "review_redirect":
     page_review_redirect()
-
 
 elif page == "Exports":
     page_exports()
