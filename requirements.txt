@@ -16,3 +16,4 @@ PyJWT
 passlib[bcrypt]
 resend
 python-dotenv
+qrcode
