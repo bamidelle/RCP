@@ -2343,6 +2343,19 @@ def require_role_access(page_key):
         st.warning("🔒 This feature requires an upgrade.")
         st.stop()
 
+def get_user_settings_safe():
+    """
+    Safe wrapper to prevent Request Review page crashes
+    """
+    try:
+        return get_user_settings()
+    except Exception:
+        return {
+            "google_review_url": "",
+            "enable_nfc_review": True,
+            "enable_qr_review": True
+        }
+
 def log_event(
     *,
     event_type: str,
