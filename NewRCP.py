@@ -19,6 +19,7 @@ from streamlit_folium import st_folium
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import qrcode
 from datetime import datetime
 import streamlit as st
 import joblib
