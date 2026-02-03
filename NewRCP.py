@@ -2357,6 +2357,14 @@ def get_user_settings_safe():
             "enable_qr_review": True
         }
 
+def generate_review_token():
+    """
+    Generates a short-lived anonymous review token.
+    DB persistence can be added later.
+    """
+    return uuid.uuid4().hex
+
+
 def log_event(
     *,
     event_type: str,
@@ -7398,17 +7406,19 @@ elif page == "Seasonal Trends":
 elif page == "Settings":
     page_settings()
 
-elif page == "Request Google Reviews":
-    page_google_reviews()
-
 elif page == "Request Review":
     page_request_review()
 
 elif page == "review_redirect":
     page_review_redirect()
 
+#-------------------------------
 elif page == "Request Review Settings":
     page_request_review_settings()
+
+elif page == "Request Google Review":
+    page_request_review()
+
 
 elif page == "Exports":
     page_exports()
