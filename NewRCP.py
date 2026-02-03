@@ -7304,7 +7304,7 @@ with st.sidebar:
         "Tasks",
         "AI Recommendations",
         "Seasonal Trends",
-        "Request Review"
+        "Request Review",
         "Settings",
         "Exports",
     ]
