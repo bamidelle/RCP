@@ -6836,8 +6836,13 @@ def page_request_review_settings():
 
     st.markdown("---")
 
+    # Load existing settings so saved link persists
+    settings = get_user_settings_safe()
+    existing_review_link = settings.get("google_review_url", "")
+
     review_link = st.text_input(
         "Google Review Link",
+        value=existing_review_link,
         placeholder="https://g.page/your-business/review"
     )
 
@@ -6851,7 +6856,9 @@ def page_request_review_settings():
     )
 
     if st.button("💾 Save Review Link"):
-        st.success("Review link saved (settings storage coming next).")
+        settings = get_user_settings_safe()
+        settings["google_review_url"] = review_link
+        st.success("✅ Review link saved successfully.")
 
     st.markdown("---")
 
@@ -6863,7 +6870,6 @@ def page_request_review_settings():
     )
 
 
-
 def page_request_review():
     require_role_access("overview")
 
@@ -6873,7 +6879,7 @@ def page_request_review():
     # ---------------------------------------
     # Load business review link
     # ---------------------------------------
-    settings = get_user_settings_safe()  # your existing settings helper
+    settings = get_user_settings_safe()
     review_url = settings.get("google_review_url")
 
     if not review_url:
