@@ -85,6 +85,17 @@ from pathlib import Path
 
 EVENT_LOG_FILE = Path("platform_events.log")
 
+#----------------------Supabase Starts Here------------------
+from db import supabase
+
+# Example usage
+response = supabase.table("organizations").select("*").execute()
+st.write(response.data)
+
+# Example insert
+supabase.table("organizations").insert({"name": "Demo Restoration"}).execute()
+#--------------------------------------------------------------
+
 import uuid
 from datetime import datetime
 
