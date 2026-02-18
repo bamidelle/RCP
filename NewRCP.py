@@ -49,6 +49,15 @@ from email.mime.multipart import MIMEMultipart
 
 from services.org_service import create_organization, get_organizations
 
+#--------------------supabase---------------
+from supabase import create_client
+import os
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_ANON_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+#--------------------ends here-----------------------
 
 from sqlalchemy import (
     create_engine,
@@ -1968,30 +1977,19 @@ def save_location_ping(
 
 
 def get_leads_df():
-    s = get_session()
-    try:
-        rows = s.query(Lead).all()
+    response = supabase.table("leads").select("*").execute()
 
-        if not rows:
-            return pd.DataFrame()
+    if not response.data:
+        return pd.DataFrame()
 
-        return pd.DataFrame([
-            {
-                "lead_id": r.lead_id,
-                "stage": r.stage,
-                "estimated_value": r.estimated_value or 0,
-                "assigned_to": r.assigned_to,
-                "score": r.score if r.score is not None else 0.5,
-                "sla_hours": r.sla_hours,
-                "sla_entered_at": r.sla_entered_at,
-                "created_at": r.created_at,
-                "source": r.source,
-                "damage_type": r.damage_type
-            }
-            for r in rows
-        ])
-    finally:
-        s.close()
+    df = pd.DataFrame(response.data)
+
+    # Ensure safe defaults
+    if "score" not in df.columns:
+        df["score"] = 0.5
+
+    return df
+
 
 
 def get_jobs_for_period(start_dt, end_dt):
@@ -2918,77 +2916,34 @@ def generate_password_reset_token():
 
 def upsert_lead_record(payload: dict, actor="admin"):
     """
-    payload must include lead_id (string)
-    other fields optional
+    Upserts a lead into Supabase
     """
-    s = get_session()
-    try:
-        lead = s.query(Lead).filter(Lead.lead_id == payload.get("lead_id")).first()
-        if lead is None:
-            # create
-            lead = Lead(
-                lead_id=payload.get("lead_id"),
-                created_at=payload.get("created_at", datetime.utcnow()),
-                source=payload.get("source"),
-                source_details=payload.get("source_details"),
-                contact_name=payload.get("contact_name"),
-                contact_phone=payload.get("contact_phone"),
-                contact_email=payload.get("contact_email"),
-                property_address=payload.get("property_address"),
-                damage_type=payload.get("damage_type"),
-                assigned_to=payload.get("assigned_to"),
-                notes=payload.get("notes"),
-                estimated_value=float(payload.get("estimated_value") or 0.0),
-                stage=payload.get("stage") or "New",
-                sla_hours=int(payload.get("sla_hours") or DEFAULT_SLA_HOURS),
-                sla_entered_at=payload.get("sla_entered_at") or datetime.utcnow(),
-                ad_cost=float(payload.get("ad_cost") or 0.0),
-                converted=bool(payload.get("converted") or False),
-                score=payload.get("score")
-            )
-            s.add(lead)
-            s.commit()
-            s.add(LeadHistory(lead_id=lead.lead_id, changed_by=actor, field="create", old_value=None, new_value=str(lead.stage)))
-            s.commit()
-            return lead.lead_id
-        else:
-            # update fields and log changes
-            changed = []
-            for key in ["source","source_details","contact_name","contact_phone","contact_email","property_address",
-                        "damage_type","assigned_to","notes","estimated_value","stage","sla_hours","sla_entered_at","ad_cost","converted","score"]:
-                if key in payload:
-                    new = payload.get(key)
-                    old = getattr(lead, key)
-                    # normalize numeric conversions
-                    if key in ("estimated_value","ad_cost"):
-                        try:
-                            new_val = float(new or 0.0)
-                        except Exception:
-                            new_val = old
-                    elif key in ("sla_hours",):
-                        try:
-                            new_val = int(new or old)
-                        except Exception:
-                            new_val = old
-                    elif key in ("converted",):
-                        new_val = bool(new)
-                    else:
-                        new_val = new
-                    if new_val is not None and old != new_val:
-                        changed.append((key, old, new_val))
-                        setattr(lead, key, new_val)
-            # persist
-            s.add(lead)
-            for (f, old, new) in changed:
-                s.add(LeadHistory(lead_id=lead.lead_id, changed_by=actor, field=f, old_value=str(old), new_value=str(new)))
-            s.commit()
-            return lead.lead_id
-    except Exception:
-        s.rollback()
-        raise
-    finally:
-        s.close()
+    if not payload.get("lead_id"):
+        raise ValueError("lead_id is required")
 
+    lead_id = payload.get("lead_id")
+
+    # Normalize numeric fields
+    payload["estimated_value"] = float(payload.get("estimated_value") or 0.0)
+    payload["ad_cost"] = float(payload.get("ad_cost") or 0.0)
+    payload["sla_hours"] = int(payload.get("sla_hours") or DEFAULT_SLA_HOURS)
+    payload["converted"] = bool(payload.get("converted") or False)
+
+    # Convert datetime objects to ISO strings
+    for field in ["created_at", "sla_entered_at"]:
+        if payload.get(field) and hasattr(payload[field], "isoformat"):
+            payload[field] = payload[field].isoformat()
+
+    # UPSERT
+    response = supabase.table("leads").upsert(
+        payload,
+        on_conflict="lead_id"
+    ).execute()
+
+    if response.data is None:
+        raise Exception("Failed to upsert lead")
+
+    return lead_id
 
 def delete_lead_record(lead_id: str, actor="admin"):
     s = get_session()
