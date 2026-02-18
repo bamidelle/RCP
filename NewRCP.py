@@ -47,6 +47,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+from services.org_service import create_organization, get_organizations
+
+
 from sqlalchemy import (
     create_engine,
     Column,
@@ -7427,6 +7430,23 @@ elif page == "Exports":
 else:
     st.info("Page not implemented yet.")
 
+
+#----------------------------------SUPABASE TEST-----------------------
+st.markdown("---")
+st.header("Supabase Connection Test")
+
+org_name = st.text_input("Test Organization Name")
+
+if st.button("Create Test Organization"):
+    result = create_organization(org_name)
+    st.success("Created!")
+    st.write(result)
+
+if st.button("Load All Organizations"):
+    orgs = get_organizations()
+    st.write(orgs)
+#------------------------------Ends Here--------------------------------
+
 # Footer
 st.markdown("---")
-st.markdown("<div class='small-muted'>ReCapture Pro. SQLite persistence. Integrated Field Tracking (upgrade) enabled.</div>", unsafe_allow_html=True)
+st.markdown("<div class='small-muted'>ReCapture Pro. Sales Intelligence and Conversion.</div>", unsafe_allow_html=True)
