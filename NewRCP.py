@@ -7256,7 +7256,7 @@ if (
 # NAV ICONS
 # ----------------------
 NAV_ICONS = {
-    "Command Center": "📍",
+    "Command Center": "⚡",
     "Overview": "🧭",
     "Lead Capture": "🎯",
     "Pipeline Board": "🔄",
