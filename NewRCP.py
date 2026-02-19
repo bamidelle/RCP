@@ -1984,16 +1984,27 @@ def get_leads_df():
 
     df = pd.DataFrame(response.data)
 
-    # ---- SAFE DEFAULTS ----
-    if "score" not in df.columns:
-        df["score"] = 0.5
+    # ---- SAFE COLUMN DEFAULTS ----
+    defaults = {
+        "estimated_value": 0,
+        "ad_cost": 0,
+        "stage": "new",
+        "score": 0.5,
+        "damage_type": "Unknown",
+    }
 
-    # ---- CRITICAL: DATETIME NORMALIZATION ----
+    for col, val in defaults.items():
+        if col not in df.columns:
+            df[col] = val
+        df[col] = df[col].fillna(val)
+
+    # ---- DATETIME SAFE ----
     if "created_at" in df.columns:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
 
-    if "sla_entered_at" in df.columns:
-        df["sla_entered_at"] = pd.to_datetime(df["sla_entered_at"], errors="coerce", utc=True)
+    # ---- NUMERIC SAFE ----
+    df["estimated_value"] = pd.to_numeric(df["estimated_value"], errors="coerce").fillna(0)
+    df["ad_cost"] = pd.to_numeric(df["ad_cost"], errors="coerce").fillna(0)
 
     return df
 
