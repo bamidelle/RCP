@@ -1095,7 +1095,6 @@ def calculate_competitor_score(rating, reviews, distance_km):
 
 
 def save_competitor_snapshot(competitor_id, rating, total_reviews):
-    s = get_session()
     try:
         snap = CompetitorSnapshot(
             competitor_id=competitor_id,
@@ -1159,7 +1158,7 @@ def ingest_competitors_openstreetmap(lat, lon, keyword, radius=5000):
             st.warning("No competitors found in this area.")
             return
 
-        s = get_session()
+        
         try:
             for e in elements:
                 name = e.get("tags", {}).get("name")
@@ -1189,7 +1188,7 @@ def ingest_competitors_openstreetmap(lat, lon, keyword, radius=5000):
 
 # ---------- END BLOCK F ----------
 def review_velocity(competitor_id, days):
-    s = get_session()
+    
     try:
         since = pd.Timestamp.utcnow() - timedelta(days=days)
         count = (
@@ -1204,7 +1203,7 @@ def review_velocity(competitor_id, days):
     finally:
         s.close()
 def generate_competitor_alerts():
-    s = get_session()
+    
     try:
         competitors = s.query(Competitor).all()
 
@@ -1237,8 +1236,7 @@ def generate_competitor_alerts():
 # HELPERS: DB ops
 # ----------------------
 
-def get_session():
-    return SessionLocal()
+
 
 
 def leads_to_df(start_date=None, end_date=None):
@@ -1714,7 +1712,7 @@ def sync_ai_insights(user_id, generated_insights):
 
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS ----------
 def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
-    s = get_session()
+    
     try:
         task = Task(
             title=title,
@@ -1732,7 +1730,7 @@ def create_task(title, technician_username=None, lead_id=None, due_at=None, desc
     finally:
         s.close()
 def update_task_status(task_id: int, new_status: str):
-    s = get_session()
+
     try:
         task = s.query(Task).filter(Task.id == task_id).first()
         if not task:
@@ -1748,7 +1746,7 @@ def update_task_status(task_id: int, new_status: str):
         s.close()
 
 def get_tasks_for_user(username):
-    s = get_session()
+    
     try:
         rows = s.query(Task).filter(Task.technician_username == username).all()
         return pd.DataFrame([
@@ -1808,7 +1806,7 @@ def page_tasks():
 
 
 def get_tasks_df():
-    s = get_session()
+    
     try:
         rows = s.query(Task).order_by(Task.created_at.desc()).all()
         return pd.DataFrame([
@@ -1827,7 +1825,7 @@ def get_tasks_df():
 
 
 def add_technician(username: str, full_name: str = "", phone: str = "", specialization: str = "Tech", active: bool = True):
-    s = get_session()
+    
     try:
         existing = s.query(Technician).filter(Technician.username == username).first()
         if existing:
@@ -1846,7 +1844,7 @@ def add_technician(username: str, full_name: str = "", phone: str = "", speciali
     finally:
         s.close()
 def update_technician_status(username: str, status: str):
-    s = get_session()
+    
     try:
         tech = s.query(Technician).filter_by(username=username).first()
         if not tech:
@@ -1868,7 +1866,7 @@ if "_save_location" in st.query_params:
     st.stop()
 
 def save_location_ping(username, lat, lon, accuracy=None):
-    s = get_session()
+    
     try:
         ping = LocationPing(
             tech_username=username,
@@ -1884,7 +1882,7 @@ def save_location_ping(username, lat, lon, accuracy=None):
 
 
 def get_technicians_df(active_only=True):
-    s = get_session()
+    
     try:
         q = s.query(Technician)
         if active_only:
@@ -1912,7 +1910,7 @@ def save_location_ping(
     lead_id: str | None = None,
     accuracy: float | None = None,
 ):
-    s = get_session()
+    
     try:
         ping = LocationPing(
             tech_username=tech_username,
@@ -2621,7 +2619,7 @@ def generate_seasonal_insights(leads_df, hist_df):
 
 
 def create_inspection_assignment(lead_id: str, technician_username: str, notes: str = None):
-    s = get_session()
+    
     try:
         ia = InspectionAssignment(lead_id=lead_id, technician_username=technician_username, notes=notes)
         s.add(ia)
@@ -2641,7 +2639,7 @@ def create_inspection_assignment(lead_id: str, technician_username: str, notes: 
 
 
 def get_assignments_for_lead(lead_id: str):
-    s = get_session()
+    
     try:
         rows = s.query(InspectionAssignment).filter(InspectionAssignment.lead_id == lead_id).order_by(InspectionAssignment.assigned_at.desc()).all()
         return rows
@@ -2650,7 +2648,7 @@ def get_assignments_for_lead(lead_id: str):
 
 
 def persist_location_ping(tech_username: str, latitude: float, longitude: float, lead_id: str = None, accuracy: float = None, timestamp: datetime = None):
-    s = get_session()
+    
     try:
         ping = LocationPing(tech_username=tech_username, latitude=float(latitude), longitude=float(longitude), lead_id=lead_id, accuracy=accuracy, timestamp=timestamp or pd.Timestamp.utcnow())
         s.add(ping)
@@ -2663,7 +2661,7 @@ def persist_location_ping(tech_username: str, latitude: float, longitude: float,
         s.close()
 
 def get_latest_location_pings():
-    s = get_session()
+    
     try:
         rows = s.execute(
             text("""
@@ -2926,7 +2924,7 @@ def upsert_lead_record(payload: dict, actor="admin"):
     return lead_id
 
 def delete_lead_record(lead_id: str, actor="admin"):
-    s = get_session()
+    
     try:
         lead = s.query(Lead).filter(Lead.lead_id == lead_id).first()
         if not lead:
@@ -3035,7 +3033,7 @@ def get_leads_for_task_dropdown():
     """
     Returns DataFrame of leads for task assignment dropdown
     """
-    s = get_session()
+    
     try:
         rows = (
             s.query(
@@ -5360,7 +5358,7 @@ def page_ml_internal():
         if st.button("Score all leads and persist scores"):
             df = get_leads_df() leads_to_df()
             scored = score_dataframe(df.copy(), model, cols)
-            s = get_session()
+            
             try:
                 for _, r in scored.iterrows():
                     lead = s.query(Lead).filter(Lead.lead_id == r["lead_id"]).first()
@@ -5458,7 +5456,7 @@ def page_ai_recommendations():
     # 3) Technician workload (from assignments)
     st.subheader("Technician Workload (Assigned Inspections)")
     try:
-        s = get_session()
+        
         try:
             rows = s.query(InspectionAssignment.technician_username, func.count(InspectionAssignment.id)).group_by(InspectionAssignment.technician_username).all()
             if rows:
@@ -6108,7 +6106,7 @@ def page_technician_mobile():
 
     st.markdown("---")
     st.subheader("Audit Trail")
-    s = get_session()
+    
     try:
         hist = s.query(LeadHistory).order_by(LeadHistory.timestamp.desc()).limit(200).all()
         if hist:
@@ -6505,7 +6503,7 @@ def page_competitor_intelligence():
     # ===============================
     st.subheader("🚨 Competitive Alerts")
 
-    s = get_session()
+    
     alerts = (
         s.query(CompetitorAlert)
         .order_by(CompetitorAlert.created_at.desc())
@@ -6545,7 +6543,7 @@ def page_competitor_intelligence():
     # ===============================
     # 📊 FETCH COMPETITORS
     # ===============================
-    s = get_session()
+    
     try:
         competitors = s.query(Competitor).all()
     finally:
