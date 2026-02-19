@@ -330,10 +330,8 @@ def fetch_weather(lat, lon, months):
     r.raise_for_status()
     d = r.json()["daily"]
 
-    df = get_leads_df()
-
-    pd.DataFrame({
-        "date": pd.to_datetime(d["time"]),
+    df = pd.DataFrame({
+        "date": pd.to_datetime(d["time"], errors="coerce"),
         "rainfall_mm": d["precipitation_sum"],
         "temperature_c": d["temperature_2m_mean"],
     })
