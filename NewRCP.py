@@ -2000,14 +2000,11 @@ def get_leads_df():
 
 
 def get_jobs_for_period(start_dt, end_dt):
-    df = get_leads_df()  # existing function
-
+    df = get_leads_df()
     if df.empty:
         return df
 
-    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
     df = df[(df["created_at"] >= start_dt) & (df["created_at"] <= end_dt)]
-
     return df
 
 def compute_job_volume_metrics(df):
