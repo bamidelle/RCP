@@ -1254,59 +1254,23 @@ def get_session():
 
 
 def leads_to_df(start_date=None, end_date=None):
-    """Load leads into a DataFrame. Filter by optional start_date/end_date (date objects)"""
-    s = get_session()
-    try:
-        rows = s.query(Lead).order_by(Lead.created_at.desc()).all()
-        data = []
-        for r in rows:
-            data.append({
-                "id": r.id,
-                "lead_id": r.lead_id,
-                "created_at": r.created_at,
-                "source": r.source or "Other",
-                "source_details": getattr(r, "source_details", None),
-                "contact_name": getattr(r, "contact_name", None),
-                "contact_phone": getattr(r, "contact_phone", None),
-                "contact_email": getattr(r, "contact_email", None),
-                "property_address": getattr(r, "property_address", None),
-                "damage_type": getattr(r, "damage_type", None),
-                "assigned_to": getattr(r, "assigned_to", None),
-                "notes": r.notes,
-                "estimated_value": float(r.estimated_value or 0.0),
-                "stage": r.stage or "New",
-                "sla_hours": int(r.sla_hours or DEFAULT_SLA_HOURS),
-                "sla_entered_at": r.sla_entered_at or r.created_at,
-                "contacted": bool(r.contacted),
-                "inspection_scheduled": bool(r.inspection_scheduled),
-                "inspection_scheduled_at": r.inspection_scheduled_at,
-                "inspection_completed": bool(r.inspection_completed),
-                "estimate_submitted": bool(r.estimate_submitted),
-                "awarded_date": r.awarded_date,
-                "lost_date": r.lost_date,
-                "qualified": bool(r.qualified),
-                "ad_cost": float(r.ad_cost or 0.0),
-                "converted": bool(r.converted),
-                "score": float(r.score) if r.score is not None else None
-            })
-        df = get_leads_df() pd.DataFrame(data)
-        if df.empty:
-            # return empty with expected columns
-            cols = ["id","lead_id","created_at","source","source_details","contact_name","contact_phone","contact_email",
-                    "property_address","damage_type","assigned_to","notes","estimated_value","stage","sla_hours","sla_entered_at",
-                    "contacted","inspection_scheduled","inspection_scheduled_at","inspection_completed","estimate_submitted",
-                    "awarded_date","lost_date","qualified","ad_cost","converted","score"]
-            return pd.DataFrame(columns=cols)
-        # apply date filters
-        if start_date:
-            start_dt = datetime.combine(start_date, datetime.min.time())
-            df = get_leads_df() df[df["created_at"] >= start_dt]
-        if end_date:
-            end_dt = datetime.combine(end_date, datetime.max.time())
-            df = get_leads_df() df[df["created_at"] <= end_dt]
-        return df.reset_index(drop=True)
-    finally:
-        s.close()
+    df = get_leads_df()
+
+    if df.empty:
+        return df
+
+    if "created_at" in df.columns:
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+
+    if start_date:
+        start_dt = pd.Timestamp(start_date)
+        df = df[df["created_at"] >= start_dt]
+
+    if end_date:
+        end_dt = pd.Timestamp(end_date)
+        df = df[df["created_at"] <= end_dt]
+
+    return df.reset_index(drop=True)
 
 def set_logged_in_user(user: User):
     st.session_state["user_id"] = user.id
