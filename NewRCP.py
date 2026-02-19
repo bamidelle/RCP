@@ -1984,9 +1984,16 @@ def get_leads_df():
 
     df = pd.DataFrame(response.data)
 
-    # Ensure safe defaults
+    # ---- SAFE DEFAULTS ----
     if "score" not in df.columns:
         df["score"] = 0.5
+
+    # ---- CRITICAL: DATETIME NORMALIZATION ----
+    if "created_at" in df.columns:
+        df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
+
+    if "sla_entered_at" in df.columns:
+        df["sla_entered_at"] = pd.to_datetime(df["sla_entered_at"], errors="coerce", utc=True)
 
     return df
 
