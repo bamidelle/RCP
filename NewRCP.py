@@ -874,7 +874,7 @@ def create_login_token(user, minutes=15):
     login_token = LoginToken(
         token=token,
         user_id=user.id,
-        expires_at=datetime.utcnow() + timedelta(minutes=minutes),
+        expires_at=pd.Timestamp.utcnow() + timedelta(minutes=minutes),
     )
 
     with SessionLocal() as s:
@@ -890,7 +890,7 @@ def verify_login_token(token: str):
             .filter(
                 LoginToken.token == token,
                 LoginToken.used == False,
-                LoginToken.expires_at > datetime.utcnow(),
+                LoginToken.expires_at > pd.Timestamp.utcnow(),
             )
             .first()
         )
@@ -899,7 +899,7 @@ def verify_login_token(token: str):
             return None
 
         login_token.used = True
-        login_token.user.last_login_at = datetime.utcnow()
+        login_token.user.last_login_at = pd.Timestamp.utcnow()
         s.commit()
 
         return login_token.user
@@ -913,7 +913,7 @@ def verify_login_token(token: str):
             .filter(
                 LoginToken.token == token,
                 LoginToken.used == False,
-                LoginToken.expires_at > datetime.utcnow(),
+                LoginToken.expires_at > pd.Timestamp.utcnow(),
             )
             .first()
         )
@@ -922,7 +922,7 @@ def verify_login_token(token: str):
             return None
 
         login_token.used = True
-        login_token.user.last_login_at = datetime.utcnow()
+        login_token.user.last_login_at = pd.Timestamp.utcnow()
         s.commit()
 
         return login_token.user
@@ -1200,7 +1200,7 @@ def ingest_competitors_openstreetmap(lat, lon, keyword, radius=5000):
 def review_velocity(competitor_id, days):
     s = get_session()
     try:
-        since = datetime.utcnow() - timedelta(days=days)
+        since = pd.Timestamp.utcnow() - timedelta(days=days)
         count = (
             s.query(CompetitorSnapshot)
             .filter(
@@ -1336,7 +1336,7 @@ def send_trial_expiry_reminders():
     Safe to run multiple times (idempotent by date).
     """
     import datetime as dt
-    now = dt.datetime.utcnow()
+    now = dt.pd.Timestamp.utcnow()
 
 
     with SessionLocal() as s:
@@ -1510,7 +1510,7 @@ def verify_invite_token(token: str) -> User:
                 .filter(
                     User.email == email,
                     User.invite_token_hash == token_hash,
-                    User.invite_expires_at > datetime.utcnow(),
+                    User.invite_expires_at > pd.Timestamp.utcnow(),
                     User.activated_at.is_(None),
                 )
                 .first()
@@ -1521,7 +1521,7 @@ def verify_invite_token(token: str) -> User:
 
             # Activate user
             user.is_active = True
-            user.activated_at = datetime.utcnow()
+            user.activated_at = pd.Timestamp.utcnow()
             user.invite_token_hash = None
             user.invite_expires_at = None
 
@@ -1753,7 +1753,7 @@ def sync_ai_insights(user_id, generated_insights):
         for key, record in existing.items():
             if key not in generated_keys:
                 record.is_active = False
-                record.resolved_at = datetime.utcnow()
+                record.resolved_at = pd.Timestamp.utcnow()
 
         s.commit()
 
@@ -1920,7 +1920,7 @@ def save_location_ping(username, lat, lon, accuracy=None):
             latitude=float(lat),
             longitude=float(lon),
             accuracy=accuracy,
-            timestamp=datetime.utcnow()
+            timestamp=pd.Timestamp.utcnow()
         )
         s.add(ping)
         s.commit()
@@ -2058,7 +2058,7 @@ def generate_ai_advice(df):
 
     if "created_at" in df.columns:
         avg_response = (
-            (datetime.utcnow() - pd.to_datetime(df["created_at"], errors="coerce"))
+            (pd.Timestamp.utcnow() - pd.to_datetime(df["created_at"], errors="coerce"))
             .dt.total_seconds().mean() / 3600
         )
         if avg_response and avg_response > 4:
@@ -2160,18 +2160,18 @@ def safe_col(df, col, default_dtype=None):
 
 def init_trial():
     if "trial_start" not in st.session_state:
-        st.session_state["trial_start"] = datetime.utcnow()
+        st.session_state["trial_start"] = pd.Timestamp.utcnow()
         st.session_state["plan"] = "trial"
 
 def is_trial_active(days=14):
     start = st.session_state.get("trial_start")
     if not start:
         return False
-    return (datetime.utcnow() - start).days < days
+    return (pd.Timestamp.utcnow() - start).days < days
 
 def count_leads_this_month():
-    start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0)
-    end = datetime.utcnow()
+    start = pd.Timestamp.utcnow().replace(day=1, hour=0, minute=0, second=0)
+    end = pd.Timestamp.utcnow()
     df = leads_to_df(start, end)
     return len(df)
 
@@ -2183,12 +2183,12 @@ def get_current_plan():
         return "starter"
 
     if not DEV_MODE:
-        if user.trial_ends_at and user.trial_ends_at < datetime.utcnow():
+        if user.trial_ends_at and user.trial_ends_at < pd.Timestamp.utcnow():
             st.error("Trial expired")
             st.stop()
 
     if user.subscription_status == "trial":
-        if user.trial_ends_at and datetime.utcnow() > user.trial_ends_at:
+        if user.trial_ends_at and pd.Timestamp.utcnow() > user.trial_ends_at:
             return "expired"
 
     return user.plan
@@ -2387,7 +2387,7 @@ def log_event(
             "id": str(uuid4()),
             "event_type": event_type,
             "metadata": json.dumps(metadata or {}),
-            "created_at": datetime.utcnow()
+            "created_at": pd.Timestamp.utcnow()
         }
 
         if user_id:
@@ -2676,7 +2676,7 @@ def get_assignments_for_lead(lead_id: str):
 def persist_location_ping(tech_username: str, latitude: float, longitude: float, lead_id: str = None, accuracy: float = None, timestamp: datetime = None):
     s = get_session()
     try:
-        ping = LocationPing(tech_username=tech_username, latitude=float(latitude), longitude=float(longitude), lead_id=lead_id, accuracy=accuracy, timestamp=timestamp or datetime.utcnow())
+        ping = LocationPing(tech_username=tech_username, latitude=float(latitude), longitude=float(longitude), lead_id=lead_id, accuracy=accuracy, timestamp=timestamp or pd.Timestamp.utcnow())
         s.add(ping)
         s.commit()
         return ping.id
@@ -2721,7 +2721,7 @@ def classify_tech_status(ts):
         except Exception:
             return "offline"
 
-    now = datetime.utcnow()
+    now = pd.Timestamp.utcnow()
     delta = (now - ts).total_seconds() / 60
 
     if delta <= 2:
@@ -2735,7 +2735,7 @@ def classify_tech_status(ts):
 from datetime import datetime, timedelta
 
 def resolve_time_window(range_key: str, custom_start=None, custom_end=None):
-    now = datetime.utcnow()
+    now = pd.Timestamp.utcnow()
 
     if range_key == "daily":
         return now - timedelta(days=1), now
@@ -2844,10 +2844,10 @@ def create_invite_user(email: str, role: str):
             role=role,
             is_active=False,
             invite_token_hash=token_hash,
-            invite_expires_at=datetime.utcnow() + timedelta(hours=INVITE_EXPIRY_HOURS),
+            invite_expires_at=pd.Timestamp.utcnow() + timedelta(hours=INVITE_EXPIRY_HOURS),
             plan="starter",
             subscription_status="trial",
-            trial_ends_at=datetime.utcnow() + timedelta(days=14),
+            trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
         )
         s.add(user)
         s.commit()
@@ -2977,7 +2977,7 @@ def activate_user_from_token(token: str) -> bool:
         if not user:
             return False
 
-        if user.activation_expires_at and user.activation_expires_at < datetime.utcnow():
+        if user.activation_expires_at and user.activation_expires_at < pd.Timestamp.utcnow():
             return False
 
         # ✅ Activate user -ACTIVATION TOKEN 
@@ -3134,7 +3134,7 @@ def add_user(
 
 def create_user_invite(email, role, invited_by):
     token = generate_invite_token()
-    expires = datetime.utcnow() + timedelta(hours=48)
+    expires = pd.Timestamp.utcnow() + timedelta(hours=48)
 
     with SessionLocal() as s:
         invite = UserInvite(
@@ -3154,7 +3154,7 @@ def accept_user_invite(token, username, full_name):
         invite = s.query(UserInvite).filter(
             UserInvite.token == token,
             UserInvite.accepted == False,
-            UserInvite.expires_at > datetime.utcnow()
+            UserInvite.expires_at > pd.Timestamp.utcnow()
         ).first()
 
         if not invite:
@@ -3167,7 +3167,7 @@ def accept_user_invite(token, username, full_name):
             role=invite.role,
             plan="starter",
             subscription_status="trial",
-            trial_ends_at=datetime.utcnow() + timedelta(days=14),
+            trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
         )
 
         invite.accepted = True
@@ -3186,7 +3186,7 @@ def train_internal_model():
     if df.empty or df["converted"].nunique() < 2:
         return None, "Not enough labeled data to train"
     df2 = df.copy()
-    df2["age_days"] = (datetime.utcnow() - df2["created_at"]).dt.days
+    df2["age_days"] = (pd.Timestamp.utcnow() - df2["created_at"]).dt.days
     X = pd.get_dummies(df2[["source","stage"]].astype(str), drop_first=False)
     X["ad_cost"] = df2["ad_cost"]
     X["estimated_value"] = df2["estimated_value"]
@@ -3217,7 +3217,7 @@ def score_dataframe(df, model, cols):
         df["score"] = np.nan
         return df
     df2 = df.copy()
-    df2["age_days"] = (datetime.utcnow() - df2["created_at"]).dt.days
+    df2["age_days"] = (pd.Timestamp.utcnow() - df2["created_at"]).dt.days
     X = pd.get_dummies(df2[["source","stage"]].astype(str), drop_first=False)
     X["ad_cost"] = df2["ad_cost"]
     X["estimated_value"] = df2["estimated_value"]
@@ -3239,11 +3239,11 @@ def score_dataframe(df, model, cols):
 def calculate_remaining_sla(sla_entered_at, sla_hours):
     try:
         if sla_entered_at is None:
-            sla_entered_at = datetime.utcnow()
+            sla_entered_at = pd.Timestamp.utcnow()
         if isinstance(sla_entered_at, str):
             sla_entered_at = datetime.fromisoformat(sla_entered_at)
         deadline = sla_entered_at + timedelta(hours=int(sla_hours or DEFAULT_SLA_HOURS))
-        remain = deadline - datetime.utcnow()
+        remain = deadline - pd.Timestamp.utcnow()
         return max(remain.total_seconds(), 0.0), (remain.total_seconds() <= 0)
     except Exception:
         return float("inf"), False
@@ -3269,7 +3269,7 @@ def compute_priority_for_row(row, weights=None):
         else:
             if isinstance(sla_entered, str):
                 sla_entered = datetime.fromisoformat(sla_entered)
-            time_left_h = max((sla_entered + timedelta(hours=row.get("sla_hours") or DEFAULT_SLA_HOURS) - datetime.utcnow()).total_seconds()/3600.0, 0.0)
+            time_left_h = max((sla_entered + timedelta(hours=row.get("sla_hours") or DEFAULT_SLA_HOURS) - pd.Timestamp.utcnow()).total_seconds()/3600.0, 0.0)
             sla_score = max(0.0, (24.0 - min(time_left_h,24.0)) / 24.0)
     except Exception:
         sla_score = 0.0
@@ -3863,7 +3863,7 @@ def page_lead_capture():
     with st.form("lead_capture_form", clear_on_submit=True):
         lead_id = st.text_input(
             "Lead ID",
-            value=f"L{int(datetime.utcnow().timestamp())}"
+            value=f"L{int(pd.Timestamp.utcnow().timestamp())}"
         )
 
         source = st.selectbox(
@@ -3946,7 +3946,7 @@ def page_lead_capture():
                 upsert_lead_record(
                     {
                         "lead_id": lead_id.strip(),
-                        "created_at": datetime.utcnow(),
+                        "created_at": pd.Timestamp.utcnow(),
                         "source": source,
                         "source_details": source_details,
                         "contact_name": contact_name,
@@ -3958,7 +3958,7 @@ def page_lead_capture():
                         "estimated_value": float(estimated_value or 0.0),
                         "ad_cost": float(ad_cost or 0.0),
                         "sla_hours": int(sla_hours or DEFAULT_SLA_HOURS),
-                        "sla_entered_at": datetime.utcnow(),
+                        "sla_entered_at": pd.Timestamp.utcnow(),
                         "notes": notes
                     },
                     actor="admin"
@@ -4146,7 +4146,7 @@ def page_pipeline_board():
     # =========================================================
     # ---------- DERIVED METRICS ----------
     # =========================================================
-    now = datetime.utcnow()
+    now = pd.Timestamp.utcnow()
 
     leads_df["sla_remaining_hr"] = (
         leads_df["sla_entered_at"]
@@ -4309,7 +4309,7 @@ def page_analytics():
         index=0
     )
 
-    today = datetime.utcnow().date()
+    today = pd.Timestamp.utcnow().date()
 
     if range_key == "Today":
         start, end = today, today
@@ -4511,7 +4511,7 @@ def page_analytics():
     # SLA Overdue time series (last 30 days)
     st.subheader("SLA Overdue (last 30 days)")
     st.markdown("<em>This shows the Period when a lead was not contacted within the agreed Service Level</em>", unsafe_allow_html=True)
-    today = datetime.utcnow().date()
+    today = pd.Timestamp.utcnow().date()
     days = [today - timedelta(days=i) for i in range(29, -1, -1)]
     ts = []
     for d in days:
@@ -5249,7 +5249,7 @@ def page_technician_map_tracking():
     def classify_status(ts):
         if pd.isna(ts):
             return "offline"
-        mins = (datetime.utcnow() - ts).total_seconds() / 60
+        mins = (pd.Timestamp.utcnow() - ts).total_seconds() / 60
         if mins <= 10:
             return "active"
         elif mins <= 30:
@@ -5597,7 +5597,7 @@ def wp_auth_bridge():
                 role=role,
                 plan="starter",
                 subscription_status="trial",
-                trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
                 email_verified=True,     # ✅ WP auth = verified
                 is_active=True,
             )
@@ -5640,7 +5640,7 @@ def reset_password_with_token(token: str, new_password: str):
     with SessionLocal() as s:
         user = s.query(User).filter(
             User.reset_token == token,
-            User.reset_expires_at > datetime.utcnow()
+            User.reset_expires_at > pd.Timestamp.utcnow()
         ).first()
 
         if not user:
@@ -5665,7 +5665,7 @@ def request_password_reset(email: str):
         token = generate_password_reset_token()
 
         user.password_reset_token = token
-        user.password_reset_expires_at = datetime.utcnow() + timedelta(hours=1)
+        user.password_reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
 
         s.commit()
 
@@ -5737,7 +5737,7 @@ def authenticate_user(email: str, password: str):
             return None
 
         # ---- Check if account is locked ----
-        if user.locked_until and user.locked_until > datetime.utcnow():
+        if user.locked_until and user.locked_until > pd.Timestamp.utcnow():
             raise Exception("Account locked. Try again later.")
 
         # ---- Verify password ----
@@ -5745,7 +5745,7 @@ def authenticate_user(email: str, password: str):
             user.failed_login_attempts += 1
 
             if user.failed_login_attempts >= 5:
-                user.locked_until = datetime.utcnow() + timedelta(minutes=30)
+                user.locked_until = pd.Timestamp.utcnow() + timedelta(minutes=30)
 
             s.commit()
             raise Exception("Invalid credentials")
@@ -5753,12 +5753,12 @@ def authenticate_user(email: str, password: str):
         # ---- SUCCESS: reset failed attempts ----
         user.failed_login_attempts = 0
         user.locked_until = None
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = pd.Timestamp.utcnow()
 
         # Generate OTP for Admins or first-time login
         otp = generate_otp()
         user.otp_code = otp
-        user.otp_expires_at = datetime.utcnow() + timedelta(minutes=5)
+        user.otp_expires_at = pd.Timestamp.utcnow() + timedelta(minutes=5)
         user.otp_required = True
 
         send_otp_email(user.email, otp)
@@ -5796,7 +5796,7 @@ def request_password_reset(email: str):
             return  # silent fail (security)
 
         user.reset_token = token
-        user.reset_expires_at = datetime.utcnow() + timedelta(hours=1)
+        user.reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
         s.commit()
 
     reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
@@ -5874,9 +5874,9 @@ def page_settings():
                     organization_id=current_user.organization_id,
                     plan=current_user.plan,
                     subscription_status="trial",
-                    trial_ends_at=datetime.utcnow() + timedelta(days=14),
+                    trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
                     activation_token=token,
-                    activation_expires_at=datetime.utcnow() + timedelta(hours=48),
+                    activation_expires_at=pd.Timestamp.utcnow() + timedelta(hours=48),
                     is_active=False,
                 )
     
@@ -6208,7 +6208,7 @@ def page_exports():
                             "created_at": (
                                 pd.to_datetime(r.get("created_at"))
                                 if r.get("created_at") is not None
-                                else datetime.utcnow()
+                                else pd.Timestamp.utcnow()
                             ),
                             "source": r.get("source"),
                             "contact_name": r.get("contact_name"),
@@ -6351,7 +6351,7 @@ def page_seasonal_trends():
         return fetch_forecast_weather(lat, lon, days)
 
     def demo_weather(months):
-        dates = pd.date_range(end=datetime.utcnow(), periods=months * 30)
+        dates = pd.date_range(end=pd.Timestamp.utcnow(), periods=months * 30)
         return pd.DataFrame({
             "date": dates,
             "temperature_c": np.random.normal(25, 4, len(dates)),
@@ -7020,7 +7020,7 @@ def page_command_center():
     )
     df["sla_hours"] = df.get("sla_hours", 24)
 
-    now = datetime.utcnow()
+    now = pd.Timestamp.utcnow()
     today = now.date()
     yesterday = today - timedelta(days=1)
 
@@ -7213,7 +7213,7 @@ if "otp_user_id" in st.session_state:
                 st.session_state.clear()
                 st.stop()
 
-            if user.otp_expires_at < datetime.utcnow():
+            if user.otp_expires_at < pd.Timestamp.utcnow():
                 st.error("Code expired. Please log in again.")
                 st.session_state.clear()
                 st.stop()
@@ -7246,7 +7246,7 @@ if (
 ):
     days_left = max(
         0,
-        (user.trial_ends_at - datetime.utcnow()).days
+        (user.trial_ends_at - pd.Timestamp.utcnow()).days
     )
     st.sidebar.warning(f"⏳ Trial ends in {days_left} days")
 
