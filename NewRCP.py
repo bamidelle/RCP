@@ -330,7 +330,7 @@ def fetch_weather(lat, lon, months):
     r.raise_for_status()
     d = r.json()["daily"]
 
-    df = pd.DataFrame({
+    df = get_leads_df() pd.DataFrame({
         "date": pd.to_datetime(d["time"]),
         "rainfall_mm": d["precipitation_sum"],
         "temperature_c": d["temperature_2m_mean"],
@@ -360,7 +360,7 @@ def fetch_forecast_weather(lat, lon, days):
     r.raise_for_status()
     d = r.json()["daily"]
 
-    df = pd.DataFrame({
+    df = get_leads_df() pd.DataFrame({
         "date": pd.to_datetime(d["time"]),
         "rainfall_mm": d["precipitation_sum"],
         "temperature_c": d["temperature_2m_mean"],
@@ -1286,7 +1286,7 @@ def leads_to_df(start_date=None, end_date=None):
                 "converted": bool(r.converted),
                 "score": float(r.score) if r.score is not None else None
             })
-        df = pd.DataFrame(data)
+        df = get_leads_df() pd.DataFrame(data)
         if df.empty:
             # return empty with expected columns
             cols = ["id","lead_id","created_at","source","source_details","contact_name","contact_phone","contact_email",
@@ -1297,10 +1297,10 @@ def leads_to_df(start_date=None, end_date=None):
         # apply date filters
         if start_date:
             start_dt = datetime.combine(start_date, datetime.min.time())
-            df = df[df["created_at"] >= start_dt]
+            df = get_leads_df() df[df["created_at"] >= start_dt]
         if end_date:
             end_dt = datetime.combine(end_date, datetime.max.time())
-            df = df[df["created_at"] <= end_dt]
+            df = get_leads_df() df[df["created_at"] <= end_dt]
         return df.reset_index(drop=True)
     finally:
         s.close()
@@ -1822,7 +1822,7 @@ def page_tasks():
         techs["username"].tolist()
     )
 
-    tasks_df = get_tasks_for_user(tech_username)
+    tasks_df = get_leads_df() get_tasks_for_user(tech_username)
 
     if tasks_df.empty:
         st.info(
@@ -1976,13 +1976,14 @@ def save_location_ping(
 
 
 
+@st.cache_data(ttl=60)
 def get_leads_df():
     response = supabase.table("leads").select("*").execute()
 
     if not response.data:
         return pd.DataFrame()
 
-    df = pd.DataFrame(response.data)
+    df = get_leads_df() pd.DataFrame(response.data)
 
     # ---- SAFE COLUMN DEFAULTS ----
     defaults = {
@@ -2002,6 +2003,15 @@ def get_leads_df():
     if "created_at" in df.columns:
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce", utc=True)
 
+    # ---- LEAD AGE HOURS (GLOBAL SAFE) ----
+    now = pd.Timestamp.utcnow()
+    
+    df["lead_age_hours"] = (
+        now - df["created_at"]
+    ).dt.total_seconds().div(3600)
+    
+    df["lead_age_hours"] = df["lead_age_hours"].fillna(0)
+
     # ---- NUMERIC SAFE ----
     df["estimated_value"] = pd.to_numeric(df["estimated_value"], errors="coerce").fillna(0)
     df["ad_cost"] = pd.to_numeric(df["ad_cost"], errors="coerce").fillna(0)
@@ -2011,11 +2021,11 @@ def get_leads_df():
 
 
 def get_jobs_for_period(start_dt, end_dt):
-    df = get_leads_df()
+    df = get_leads_df() get_leads_df()
     if df.empty:
         return df
 
-    df = df[(df["created_at"] >= start_dt) & (df["created_at"] <= end_dt)]
+    df = get_leads_df() df[(df["created_at"] >= start_dt) & (df["created_at"] <= end_dt)]
     return df
 
 def compute_job_volume_metrics(df):
@@ -2183,7 +2193,7 @@ def is_trial_active(days=14):
 def count_leads_this_month():
     start = pd.Timestamp.utcnow().replace(day=1, hour=0, minute=0, second=0)
     end = pd.Timestamp.utcnow()
-    df = leads_to_df(start, end)
+    df = get_leads_df() leads_to_df(start, end)
     return len(df)
 
 
@@ -2522,13 +2532,13 @@ def compute_business_intelligence(range_key, custom_start=None, custom_end=None)
     # Current Period
     # -----------------------------
     start, end = resolve_time_window(range_key, custom_start, custom_end)
-    df = get_jobs_for_period(start, end)
+    df = get_leads_df() get_jobs_for_period(start, end)
 
     # -----------------------------
     # Previous Period (Same Length)
     # -----------------------------
     prev_start, prev_end = shift_period(start, end)
-    prev_df = get_jobs_for_period(prev_start, prev_end)
+    prev_df = get_leads_df() get_jobs_for_period(prev_start, prev_end)
 
     # -----------------------------
     # Metrics (Current)
@@ -3032,7 +3042,7 @@ def get_users_df():
     try:
         with SessionLocal() as s:
             users = s.query(User).all()
-            users_df = pd.DataFrame([
+            users_df = get_leads_df() pd.DataFrame([
                 {
                     "id": u.id,
                     "email": u.email,
@@ -3193,7 +3203,7 @@ def accept_user_invite(token, username, full_name):
 # ML - internal only
 # ----------------------
 def train_internal_model():
-    df = leads_to_df()
+    df = get_leads_df() leads_to_df()
     if df.empty or df["converted"].nunique() < 2:
         return None, "Not enough labeled data to train"
     df2 = df.copy()
@@ -3401,7 +3411,7 @@ end_dt = st.session_state.get("end_date", None)
 
 # Load leads
 try:
-    leads_df = leads_to_df(start_dt, end_dt)
+    leads_df = get_leads_df() leads_to_df(start_dt, end_dt)
 except OperationalError as exc:
     st.error("Database error — ensure file is writable and accessible.")
     st.stop()
@@ -3411,7 +3421,7 @@ except OperationalError as exc:
 model, model_cols = load_internal_model()
 if model is not None and not leads_df.empty:
     try:
-        leads_df = score_dataframe(leads_df.copy(), model, model_cols)
+        leads_df = get_leads_df() score_dataframe(leads_df.copy(), model, model_cols)
     except Exception:
         # if scoring fails, continue without scores
         pass
@@ -3503,14 +3513,14 @@ def page_overview():
     # ==============================
     try:
         if 'leads_df' in globals() and isinstance(leads_df, pd.DataFrame):
-            df = leads_df.copy()
+            df = get_leads_df() leads_df.copy()
         else:
-            df = leads_to_df()
+            df = get_leads_df() leads_to_df()
     except Exception:
-        df = leads_to_df()
+        df = get_leads_df() leads_to_df()
 
     if not isinstance(df, pd.DataFrame):
-        df = pd.DataFrame()
+        df = get_leads_df() pd.DataFrame()
 
     # ==============================
     # KPI METRICS
@@ -3660,9 +3670,9 @@ def page_overview():
 
     if st.session_state.selected_stage:
         st.success(f"Filtering by stage: {st.session_state.selected_stage}")
-        filtered_df = df[df["stage"] == st.session_state.selected_stage]
+        filtered_df = get_leads_df() df[df["stage"] == st.session_state.selected_stage]
     else:
-        filtered_df = df
+        filtered_df = get_leads_df() df
 
     st.dataframe(
         filtered_df.sort_values("created_at", ascending=False),
@@ -3696,9 +3706,9 @@ def page_overview():
                 return min(1.0, score)
 
 
-        df = df.copy()
+        df = get_leads_df() df.copy()
         df["priority_score"] = df.apply(lambda r: scorer(r), axis=1)
-        pr_df = df.sort_values("priority_score", ascending=False).head(5)
+        pr_df = get_leads_df() df.sort_values("priority_score", ascending=False).head(5)
         for _, r in pr_df.iterrows():
             sla_sec, overdue = calculate_remaining_sla(r.get("sla_entered_at") or r.get("created_at"), r.get("sla_hours"))
             hleft = int(sla_sec / 3600) if sla_sec not in (None, float("inf")) else 9999
@@ -3807,7 +3817,7 @@ def page_overview():
                         st.write(traceback.format_exc())
             # Technician assignment (outside form)
             st.markdown("### Technician Assignment")
-            techs_df = get_technicians_df(active_only=True)
+            techs_df = get_leads_df() get_technicians_df(active_only=True)
             tech_options = [""] + (techs_df["username"].tolist() if not techs_df.empty else [])
             selected_tech = st.selectbox("Assign Technician (active)", options=tech_options, index=0, key=f"tech_select_{lead['lead_id']}")
             assign_notes = st.text_area("Assignment notes (optional)", value="", key=f"tech_notes_{lead['lead_id']}")
@@ -3988,13 +3998,13 @@ def page_lead_capture():
     st.markdown("---")
     st.subheader("✏️ Edit Saved Leads")
 
-    df = get_leads_df()
+    df = get_leads_df() get_leads_df()
 
     if df.empty:
         st.info("No leads created yet.")
         return
 
-    edited_df = st.data_editor(
+    edited_df = get_leads_df() st.data_editor(
         df,
         use_container_width=True,
         hide_index=True,
@@ -4091,7 +4101,7 @@ def page_pipeline_board():
     # =========================================================
     # ---------- LOAD DATA ----------
     # =========================================================
-    df = get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
+    df = get_leads_df() get_leads_df()  # must return SLA, stage, score, estimated_value, assigned_to
 
     # =========================================================
     # COMMAND CENTER FILTER HANDOFF (PASTED EXACTLY HERE)
@@ -4100,20 +4110,20 @@ def page_pipeline_board():
 
     if filter_mode == "overdue":
         if "sla_status" in df.columns:
-            df = df[df["sla_status"] == "overdue"]
+            df = get_leads_df() df[df["sla_status"] == "overdue"]
 
     elif filter_mode == "inspection":
         if "stage" in df.columns:
-            df = df[df["stage"] == "Inspection"]
+            df = get_leads_df() df[df["stage"] == "Inspection"]
 
     elif filter_mode == "follow_up":
         if "stage" in df.columns:
-            df = df[df["stage"].isin(["New", "Contacted"])]
+            df = get_leads_df() df[df["stage"].isin(["New", "Contacted"])]
 
     # ---------------------------------------------------------
     # Continue normally using filtered dataframe
     # ---------------------------------------------------------
-    leads_df = df.copy()
+    leads_df = get_leads_df() df.copy()
 
     # =========================================================
     # ---------- SEASONAL DAMAGE ANALYSIS ----------
@@ -4125,7 +4135,7 @@ def page_pipeline_board():
         return
 
     leads_df["created_at"] = pd.to_datetime(leads_df["created_at"], errors="coerce")
-    leads_df = leads_df.dropna(subset=["created_at"])
+    leads_df = get_leads_df() leads_df.dropna(subset=["created_at"])
 
     if leads_df.empty:
         st.warning("⚠️ No valid dates available for seasonal analysis.")
@@ -4190,7 +4200,7 @@ def page_pipeline_board():
     # =========================================================
     st.markdown("## 🔥 Priority Queue (What needs attention now)")
 
-    priority_df = (
+    priority_df = get_leads_df() (
         leads_df.sort_values("priority_score", ascending=False)
         .head(10)
         [[
@@ -4205,12 +4215,15 @@ def page_pipeline_board():
     )
 
     st.dataframe(
-        priority_df.style.format({
-            "sla_remaining_hr": "{:.1f}h",
-            "estimated_value": "${:,.0f}",
-            "score": "{:.2f}",
-        }),
-        use_container_width=True,
+        priority_df = priority_df.copy()
+        
+        numeric_cols = ["job_value", "lead_age_hours", "score"]
+        
+        for col in numeric_cols:
+            if col in priority_df.columns:
+                priority_df[col] = pd.to_numeric(priority_df[col], errors="coerce")
+        
+        st.dataframe(priority_df, use_container_width=True)
     )
 
     # =========================================================
@@ -4253,7 +4266,7 @@ def page_pipeline_board():
         sorted(leads_df["stage"].unique()),
     )
 
-    stage_df = leads_df[
+    stage_df = get_leads_df() leads_df[
         leads_df["stage"] == selected_stage
     ].sort_values("priority_score", ascending=False)
 
@@ -4340,7 +4353,7 @@ def page_analytics():
     # =========================================================
     # 📊 DATA LOAD
     # =========================================================
-    df = leads_to_df(start, end) if start else leads_to_df()
+    df = get_leads_df() leads_to_df(start, end) if start else leads_to_df()
 
     if df.empty:
         st.info("No leads available for analytics.")
@@ -4398,7 +4411,7 @@ def page_analytics():
     # =========================================================
     st.markdown("## 📈 Lead Volume Over Time")
 
-    volume_df = (
+    volume_df = get_leads_df() (
         df.set_index("created_at")
         .resample("D")
         .size()
@@ -4421,7 +4434,7 @@ def page_analytics():
     # =========================================================
     st.markdown("## 🎯 Lead Source Performance")
 
-    source_df = df["source"].value_counts().reset_index()
+    source_df = get_leads_df() df["source"].value_counts().reset_index()
     source_df.columns = ["source", "count"]
 
     fig_source = px.bar(
@@ -4514,7 +4527,7 @@ def page_analytics():
     st.markdown("<em>Pipeline stages + SLA overdue chart and table</em>", unsafe_allow_html=True)
 
     stage_counts = df["stage"].value_counts().reindex(PIPELINE_STAGES, fill_value=0)
-    pie_df = pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
+    pie_df = get_leads_df() pd.DataFrame({"stage": stage_counts.index, "count": stage_counts.values})
     fig = px.pie(pie_df, names="stage", values="count", hole=0.45, color="stage")
     st.plotly_chart(fig, use_container_width=True)
     st.markdown("---")
@@ -4535,7 +4548,7 @@ def page_analytics():
             if overdue and r.get("stage") not in ("Won","Lost"):
                 overdue_cnt += 1
         ts.append({"date": d, "overdue": overdue_cnt})
-    ts_df = pd.DataFrame(ts)
+    ts_df = get_leads_df() pd.DataFrame(ts)
     fig2 = px.line(ts_df, x="date", y="overdue", markers=True, title="SLA Overdue Count (30d)")
     st.plotly_chart(fig2, use_container_width=True)
     st.divider()
@@ -5101,7 +5114,7 @@ def page_business_intelligence():
         custom_end
     )
 
-    df = data.get("raw_df")
+    df = get_leads_df() data.get("raw_df")
 
     if df is None or df.empty:
         st.warning("No jobs found for this period.")
@@ -5248,7 +5261,7 @@ def page_business_intelligence():
 def page_technician_map_tracking():
     st.markdown("## 🗺️ Technician Live Map")
 
-    df = get_latest_location_pings()
+    df = get_leads_df() get_latest_location_pings()
 
     if df.empty:
         st.warning("No technician GPS data available.")
@@ -5347,12 +5360,12 @@ def page_cpa_roi():
     require_role_access("analytics")
     st.markdown("<div class='header'>💰 CPA & ROI</div>", unsafe_allow_html=True)
     st.markdown("<em>Total Marketing Spend vs Conversions and ROI calculations.</em>", unsafe_allow_html=True)
-    df = leads_df.copy()
+    df = get_leads_df() leads_df.copy()
     if df.empty:
         st.info("No leads")
         return
     total_spend = float(df["ad_cost"].sum())
-    won_df = df[df["stage"] == "Won"]
+    won_df = get_leads_df() df[df["stage"] == "Won"]
     conversions = len(won_df)
     cpa = (total_spend / conversions) if conversions else 0.0
     revenue = float(won_df["estimated_value"].sum())
@@ -5390,7 +5403,7 @@ def page_ml_internal():
     if model:
         st.success("Model available (internal)")
         if st.button("Score all leads and persist scores"):
-            df = leads_to_df()
+            df = get_leads_df() leads_to_df()
             scored = score_dataframe(df.copy(), model, cols)
             s = get_session()
             try:
@@ -5407,7 +5420,7 @@ def page_ml_internal():
             finally:
                 s.close()
         if st.checkbox("Preview top scored leads"):
-            df = leads_to_df()
+            df = get_leads_df() leads_to_df()
             scored = score_dataframe(df.copy(), model, cols).sort_values("score", ascending=False).head(20)
             st.dataframe(scored[["lead_id","source","stage","estimated_value","ad_cost","score"]])
 
@@ -5425,10 +5438,10 @@ def page_ai_recommendations():
 
     # Load leads defensively
     try:
-        df = leads_to_df()
+        df = get_leads_df() leads_to_df()
     except Exception as e:
         st.error(f"Failed to load leads: {e}")
-        df = pd.DataFrame()
+        df = get_leads_df() pd.DataFrame()
 
 
     if df.empty:
@@ -5450,9 +5463,9 @@ def page_ai_recommendations():
                 "overdue_seconds": rem_s
             })
     if overdue_list:
-        over_df = pd.DataFrame(overdue_list).sort_values("value", ascending=False)
+        over_df = get_leads_df() pd.DataFrame(overdue_list).sort_values("value", ascending=False)
         # keep columns unique and friendly
-        over_df = over_df.rename(columns={"lead_id": "Lead ID", "stage": "Stage", "assigned_to": "Assigned To", "value": "Est. Value", "overdue_seconds": "Overdue Seconds"})
+        over_df = get_leads_df() over_df.rename(columns={"lead_id": "Lead ID", "stage": "Stage", "assigned_to": "Assigned To", "value": "Est. Value", "overdue_seconds": "Overdue Seconds"})
         st.table(over_df[["Lead ID", "Stage", "Assigned To", "Est. Value"]].head(10))
     else:
         st.info("No overdue leads.")
@@ -5470,7 +5483,7 @@ def page_ai_recommendations():
 
 
     stage_counts = df["stage"].value_counts().reindex(stages, fill_value=0)
-    stage_df = stage_counts.reset_index()
+    stage_df = get_leads_df() stage_counts.reset_index()
     stage_df.columns = ["Stage", "Count"]        # ensure unique column names
     st.table(stage_df.head(10))
 
@@ -5546,7 +5559,7 @@ def page_ai_recommendations():
     # 5) Quick export of problematic leads (CSV)
     st.subheader("Export: Problem Leads")
     try:
-        problem_df = over_df if (len(over_df) > 0) else pd.DataFrame()
+        problem_df = get_leads_df() over_df if (len(over_df) > 0) else pd.DataFrame()
         if not problem_df.empty:
             csv = problem_df.to_csv(index=False)
             st.download_button("Download overdue leads (CSV)", data=csv, file_name="overdue_leads.csv", mime="text/csv")
@@ -5959,7 +5972,7 @@ def page_settings():
     # ======================================================
     st.markdown("### 👥 Existing Users")
 
-    users_df = get_users_df()
+    users_df = get_leads_df() get_users_df()
     if users_df.empty:
         st.info("No users yet.")
     else:
@@ -6012,7 +6025,7 @@ def page_settings():
             st.success("Technician saved")
             st.rerun()
 
-    tech_df = get_technicians_df(active_only=False)
+    tech_df = get_leads_df() get_technicians_df(active_only=False)
     if not tech_df.empty:
         for _, row in tech_df.iterrows():
             cols = st.columns([3, 2, 2])
@@ -6097,7 +6110,7 @@ def page_technician_mobile():
     # ---------- BEGIN BLOCK D: SETTINGS UI - TECHNICIANS MANAGEMENT ----------
     st.markdown("---")
     st.subheader("Technicians (Field Users)")
-    tech_df = get_technicians_df(active_only=False)
+    tech_df = get_leads_df() get_technicians_df(active_only=False)
     with st.form("add_technician_form"):
         t_uname = st.text_input("Technician username (unique)")
         t_name = st.text_input("Full name")
@@ -6144,7 +6157,7 @@ def page_technician_mobile():
     try:
         hist = s.query(LeadHistory).order_by(LeadHistory.timestamp.desc()).limit(200).all()
         if hist:
-            hist_df = pd.DataFrame([{"lead_id":h.lead_id,"changed_by":h.changed_by,"field":h.field,"old":h.old_value,"new":h.new_value,"timestamp":h.timestamp} for h in hist])
+            hist_df = get_leads_df() pd.DataFrame([{"lead_id":h.lead_id,"changed_by":h.changed_by,"field":h.field,"old":h.old_value,"new":h.new_value,"timestamp":h.timestamp} for h in hist])
             st.dataframe(hist_df)
         else:
             st.info("No audit entries yet.")
@@ -6165,7 +6178,7 @@ def page_exports():
     # =========================================================
     # EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
     # =========================================================
-    df = leads_to_df(None, None)
+    df = get_leads_df() leads_to_df(None, None)
 
     if not df.empty:
         towrite = io.BytesIO()
@@ -6301,9 +6314,9 @@ def add_time_windows(hist_df):
     if hist_df.empty:
         return {}
 
-    df = hist_df.copy()
+    df = get_leads_df() hist_df.copy()
     df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
+    df = get_leads_df() df.sort_values("date")
 
     latest_date = df["date"].max()
 
@@ -6421,12 +6434,12 @@ def page_seasonal_trends():
     # DATA FETCH (SAFE + CAPPED)
     # =========================================================
     with st.spinner("Generating insights..."):
-        hist_df = fetch_weather_cached(chosen["lat"], chosen["lon"], months)
+        hist_df = get_leads_df() fetch_weather_cached(chosen["lat"], chosen["lon"], months)
         forecast_days = min(forecast_months * 30, 90)
-        forecast_df = fetch_forecast_cached(chosen["lat"], chosen["lon"], forecast_days)
+        forecast_df = get_leads_df() fetch_forecast_cached(chosen["lat"], chosen["lon"], forecast_days)
 
-    hist_df = safe_df(hist_df)
-    forecast_df = safe_df(forecast_df)
+    hist_df = get_leads_df() safe_df(hist_df)
+    forecast_df = get_leads_df() safe_df(forecast_df)
 
     if hist_df.empty:
         st.error("No historical data available")
@@ -6616,7 +6629,7 @@ def page_competitor_intelligence():
             "Velocity (30d)": review_velocity(c.id, 30),
         })
 
-    df = pd.DataFrame(rows).sort_values(
+    df = get_leads_df() pd.DataFrame(rows).sort_values(
         "Strength Score", ascending=False
     )
 
@@ -6989,9 +7002,9 @@ def page_command_center():
     # LOAD DATA SAFELY
     # =========================================================
     try:
-        df = get_leads_df()
+        df = get_leads_df() get_leads_df()
     except Exception:
-        df = pd.DataFrame()
+        df = get_leads_df() pd.DataFrame()
 
     # =========================================================
     # HEADER
@@ -7022,7 +7035,7 @@ def page_command_center():
     # =========================================================
     # NORMALIZATION
     # =========================================================
-    df = df.copy()
+    df = get_leads_df() df.copy()
     df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
     df["stage"] = df.get("stage", "New").fillna("New")
     df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
@@ -7182,7 +7195,7 @@ def page_command_center():
     st.subheader("🕒 Recent Activity")
     st.caption("Latest movements across your pipeline")
 
-    timeline_df = (
+    timeline_df = get_leads_df() (
         df[["lead_id", "stage", "updated_at"]]
         .dropna()
         .sort_values("updated_at", ascending=False)
