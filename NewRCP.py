@@ -1,15 +1,3 @@
-# titan_backend.py
-"""
-TITAN Backend - Single-file Streamlit app
-- No front-page login: this is an admin backend (Admin access by default)
-- User & Role management available in Settings
-- SQLite persistence via SQLAlchemy
-- Internal ML training & scoring (no user tuning)
-- Pipeline dashboard, Analytics, CPA/ROI, Exports/Imports, Alerts, SLA, Priority scoring, Audit trail
-"""
-
-
-
 import os
 from datetime import datetime, timedelta, date
 import io, base64, traceback
