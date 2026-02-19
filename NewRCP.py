@@ -339,20 +339,23 @@ def fetch_weather(lat, lon, months):
     return df.dropna().reset_index(drop=True)
 
 
+# ---------- Weather helpers (Open-Meteo) ----------
 @lru_cache(maxsize=128)
-def fetch_forecast_weather(lat, lon, days):
+def fetch_weather(lat, lon, months):
     """
-    Short-term daily forecast (Open-Meteo limit ~14 days)
+    Historical daily weather for the past N months
     """
-    days = min(days, 14)  # API limit
+    end = date.today()
+    start = end - timedelta(days=months * 30)
 
     r = requests.get(
-        "https://api.open-meteo.com/v1/forecast",
+        "https://archive-api.open-meteo.com/v1/archive",
         params={
             "latitude": lat,
             "longitude": lon,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
             "daily": "precipitation_sum,temperature_2m_mean",
-            "forecast_days": days,
             "timezone": "UTC",
         },
         timeout=10,
@@ -360,8 +363,8 @@ def fetch_forecast_weather(lat, lon, days):
     r.raise_for_status()
     d = r.json()["daily"]
 
-    df = get_leads_df() pd.DataFrame({
-        "date": pd.to_datetime(d["time"]),
+    df = pd.DataFrame({
+        "date": pd.to_datetime(d["time"], errors="coerce"),
         "rainfall_mm": d["precipitation_sum"],
         "temperature_c": d["temperature_2m_mean"],
     })
