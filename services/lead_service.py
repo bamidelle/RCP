@@ -1,28 +1,53 @@
-from database.supabase_client import supabase
-from datetime import datetime
+import supabase from "@supabase/supabase-js";
 
-def create_lead(organization_id, name, email, phone, status="new", value=0):
-    response = supabase.table("leads").insert({
-        "organization_id": organization_id,
-        "name": name,
-        "email": email,
-        "phone": phone,
-        "status": status,
-        "value": value,
-        "created_at": datetime.utcnow().isoformat()
-    }).execute()
+class LeadService {
+    constructor() {
+        this.supabase = supabase.createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
+    }
 
-    return response
+    async createLead(data) {
+        const { error } = await this.supabase
+            .from('leads')
+            .insert([data]);
+        if (error) throw error;
+        return 'Lead created successfully';
+    }
 
+    async getAllLeads() {
+        const { data, error } = await this.supabase
+            .from('leads')
+            .select('*');
+        if (error) throw error;
+        return data;
+    }
 
-def get_leads_by_date(organization_id, start_date=None, end_date=None):
-    query = supabase.table("leads").select("*").eq("organization_id", organization_id)
+    async getLeadById(id) {
+        const { data, error } = await this.supabase
+            .from('leads')
+            .select('*')
+            .eq('id', id)
+            .single();
+        if (error) throw error;
+        return data;
+    }
 
-    if start_date:
-        query = query.gte("created_at", start_date)
+    async updateLead(id, updates) {
+        const { error } = await this.supabase
+            .from('leads')
+            .update(updates)
+            .eq('id', id);
+        if (error) throw error;
+        return 'Lead updated successfully';
+    }
 
-    if end_date:
-        query = query.lte("created_at", end_date)
+    async deleteLead(id) {
+        const { error } = await this.supabase
+            .from('leads')
+            .delete()
+            .eq('id', id);
+        if (error) throw error;
+        return 'Lead deleted successfully';
+    }
+}
 
-    response = query.order("created_at", desc=True).execute()
-    return response.data
+export default new LeadService();
