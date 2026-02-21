@@ -1,53 +1,37 @@
-import supabase from "@supabase/supabase-js";
+# Lead Service Operations
 
-class LeadService {
-    constructor() {
-        this.supabase = supabase.createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
-    }
+class LeadService:
+    def __init__(self, supabase_client):
+        self.client = supabase_client
 
-    async createLead(data) {
-        const { error } = await this.supabase
-            .from('leads')
-            .insert([data]);
-        if (error) throw error;
-        return 'Lead created successfully';
-    }
+    def create_lead(self, lead_data):
+        """Create a new lead in Supabase."""
+        response = self.client.table('leads').insert(lead_data).execute()
+        return response
 
-    async getAllLeads() {
-        const { data, error } = await this.supabase
-            .from('leads')
-            .select('*');
-        if (error) throw error;
-        return data;
-    }
+    def get_leads(self, filters=None):
+        """Retrieve leads from Supabase, optionally filtered by criteria."""
+        query = self.client.table('leads')
+        if filters:
+            query = query.select().filter(filters)
+        else:
+            query = query.select()
+        response = query.execute()
+        return response
 
-    async getLeadById(id) {
-        const { data, error } = await this.supabase
-            .from('leads')
-            .select('*')
-            .eq('id', id)
-            .single();
-        if (error) throw error;
-        return data;
-    }
+    def update_lead(self, lead_id, updated_data):
+        """Update an existing lead in Supabase by its ID."""
+        response = self.client.table('leads').update(updated_data).eq('id', lead_id).execute()
+        return response
 
-    async updateLead(id, updates) {
-        const { error } = await this.supabase
-            .from('leads')
-            .update(updates)
-            .eq('id', id);
-        if (error) throw error;
-        return 'Lead updated successfully';
-    }
+    def delete_lead(self, lead_id):
+        """Delete a lead from Supabase by its ID."""
+        response = self.client.table('leads').delete().eq('id', lead_id).execute()
+        return response
 
-    async deleteLead(id) {
-        const { error } = await this.supabase
-            .from('leads')
-            .delete()
-            .eq('id', id);
-        if (error) throw error;
-        return 'Lead deleted successfully';
-    }
-}
+    def find_lead(self, lead_id):
+        """Find a lead by its ID."""
+        response = self.client.table('leads').select().eq('id', lead_id).execute()
+        return response
 
-export default new LeadService();
+# Additional utility methods can be added as needed.
