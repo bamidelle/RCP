@@ -554,8 +554,7 @@ field = Column(String, nullable=True)
 old_value = Column(String, nullable=True)
 new_value = Column(String, nullable=True)
 timestamp = Column(DateTime, default=datetime.utcnow)
-# ---------- BEGIN BLOCK A: NEW MODELS (Technician, InspectionAssignment,
-LocationPing) ----------
+# ---------- BEGIN BLOCK A: NEW MODELS (Technician, InspectionAssignment,LocationPing) ----------
 from sqlalchemy import DateTime as SA_DateTime
 class Technician(Base):
 __tablename__ = "technicians"
