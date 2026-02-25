@@ -679,19 +679,23 @@ if col not in existing:
 conn.execute(
 text(f"ALTER TABLE users ADD COLUMN {col} {typ}")
 )
-# ---- User security fields ----
-if "failed_login_attempts" not in existing:
-conn.execute(text(
-"ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT
-0"
-))
-if "locked_until" not in existing:
-conn.execute(text(
-"ALTER TABLE users ADD COLUMN locked_until DATETIME"
-))
+
+try:
+    # ---- User security fields ----
+    if "failed_login_attempts" not in existing:
+        conn.execute(text(
+            "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"
+        ))
+
+    if "locked_until" not in existing:
+        conn.execute(text(
+            "ALTER TABLE users ADD COLUMN locked_until DATETIME"
+        ))
+
 except Exception as e:
-print("⚠ User migration skipped:", e)
-safe_migrate()
+    print("⚠ User migration skipped:", e)
+    safe_migrate()
+
 def create_login_token(user, minutes=15):
 token = secrets.token_urlsafe(32)
 login_token = LoginToken(
