@@ -767,8 +767,7 @@ text("ALTER TABLE users ADD COLUMN email VARCHAR")
 )
 if "email_verified" not in cols:
 conn.execute(
-text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT
-0")
+text("ALTER TABLE users ADD COLUMN email_verified BOOLEAN DEFAULT 0")
 )
 if "is_active" not in cols:
 conn.execute(
@@ -810,8 +809,7 @@ text("ALTER TABLE users ADD COLUMN password_reset_token VARCHAR")
 )
 if "password_reset_expires_at" not in cols:
 conn.execute(
-text("ALTER TABLE users ADD COLUMN password_reset_expires_at
-DATETIME")
+text("ALTER TABLE users ADD COLUMN password_reset_expires_at DATETIME")
 )
 if "reset_token" not in cols:
 conn.execute(
