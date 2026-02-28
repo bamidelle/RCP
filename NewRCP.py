@@ -2427,27 +2427,24 @@ def get_leads_for_task_dropdown():
 """
 Returns DataFrame of leads for task assignment dropdown
 """
-s = get_session()
-try:
-rows = (
-s.query(
-Lead.lead_id,
-Lead.contact_name,
-Lead.property_address
+df = get_leads_df()
+if df.empty:
+return pd.DataFrame(columns=["lead_id", "label"])
+if "created_at" in df.columns:
+df = df.sort_values("created_at", ascending=False)
+lead_ids = df.get("lead_id", pd.Series(dtype=str)).fillna("").astype(str)
+contact_names = df.get("contact_name", pd.Series(dtype=str)).fillna("No Name")
+addresses = df.get("property_address", pd.Series(dtype=str)).fillna("No Address")
+result = pd.DataFrame({"lead_id": lead_ids})
+result["label"] = (
+result["lead_id"]
++ " — "
++ contact_names.astype(str)
++ " ("
++ addresses.astype(str)
++ ")"
 )
-.order_by(Lead.created_at.desc())
-.all()
-)
-return pd.DataFrame([
-{
-"lead_id": r.lead_id,
-"label": f"{r.lead_id} — {r.contact_name or 'No Name'} ({r.property_address or 'No
-Address'})"
-}
-for r in rows
-])
-finally:
-s.close()
+return result[result["lead_id"] != ""].drop_duplicates(subset=["lead_id"])
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 def add_user(
