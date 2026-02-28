@@ -2752,13 +2752,11 @@ import plotly.graph_objects as go
 import pandas as pd
 import streamlit as st
 st.markdown(
-"<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE
-INDICATOR</div>",
+"<div class='header'>TOTAL LEAD PIPELINE — KEY PERFORMANCE INDICATOR</div>",
 unsafe_allow_html=True
 )
 st.markdown(
-"<em>High-level pipeline performance at a glance. Use filters and cards to drill into
-details.</em>",
+"<em>High-level pipeline performance at a glance. Use filters and cards to drill into details.</em>",
 unsafe_allow_html=True
 )
 # ==============================
