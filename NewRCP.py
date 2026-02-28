@@ -1421,10 +1421,10 @@ techs["username"].tolist()
 )
 tasks_df = get_tasks_for_user(tech_username)
 if tasks_df.empty:
-st.info(
-"⚠ No task assigned to a Technician yet! To assign a job task to a technician, go to:
-SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
-)
+    st.info(
+    "⚠ No task assigned to a Technician yet! To assign a job task to a technician, go to: "
+    "SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
+    )
 return
 for _, row in tasks_df.iterrows():
 with st.expander(f"🧾 {row['title']} — {row['status'].upper()}"):
@@ -2662,8 +2662,7 @@ st.error("❌ Invalid or expired activation link")
 st.stop()
 st.markdown("---")
 st.markdown("Date range for reports")
-quick = st.selectbox("Quick range", ["Today","Last 7 days","Last 30 days","90
-days","All","Custom"], index=4)
+quick = st.selectbox("Quick range", ["Today","Last 7 days","Last 30 days","90 days","All","Custom"], index=4)
 if quick == "Today":
 st.session_state.start_date = date.today()
 st.session_state.end_date = date.today()
