@@ -163,9 +163,9 @@ class DummyBillingProvider:
     def charge(self, user, amount):
         if not user:
             raise ValueError("Billing failed: user is None")
-    email = getattr(user, "email", None) or getattr(user, "username", "unknown-user")
-    print(f"[BILLING] Simulated charge: {email} → ${amount}")
-    return True
+        email = getattr(user, "email", None) or getattr(user, "username", "unknown-user")
+        print(f"[BILLING] Simulated charge: {email} → ${amount}")
+        return True
 # MUST EXIST BEFORE apply_plan_change IS DEFINED
 BILLING_PROVIDER = DummyBillingProvider()
 def apply_plan_change(user, new_plan, amount):
