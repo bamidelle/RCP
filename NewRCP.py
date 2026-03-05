@@ -1343,269 +1343,324 @@ footer
 <small>{business_name}</small>
 """
 def send_review_request_email(
-contact,
-template,
-review_link,
-business_name
+    contact,
+    template,
+    review_link,
+    business_name,
 ):
     html = build_review_email(
-    customer_name=contact["name"],
-    business_name=business_name,
-    job_type=contact.get("job_type", "Recent service"),
-    review_link=review_link,
-    custom_message=template["body"],
-    footer=template["footer"]
-)
-status, response = send_email(
-    to_email=contact["email"],
-    subject=template["subject"],
-    html_body=html
-)
-return status == 200
+        customer_name=contact["name"],
+        business_name=business_name,
+        job_type=contact.get("job_type", "Recent service"),
+        review_link=review_link,
+        custom_message=template["body"],
+        footer=template["footer"],
+    )
+    status, _response = send_email(
+        to_email=contact["email"],
+        subject=template["subject"],
+        html_body=html,
+    )
+    return status == 200
+
+
 def log_review_request(user_id, email, status):
     with SessionLocal() as s:
-        s.add(ReviewRequestLog(
-    user_id=user_id,
-    recipient=email,
-    status=status
-    ))
-    s.commit()
+        s.add(
+            ReviewRequestLog(
+                user_id=user_id,
+                recipient=email,
+                status=status,
+            )
+        )
+        s.commit()
+
+
 def get_total_leads_for_account(user):
     """
 Temporary single-tenant helper.
 Returns total number of leads.
 """
-if not user:
-    return 0
-with SessionLocal() as s:
-    return s.query(Lead).count()
+    if not user:
+        return 0
+    with SessionLocal() as s:
+        return s.query(Lead).count()
+
+
 def sync_ai_insights(user_id, generated_insights):
     from models import AIInsight
-with SessionLocal() as s:
-    existing = {
-    i.insight_key: i
-    for i in s.query(AIInsight)
-    .filter(
-        AIInsight.user_id == user_id,
-        AIInsight.is_active == True
-    )
-    .all()
-    }
-    generated_keys = set()
-    for insight in generated_insights:
-        key = insight["key"]
-    generated_keys.add(key)
-    if key not in existing:
-        s.add(AIInsight(
-        user_id=user_id,
-        insight_key=key,
-        message=insight["message"]
-        ))
-    else:
-        if existing[key].message != insight["message"]:
-            existing[key].message = insight["message"]
-    for key, record in existing.items():
-        if key not in generated_keys:
-            record.is_active = False
-        record.resolved_at = pd.Timestamp.utcnow()
-    s.commit()
+
+    with SessionLocal() as s:
+        existing = {
+            i.insight_key: i
+            for i in s.query(AIInsight)
+            .filter(
+                AIInsight.user_id == user_id,
+                AIInsight.is_active == True,
+            )
+            .all()
+        }
+        generated_keys = set()
+
+        for insight in generated_insights:
+            key = insight["key"]
+            generated_keys.add(key)
+            if key not in existing:
+                s.add(
+                    AIInsight(
+                        user_id=user_id,
+                        insight_key=key,
+                        message=insight["message"],
+                    )
+                )
+            elif existing[key].message != insight["message"]:
+                existing[key].message = insight["message"]
+
+        for key, record in existing.items():
+            if key not in generated_keys:
+                record.is_active = False
+                record.resolved_at = pd.Timestamp.utcnow()
+
+        s.commit()
+
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS
-def create_task(title, technician_username=None, lead_id=None, due_at=None,
-description=None):
+def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
     s = get_session()
-try:
-    task = Task(
-    title=title,
-    technician_username=technician_username,
-    lead_id=lead_id,
-    description=description,
-    status="open",
-    due_at=due_at
-    )
-    s.add(task)
-    s.commit()
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
+    try:
+        task = Task(
+            title=title,
+            technician_username=technician_username,
+            lead_id=lead_id,
+            description=description,
+            status="open",
+            due_at=due_at,
+        )
+        s.add(task)
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
 def update_task_status(task_id: int, new_status: str):
     s = get_session()
-try:
-    task = s.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        return False
-    task.status = new_status
-    s.add(task)
-    s.commit()
-    return True
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
+    try:
+        task = s.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return False
+        task.status = new_status
+        s.add(task)
+        s.commit()
+        return True
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
 def get_tasks_for_user(username):
     s = get_session()
-try:
-    rows = s.query(Task).filter(Task.technician_username == username).all()
-    return pd.DataFrame([
-    {
-        "id": r.id,
-        "title": r.title,
-        "status": r.status,
-        "lead_id": r.lead_id,
-        "due_at": r.due_at
-    } for r in rows
-    ])
-finally:
-    s.close()
+    try:
+        rows = s.query(Task).filter(Task.technician_username == username).all()
+        return pd.DataFrame(
+            [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "status": r.status,
+                    "lead_id": r.lead_id,
+                    "due_at": r.due_at,
+                }
+                for r in rows
+            ]
+        )
+    finally:
+        s.close()
+
+
 def page_tasks():
     require_role_access("tasks")
-st.markdown("## Technician Tasks")
-techs = get_technicians_df(active_only=True)
-if techs.empty:
-    st.warning("No technicians available.")
-    return
-tech_username = st.selectbox(
-    "Select Technician",
-    techs["username"].tolist()
-)
-tasks_df = get_tasks_for_user(tech_username)
-if tasks_df.empty:
-    st.info(
-" No task assigned to a Technician yet! To assign a job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
-)
-    return
-for _, row in tasks_df.iterrows():
-    with st.expander(f" {row['title']} — {row['status'].upper()}"):
-        st.write(f"**Lead ID:** {row['lead_id'] or 'N/A'}")
-    st.write(f"**Due:** {row['due_at'] or 'No due date'}")
-    if row["status"] == "open":
-        if st.button(" Start Task", key=f"start_{row['id']}"):
-            update_task_status(row["id"], "in_progress")
-        st.success("Task started")
-        st.rerun()
-    elif row["status"] == "in_progress":
-        if st.button(" Mark Complete", key=f"done_{row['id']}"):
-            update_task_status(row["id"], "done")
-        st.success("Task completed")
-        st.rerun()
-    elif row["status"] == "done":
-        st.success("✔ Completed")
+    st.markdown("## Technician Tasks")
+
+    techs = get_technicians_df(active_only=True)
+    if techs.empty:
+        st.warning("No technicians available.")
+        return
+
+    tech_username = st.selectbox("Select Technician", techs["username"].tolist())
+    tasks_df = get_tasks_for_user(tech_username)
+    if tasks_df.empty:
+        st.info(
+            " No task assigned to a Technician yet! To assign a job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
+        )
+        return
+
+    for _, row in tasks_df.iterrows():
+        with st.expander(f" {row['title']} — {row['status'].upper()}"):
+            st.write(f"**Lead ID:** {row['lead_id'] or 'N/A'}")
+            st.write(f"**Due:** {row['due_at'] or 'No due date'}")
+
+            if row["status"] == "open":
+                if st.button(" Start Task", key=f"start_{row['id']}"):
+                    update_task_status(row["id"], "in_progress")
+                    st.success("Task started")
+                    st.rerun()
+            elif row["status"] == "in_progress":
+                if st.button(" Mark Complete", key=f"done_{row['id']}"):
+                    update_task_status(row["id"], "done")
+                    st.success("Task completed")
+                    st.rerun()
+            elif row["status"] == "done":
+                st.success("✔ Completed")
+
+
 def get_tasks_df():
     s = get_session()
-try:
-    rows = s.query(Task).order_by(Task.created_at.desc()).all()
-    return pd.DataFrame([
-    {
-        "id": r.id,
-        "title": r.title,
-        "technician_username": r.technician_username,
-        "lead_id": r.lead_id,
-        "status": r.status,
-        "due_at": r.due_at,
-        "created_at": r.created_at
-    } for r in rows
-    ])
-finally:
-    s.close()
-def add_technician(username: str, full_name: str = "", phone: str = "", specialization: str = "Tech",
-active: bool = True):
-    s = get_session()
-try:
-    existing = s.query(Technician).filter(Technician.username == username).first()
-    if existing:
-        existing.full_name = full_name
-    existing.phone = phone
-    existing.specialization = specialization
-    existing.active = active
-    s.add(existing); s.commit()
-    return existing.username
-    t = Technician(username=username, full_name=full_name, phone=phone,
-specialization=specialization, active=active)
-    s.add(t); s.commit()
-    return t.username
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
-def update_technician_status(username: str, status: str):
-    s = get_session()
-try:
-    tech = s.query(Technician).filter_by(username=username).first()
-    if not tech:
-        return False
-    tech.status = status
-    s.commit()
-    return True
-finally:
-    s.close()
-if "_save_location" in st.query_params:
-    data = st.get_json()
-save_location_ping(
-    data["username"],
-    data["lat"],
-    data["lon"],
-    data.get("accuracy")
-)
-st.stop()
-def save_location_ping(username, lat, lon, accuracy=None):
-    s = get_session()
-try:
-    ping = LocationPing(
-    tech_username=username,
-    latitude=float(lat),
-    longitude=float(lon),
-    accuracy=accuracy,
-    timestamp=pd.Timestamp.utcnow()
-    )
-    s.add(ping)
-    s.commit()
-finally:
-    s.close()
-def get_technicians_df(active_only=True):
-    s = get_session()
-try:
-    q = s.query(Technician)
-    if active_only:
-        q = q.filter(Technician.active == True)
-    rows = q.all()
-    return pd.DataFrame([
-    {
-        "username": t.username,
-        "full_name": t.full_name,
-        "phone": t.phone,
-        "specialization": t.specialization,
-        "active": t.active
-    }
-    for t in rows
-    ])
-finally:
-    s.close()
-def save_location_ping(
-tech_username: str,
-latitude: float,
-longitude: float,
-lead_id: str | None = None,
-accuracy: float | None = None,
+    try:
+        rows = s.query(Task).order_by(Task.created_at.desc()).all()
+        return pd.DataFrame(
+            [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "technician_username": r.technician_username,
+                    "lead_id": r.lead_id,
+                    "status": r.status,
+                    "due_at": r.due_at,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+        )
+    finally:
+        s.close()
+
+
+def add_technician(
+    username: str,
+    full_name: str = "",
+    phone: str = "",
+    specialization: str = "Tech",
+    active: bool = True,
 ):
     s = get_session()
-try:
-    ping = LocationPing(
-    tech_username=tech_username,
-    latitude=latitude,
-    longitude=longitude,
-    lead_id=lead_id,
-    accuracy=accuracy
+    try:
+        existing = s.query(Technician).filter(Technician.username == username).first()
+        if existing:
+            existing.full_name = full_name
+            existing.phone = phone
+            existing.specialization = specialization
+            existing.active = active
+            s.add(existing)
+            s.commit()
+            return existing.username
+
+        t = Technician(
+            username=username,
+            full_name=full_name,
+            phone=phone,
+            specialization=specialization,
+            active=active,
+        )
+        s.add(t)
+        s.commit()
+        return t.username
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
+def update_technician_status(username: str, status: str):
+    s = get_session()
+    try:
+        tech = s.query(Technician).filter_by(username=username).first()
+        if not tech:
+            return False
+        tech.status = status
+        s.commit()
+        return True
+    finally:
+        s.close()
+
+
+if "_save_location" in st.query_params:
+    data = st.get_json()
+    save_location_ping(
+        data["username"],
+        data["lat"],
+        data["lon"],
+        data.get("accuracy"),
     )
-    s.add(ping)
-    s.commit()
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
+    st.stop()
+
+
+def save_location_ping(username, lat, lon, accuracy=None):
+    s = get_session()
+    try:
+        ping = LocationPing(
+            tech_username=username,
+            latitude=float(lat),
+            longitude=float(lon),
+            accuracy=accuracy,
+            timestamp=pd.Timestamp.utcnow(),
+        )
+        s.add(ping)
+        s.commit()
+    finally:
+        s.close()
+
+def get_technicians_df(active_only=True):
+    s = get_session()
+    try:
+        q = s.query(Technician)
+        if active_only:
+            q = q.filter(Technician.active == True)
+        rows = q.all()
+        return pd.DataFrame(
+            [
+                {
+                    "username": t.username,
+                    "full_name": t.full_name,
+                    "phone": t.phone,
+                    "specialization": t.specialization,
+                    "active": t.active,
+                }
+                for t in rows
+            ]
+        )
+    finally:
+        s.close()
+
+
+def save_location_ping(
+    tech_username: str,
+    latitude: float,
+    longitude: float,
+    lead_id: str | None = None,
+    accuracy: float | None = None,
+):
+    s = get_session()
+    try:
+        ping = LocationPing(
+            tech_username=tech_username,
+            latitude=latitude,
+            longitude=longitude,
+            lead_id=lead_id,
+            accuracy=accuracy,
+        )
+        s.add(ping)
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
 def get_leads_df():
     response = supabase.table("leads").select("*").execute()
 if not response.data:
