@@ -894,10 +894,9 @@ def ingest_competitors_openstreetmap(lat, lon, keyword, radius=5000):
     """
 Fetch competitors from OpenStreetMap around a point using Overpass API.
 """
-overpass_url = "https://overpass-api.de/api/interpreter"
-# Replace spaces in keyword for OSM query
-keyword = keyword.lower().replace(" ", "_")
-query = f"""
+    overpass_url = "https://overpass-api.de/api/interpreter"
+    keyword = keyword.lower().replace(" ", "_")
+    query = f"""
 [out:json][timeout:25];
 node
     ["name"]
@@ -905,140 +904,154 @@ node
     (around:{radius},{lat},{lon});
 out center;
 """
-try:
-    response = requests.get(overpass_url, params={"data": query})
-    response.raise_for_status()
-    data = response.json()
-    elements = data.get("elements", [])
-    if not elements:
-        st.warning("No competitors found in this area.")
-    return
+    try:
+        response = requests.get(overpass_url, params={"data": query})
+        response.raise_for_status()
+        data = response.json()
+        elements = data.get("elements", [])
+        if not elements:
+            st.warning("No competitors found in this area.")
+            return
+
+        s = get_session()
+        try:
+            for e in elements:
+                name = e.get("tags", {}).get("name")
+                category = e.get("tags", {}).get("amenity", "unknown")
+                lat_ = e.get("lat") or e.get("center", {}).get("lat")
+                lon_ = e.get("lon") or e.get("center", {}).get("lon")
+
+                if not (name and lat_ and lon_):
+                    continue
+
+                exists = s.query(Competitor).filter_by(name=name).first()
+                if not exists:
+                    comp = Competitor(
+                        name=name,
+                        primary_category=category,
+                        latitude=lat_,
+                        longitude=lon_,
+                        total_reviews=0,
+                        rating=0.0,
+                    )
+                    s.add(comp)
+            s.commit()
+        finally:
+            s.close()
+    except Exception as e:
+        raise RuntimeError(f"OSM competitor scan failed: {e}")
+
+
+def review_velocity(competitor_id, days):
     s = get_session()
     try:
-        for e in elements:
-            name = e.get("tags", {}).get("name")
-        category = e.get("tags", {}).get("amenity", "unknown")
-        lat_ = e.get("lat") or e.get("center", {}).get("lat")
-        lon_ = e.get("lon") or e.get("center", {}).get("lon")
-        if name and lat_ and lon_:
-        # Avoid duplicates
-            exists = s.query(Competitor).filter_by(name=name).first()
-        if not exists:
-            comp = Competitor(
-            name=name,
-            primary_category=category,
-            latitude=lat_,
-            longitude=lon_,
-            total_reviews=0,
-            rating=0.0,
+        since = pd.Timestamp.utcnow() - timedelta(days=days)
+        count = (
+            s.query(CompetitorSnapshot)
+            .filter(
+                CompetitorSnapshot.competitor_id == competitor_id,
+                CompetitorSnapshot.captured_at >= since,
+            )
+            .count()
         )
-        s.add(comp)
+        return round(count / max(days, 1), 2)
+    finally:
+        s.close()
+
+
+def generate_competitor_alerts():
+    s = get_session()
+    try:
+        competitors = s.query(Competitor).all()
+        for c in competitors:
+            v7 = review_velocity(c.id, 7)
+            v30 = review_velocity(c.id, 30)
+            if v7 >= 10:
+                s.add(
+                    CompetitorAlert(
+                        competitor_id=c.id,
+                        alert_type="REVIEW_SPIKE",
+                        severity="high",
+                        message=f"{c.name} gained {v7} reviews in 7 days.",
+                    )
+                )
+            if v30 >= 25:
+                s.add(
+                    CompetitorAlert(
+                        competitor_id=c.id,
+                        alert_type="AGGRESSIVE_GROWTH",
+                        severity="high",
+                        message=f"{c.name} gained {v30} reviews in 30 days.",
+                    )
+                )
         s.commit()
     finally:
         s.close()
-except Exception as e:
-    raise RuntimeError(f"OSM competitor scan failed: {e}")
-# ---------- END BLOCK F ----------
-def review_velocity(competitor_id, days):
-    s = get_session()
-try:
-    since = pd.Timestamp.utcnow() - timedelta(days=days)
-    count = (
-    s.query(CompetitorSnapshot)
-    .filter(
-        CompetitorSnapshot.competitor_id == competitor_id,
-        CompetitorSnapshot.captured_at >= since
-    )
-    .count()
-    )
-    return round(count / max(days, 1), 2)
-finally:
-    s.close()
-def generate_competitor_alerts():
-    s = get_session()
-try:
-    competitors = s.query(Competitor).all()
-    for c in competitors:
-        v7 = review_velocity(c.id, 7)
-    v30 = review_velocity(c.id, 30)
-    if v7 >= 10:
-        s.add(CompetitorAlert(
-        competitor_id=c.id,
-        alert_type="REVIEW_SPIKE",
-        severity="high",
-        message=f"{c.name} gained {v7} reviews in 7 days."
-        ))
-    if v30 >= 25:
-        s.add(CompetitorAlert(
-        competitor_id=c.id,
-        alert_type="AGGRESSIVE_GROWTH",
-        severity="high",
-        message=f"{c.name} gained {v30} reviews in 30 days."
-        ))
-    s.commit()
-finally:
-    s.close()
+
 # ----------------------
 # HELPERS: DB ops
 # ----------------------
 def get_session():
     return SessionLocal()
 def leads_to_df(start_date=None, end_date=None):
-    """Load leads into a DataFrame. Filter by optional start_date/end_date (date objects)"""
-s = get_session()
-try:
-    rows = s.query(Lead).order_by(Lead.created_at.desc()).all()
-    data = []
-    for r in rows:
-        data.append({
-        "id": r.id,
-        "lead_id": r.lead_id,
-        "created_at": r.created_at,
-        "source": r.source or "Other",
-        "source_details": getattr(r, "source_details", None),
-        "contact_name": getattr(r, "contact_name", None),
-        "contact_phone": getattr(r, "contact_phone", None),
-        "contact_email": getattr(r, "contact_email", None),
-        "property_address": getattr(r, "property_address", None),
-        "damage_type": getattr(r, "damage_type", None),
-        "assigned_to": getattr(r, "assigned_to", None),
-        "notes": r.notes,
-        "estimated_value": float(r.estimated_value or 0.0),
-        "stage": r.stage or "New",
-        "sla_hours": int(r.sla_hours or DEFAULT_SLA_HOURS),
-        "sla_entered_at": r.sla_entered_at or r.created_at,
-        "contacted": bool(r.contacted),
-        "inspection_scheduled": bool(r.inspection_scheduled),
-        "inspection_scheduled_at": r.inspection_scheduled_at,
-        "inspection_completed": bool(r.inspection_completed),
-        "estimate_submitted": bool(r.estimate_submitted),
-        "awarded_date": r.awarded_date,
-        "lost_date": r.lost_date,
-        "qualified": bool(r.qualified),
-        "ad_cost": float(r.ad_cost or 0.0),
-        "converted": bool(r.converted),
-        "score": float(r.score) if r.score is not None else None
-    })
-    df = pd.DataFrame(data)
-    if df.empty:
-    # return empty with expected columns
+    """Load leads into a DataFrame. Filter by optional start_date/end_date (date objects)."""
+    s = get_session()
+    try:
+        rows = s.query(Lead).order_by(Lead.created_at.desc()).all()
+        data = []
+        for r in rows:
+            data.append(
+                {
+                    "id": r.id,
+                    "lead_id": r.lead_id,
+                    "created_at": r.created_at,
+                    "source": r.source or "Other",
+                    "source_details": getattr(r, "source_details", None),
+                    "contact_name": getattr(r, "contact_name", None),
+                    "contact_phone": getattr(r, "contact_phone", None),
+                    "contact_email": getattr(r, "contact_email", None),
+                    "property_address": getattr(r, "property_address", None),
+                    "damage_type": getattr(r, "damage_type", None),
+                    "assigned_to": getattr(r, "assigned_to", None),
+                    "notes": r.notes,
+                    "estimated_value": float(r.estimated_value or 0.0),
+                    "stage": r.stage or "New",
+                    "sla_hours": int(r.sla_hours or DEFAULT_SLA_HOURS),
+                    "sla_entered_at": r.sla_entered_at or r.created_at,
+                    "contacted": bool(r.contacted),
+                    "inspection_scheduled": bool(r.inspection_scheduled),
+                    "inspection_scheduled_at": r.inspection_scheduled_at,
+                    "inspection_completed": bool(r.inspection_completed),
+                    "estimate_submitted": bool(r.estimate_submitted),
+                    "awarded_date": r.awarded_date,
+                    "lost_date": r.lost_date,
+                    "qualified": bool(r.qualified),
+                    "ad_cost": float(r.ad_cost or 0.0),
+                    "converted": bool(r.converted),
+                    "score": float(r.score) if r.score is not None else None,
+                }
+            )
 
-        ["id","lead_id","created_at","source","source_details","contact_name","contact_phone","contact_email",
-"property_address","damage_type","assigned_to","notes","estimated_value","stage","sla_hours"
-,"sla_entered_at",
-"contacted","inspection_scheduled","inspection_scheduled_at","inspection_completed","estimate_submitted",
-        "awarded_date","lost_date","qualified","ad_cost","converted","score"]
-    return pd.DataFrame(columns=cols)
-    # apply date filters
-    if start_date:
-        start_dt = datetime.combine(start_date, datetime.min.time())
-    df = df[df["created_at"] >= start_dt]
-    if end_date:
-        end_dt = datetime.combine(end_date, datetime.max.time())
-    df = df[df["created_at"] <= end_dt]
-    return df.reset_index(drop=True)
-finally:
-    s.close()
+        df = pd.DataFrame(data)
+        if df.empty:
+            cols = [
+                "id", "lead_id", "created_at", "source", "source_details", "contact_name", "contact_phone", "contact_email",
+                "property_address", "damage_type", "assigned_to", "notes", "estimated_value", "stage", "sla_hours",
+                "sla_entered_at", "contacted", "inspection_scheduled", "inspection_scheduled_at", "inspection_completed",
+                "estimate_submitted", "awarded_date", "lost_date", "qualified", "ad_cost", "converted", "score",
+            ]
+            return pd.DataFrame(columns=cols)
+
+        if start_date:
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            df = df[df["created_at"] >= start_dt]
+        if end_date:
+            end_dt = datetime.combine(end_date, datetime.max.time())
+            df = df[df["created_at"] <= end_dt]
+        return df.reset_index(drop=True)
+    finally:
+        s.close()
+
 def set_logged_in_user(user: User):
     st.session_state["user_id"] = user.id
 # ----------------------
@@ -1056,70 +1069,74 @@ user.trial_ends_at = None
 # ----------------------
 # TRIAL REMINDER EMAILS
 # ----------------------
-TRIAL_REMINDER_DAYS = [7, 3, 1] # days before expiration
+TRIAL_REMINDER_DAYS = [7, 3, 1]  # days before expiration
+
 def send_trial_expiry_reminders():
     """
 Send reminder emails to users whose trials are expiring soon.
 Safe to run multiple times (idempotent by date).
 """
-import datetime as dt
-now = dt.pd.Timestamp.utcnow()
-with SessionLocal() as s:
-    users = (
-    s.query(User)
-    .filter(
-        User.subscription_status == "trial",
-        User.trial_ends_at.isnot(None),
-        User.is_active == True
-    )
-    .all()
-    )
-    from datetime import datetime, timedelta
+    now = pd.Timestamp.utcnow()
+    with SessionLocal() as s:
+        users = (
+            s.query(User)
+            .filter(
+                User.subscription_status == "trial",
+                User.trial_ends_at.isnot(None),
+                User.is_active == True,
+            )
+            .all()
+        )
+
     for user in users:
-        if user.trial_ends_at:
-            days_left = (user.trial_ends_at - now).days
-    else:
-        days_left = None
-    if days_left in TRIAL_REMINDER_DAYS:
-        try:
-            send_trial_reminder_email(user.email, days_left)
-        except Exception as e:
-            print(f"Failed reminder email for {user.email}: {e}")
+        days_left = (user.trial_ends_at - now).days if user.trial_ends_at else None
+        if days_left in TRIAL_REMINDER_DAYS:
+            try:
+                send_trial_reminder_email(user.email, days_left)
+            except Exception as e:
+                print(f"Failed reminder email for {user.email}: {e}")
+
+
 # ----------------------
 # BILLING PROVIDER ABSTRACTION
 # ----------------------
 class BillingProvider:
-    """
-Interface for all payment providers.
-"""
-def create_checkout(self, user, plan):
-    raise NotImplementedError
-def verify_payment(self, payload):
-    raise NotImplementedError
-def cancel_subscription(self, user):
-    raise NotImplementedError
+    """Interface for all payment providers."""
+
+    def create_checkout(self, user, plan):
+        raise NotImplementedError
+
+    def verify_payment(self, payload):
+        raise NotImplementedError
+
+    def cancel_subscription(self, user):
+        raise NotImplementedError
+
+
 class DummyBillingProvider(BillingProvider):
-    """
-Temporary provider for manual / offline payments.
-"""
-def create_checkout(self, user, plan):
-    return {
-    "status": "pending",
-    "message": "Payment instructions sent manually"
-    }
-def verify_payment(self, payload):
-    return True
-def cancel_subscription(self, user):
-    return True
+    """Temporary provider for manual / offline payments."""
+
+    def create_checkout(self, user, plan):
+        return {"status": "pending", "message": "Payment instructions sent manually"}
+
+    def verify_payment(self, payload):
+        return True
+
+    def cancel_subscription(self, user):
+        return True
+
+
 def upgrade_user_plan(user, new_plan):
-    checkout = BILLING_PROVIDER.create_checkout(user, new_plan)
-# Manual approval or webhook later
-user.plan = new_plan
-user.subscription_status = "active"
-user.trial_ends_at = None
-with SessionLocal() as s:
-    s.merge(user)
-    s.commit()
+    _checkout = BILLING_PROVIDER.create_checkout(user, new_plan)
+    # Manual approval or webhook later
+    user.plan = new_plan
+    user.subscription_status = "active"
+    user.trial_ends_at = None
+    with SessionLocal() as s:
+        s.merge(user)
+        s.commit()
+
+
 # ----------------------
 # AUTH HELPERS
 # ----------------------
@@ -1131,50 +1148,55 @@ def bootstrap_admin():
 Ensures at least one Admin user exists.
 MUST NEVER crash the app.
 """
-from sqlalchemy import inspect
-try:
-    inspector = inspect(engine)
-    # If users table does not exist yet, exit silently
-    if "users" not in inspector.get_table_names():
+    from sqlalchemy import inspect
+
+    try:
+        inspector = inspect(engine)
+        if "users" not in inspector.get_table_names():
+            return None
+
+        with SessionLocal() as s:
+            admin = s.query(User).filter(User.role == "Admin").first()
+            if admin:
+                return admin
+
+            admin = User(
+                email="admin@recapture.local",
+                username="admin",
+                full_name="System Admin",
+                role="Admin",
+                plan="pro",
+                is_active=True,
+                email_verified=True,
+            )
+            s.add(admin)
+            s.commit()
+            s.refresh(admin)
+            return admin
+    except Exception as e:
+        # NEVER crash auth bootstrap
+        print(" bootstrap_admin skipped:", e)
         return None
-    with SessionLocal() as s:
-        admin = s.query(User).filter(User.role == "Admin").first()
-    if admin:
-        return admin
-    # Create first admin ONLY if table exists
-    admin = User(
-        email="admin@recapture.local",
-        username="admin",
-        full_name="System Admin",
-        role="Admin",
-        plan="pro",
-        is_active=True,
-        email_verified=True,
-    )
-    s.add(admin)
-    s.commit()
-    return admin
-except Exception as e:
-    # NEVER crash auth bootstrap
-    print(" bootstrap_admin skipped:", e)
-    return None
+
+
 def get_current_user():
-# DEV / FIRST BOOTSTRAP SAFETY
+    # DEV / FIRST BOOTSTRAP SAFETY
     user_id = st.session_state.get("user_id")
-if not user_id:
-    admin = bootstrap_admin()
-    if admin:
-        st.session_state["user_id"] = admin.id
-    return admin
-    return None
-# ---- EXISTING LOGIC BELOW (UNCHANGED) ----
-with SessionLocal() as s:
-    user = s.query(User).get(user_id)
-    if not user:
-        st.session_state.clear()
-    st.warning("Invalid session")
-    st.stop()
-    return user
+    if not user_id:
+        admin = bootstrap_admin()
+        if admin:
+            st.session_state["user_id"] = admin.id
+        return admin
+
+    # ---- EXISTING LOGIC BELOW (UNCHANGED) ----
+    with SessionLocal() as s:
+        user = s.query(User).get(user_id)
+        if not user:
+            st.session_state.clear()
+            st.warning("Invalid session")
+            st.stop()
+        return user
+
 def decode_wp_token(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
@@ -1223,17 +1245,19 @@ def generate_otp():
     return str(random.randint(100000, 999999))
 def send_otp_email(email, otp):
     subject = "Your ReCapture Pro verification code"
-body = f"""
+    body = f"""
 Your verification code is:
 {otp}
 This code expires in 5 minutes.
 If you did not request this, ignore this email.
 """
-send_email(email, subject, body)
+    send_email(email, subject, body)
+
+
 def has_feature(user, feature_key):
     if PUBLIC_FREE_LAUNCH:
         return True
-return feature_key in PLAN_FEATURES.get(user.plan, [])
+    return feature_key in PLAN_FEATURES.get(user.plan, [])
 # ----------------------
 # PLAN LIMIT ENFORCEMENT
 # ----------------------
@@ -1249,45 +1273,52 @@ def enforce_org_seat_limit(current_user):
 Enforces organization-based seat limits.
 Safe to call from anywhere.
 """
-# DEV MODE → never block
-if st.secrets.get("DEV_MODE") == "true":
-    return
-with SessionLocal() as s:
-    org = s.get(Organization, current_user.organization_id)
-    if not org or not org.max_users:
-        return # unlimited or misconfigured org
-    user_count = s.query(User).filter(
-    User.organization_id == org.id
-    ).count()
-    if user_count >= org.max_users:
-        st.error("User limit reached for your plan.")
-    st.stop()
+    # DEV MODE → never block
+    if st.secrets.get("DEV_MODE") == "true":
+        return
+
+    with SessionLocal() as s:
+        org = s.get(Organization, current_user.organization_id)
+        if not org or not org.max_users:
+            return  # unlimited or misconfigured org
+
+        user_count = s.query(User).filter(User.organization_id == org.id).count()
+        if user_count >= org.max_users:
+            st.error("User limit reached for your plan.")
+            st.stop()
+
+
 # ----------------------
 # BILLING PROVIDER (DEV / MANUAL)
 # ----------------------
 class ManualBillingProvider:
     def charge(self, user, amount):
         print(f"[BILLING] Simulated charge: {user.email} → ${amount}")
-    return True
-def cancel(self, user):
-    print(f"[BILLING] Simulated cancel for {user.email}")
-    return True
+        return True
+
+    def cancel(self, user):
+        print(f"[BILLING] Simulated cancel for {user.email}")
+        return True
+
+
 BILLING_PROVIDER = ManualBillingProvider()
-import requests
+
+
 def send_email(to_email, subject, html_body):
     url = "https://api.resend.com/emails"
-headers = {
-    "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
-    "Content-Type": "application/json"
-}
-payload = {
-    "from": st.secrets.get("EMAIL_FROM", "ReCapture Pro <onboarding@resend.dev>"),
-    "to": [to_email],
-    "subject": subject,
-    "html": html_body
-}
-response = requests.post(url, json=payload, headers=headers)
-return response.status_code, response.text
+    headers = {
+        "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "from": st.secrets.get("EMAIL_FROM", "ReCapture Pro <onboarding@resend.dev>"),
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body,
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    return response.status_code, response.text
+
 def build_review_email(
 customer_name,
 business_name,
