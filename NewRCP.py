@@ -171,9 +171,9 @@ BILLING_PROVIDER = DummyBillingProvider()
 def apply_plan_change(user, new_plan, amount):
     if not user:
         raise ValueError("Cannot apply plan: user is None")
-BILLING_PROVIDER.charge(user, amount)
-user.plan = new_plan
-user.subscription_status = "active"
+    BILLING_PROVIDER.charge(user, amount)
+    user.plan = new_plan
+    user.subscription_status = "active"
 # ---------- Country list helper (robust) ----------
 import requests
 from functools import lru_cache
@@ -184,126 +184,132 @@ Robust fetch of all countries. Uses restcountries.com.
 Returns list of dicts: [{ 'name': 'United States', 'code': 'US' }, ...]
 Falls back to a small built-in list if the request fails.
 """
-FALLBACK = [
-    {"name":"United States","code":"US"},
-    {"name":"Canada","code":"CA"},
-    {"name":"United Kingdom","code":"GB"},
-    {"name":"Australia","code":"AU"}
-]
-url = "https://restcountries.com/v3.1/all"
-try:
-    r = requests.get(url, timeout=8)
-    r.raise_for_status()
-    data = r.json()
-    out = []
-    for c in data:
-    # ensure structure exists
-        name = c.get("name", {}).get("common")
-    code = c.get("cca2") or c.get("cca3") or None
-    if name and code:
-        out.append({"name": name, "code": code})
-    if not out:
-    # unexpected schema
-        print("get_all_countries: empty result, using fallback")
-    return FALLBACK
-    # sort by name
-    out = sorted(out, key=lambda x: x["name"])
-    return out
-except Exception as e:
-    # print to stdout so Streamlit logs show it
-    print("get_all_countries() ERROR:", repr(e))
-    # return fallback so UI still works
-    return FALLBACK
+    FALLBACK = [
+        {"name": "United States", "code": "US"},
+        {"name": "Canada", "code": "CA"},
+        {"name": "United Kingdom", "code": "GB"},
+        {"name": "Australia", "code": "AU"},
+    ]
+    url = "https://restcountries.com/v3.1/all"
+    try:
+        r = requests.get(url, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        out = []
+        for c in data:
+            # ensure structure exists
+            name = c.get("name", {}).get("common")
+            code = c.get("cca2") or c.get("cca3") or None
+            if name and code:
+                out.append({"name": name, "code": code})
+
+        if not out:
+            # unexpected schema
+            print("get_all_countries: empty result, using fallback")
+            return FALLBACK
+
+        # sort by name
+        out = sorted(out, key=lambda x: x["name"])
+        return out
+    except Exception as e:
+        # print to stdout so Streamlit logs show it
+        print("get_all_countries() ERROR:", repr(e))
+        # return fallback so UI still works
+        return FALLBACK
 # ---------- end helper ----------
 # ---------- City search helper (GLOBAL) ----------
 def search_cities(country_code, city_name, limit=10):
     """
 Uses Open-Meteo geocoding to search cities globally by country.
 Returns: [{name, admin1, lat, lon}, ...]
-"""
-if not city_name:
-    return []
-try:
-    r = requests.get(
-    "https://geocoding-api.open-meteo.com/v1/search",
-    params={
-        "name": city_name,
-        "count": limit,
-        "language": "en",
-        "format": "json",
-        "country": country_code,
-    },
-    timeout=8,
-    )
-    r.raise_for_status()
-    results = r.json().get("results", [])
-    return [
-    {
-        "name": x.get("name"),
-        "admin1": x.get("admin1"),
-        "lat": x.get("latitude"),
-        "lon": x.get("longitude"),
-    }
-    for x in results
-    if x.get("latitude") and x.get("longitude")
-    ]
-except Exception as e:
-    print("search_cities ERROR:", repr(e))
-    return []
+    """
+    if not city_name:
+        return []
+    try:
+        r = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": city_name,
+                "count": limit,
+                "language": "en",
+                "format": "json",
+                "country": country_code,
+            },
+            timeout=8,
+        )
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        return [
+            {
+                "name": x.get("name"),
+                "admin1": x.get("admin1"),
+                "lat": x.get("latitude"),
+                "lon": x.get("longitude"),
+            }
+            for x in results
+            if x.get("latitude") and x.get("longitude")
+        ]
+    except Exception as e:
+        print("search_cities ERROR:", repr(e))
+        return []
 # ---------- end helper ----------
 # ---------- Weather helpers (Open-Meteo) ----------
 @lru_cache(maxsize=128)
 def fetch_weather(lat, lon, months):
     """
 Historical daily weather for the past N months
-"""
-end = date.today()
-start = end - timedelta(days=months * 30)
-r = requests.get(
-    "https://archive-api.open-meteo.com/v1/archive",
-    params={
-    "latitude": lat,
-    "longitude": lon,
-    "start_date": start.isoformat(),
-    "end_date": end.isoformat(),
-    "daily": "precipitation_sum,temperature_2m_mean",
-    "timezone": "UTC",
-    },
-    timeout=10,
-)
-r.raise_for_status()
-d = r.json()["daily"]
-df = pd.DataFrame({
-    "date": pd.to_datetime(d["time"]),
-    "rainfall_mm": d["precipitation_sum"],
-    "temperature_c": d["temperature_2m_mean"],
-})
-return df.dropna().reset_index(drop=True)
+    """
+    end = date.today()
+    start = end - timedelta(days=months * 30)
+    r = requests.get(
+        "https://archive-api.open-meteo.com/v1/archive",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "daily": "precipitation_sum,temperature_2m_mean",
+            "timezone": "UTC",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    d = r.json()["daily"]
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(d["time"]),
+            "rainfall_mm": d["precipitation_sum"],
+            "temperature_c": d["temperature_2m_mean"],
+        }
+    )
+    return df.dropna().reset_index(drop=True)
 @lru_cache(maxsize=128)
 def fetch_forecast_weather(lat, lon, days):
     """
 Short-term daily forecast (Open-Meteo limit ~14 days)
-"""
-days = min(days, 14) # API limit
-r = requests.get(
-    "https://api.open-meteo.com/v1/forecast",
-    params={
-    "latitude": lat,
-    "longitude": lon,
-    "daily": "precipitation_sum,temperature_2m_mean",
-    "forecast_days": days,
-    "timezone": "UTC",
-    },
-    timeout=10,
-)
-r.raise_for_status()
-d = r.json()["daily"]
-df = pd.DataFrame({
-    "date": pd.to_datetime(d["time"]),
-    "rainfall_mm": d["precipitation_sum"],
-    "temperature_c": d["temperature_2m_mean"],
-})
-return df.dropna().reset_index(drop=True)
+    """
+    days = min(days, 14) # API limit
+    r = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "precipitation_sum,temperature_2m_mean",
+            "forecast_days": days,
+            "timezone": "UTC",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    d = r.json()["daily"]
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(d["time"]),
+            "rainfall_mm": d["precipitation_sum"],
+            "temperature_c": d["temperature_2m_mean"],
+        }
+    )
+    return df.dropna().reset_index(drop=True)
 # ---------- end weather helpers ----------
 st.markdown("""
 <style>
@@ -656,69 +662,54 @@ from sqlalchemy import inspect
 inspector = inspect(engine)
 def safe_create_tables():
     inspector = inspect(engine)
-existing_tables = inspector.get_table_names()
-for table in Base.metadata.sorted_tables:
-    if table.name not in existing_tables:
-        table.create(bind=engine)
+    existing_tables = inspector.get_table_names()
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            table.create(bind=engine)
+
 safe_create_tables()
+
 # Safe migration attempt (best-effort add missing columns)
 def safe_migrate():
     try:
         inspector = inspect(engine)
         if "users" in inspector.get_table_names():
             existing = [c["name"] for c in inspector.get_columns("users")]
-        desired = {
-        "plan": "TEXT",
-        "trial_ends_at": "DATETIME",
-        "subscription_status": "TEXT",
-        }
-        with engine.begin() as conn:
-        # ---- Subscription / Plan Fields ----
-            for col, typ in desired.items():
-                if col not in existing:
-                    conn.execute(
-            text(f"ALTER TABLE users ADD COLUMN {col} {typ}")
-        )
-        # ---- User security fields ----
-        if "failed_login_attempts" not in existing:
-            conn.execute(text(
-        "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT0"
-        ))
-        if "locked_until" not in existing:
-            conn.execute(text(
-        "ALTER TABLE users ADD COLUMN locked_until DATETIME"
-        ))
+            desired = {
+                "plan": "TEXT",
+                "trial_ends_at": "DATETIME",
+                "subscription_status": "TEXT",
+            }
+            with engine.begin() as conn:
+                # ---- Subscription / Plan Fields ----
+                for col, typ in desired.items():
+                    if col not in existing:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {typ}"))
+
+                # ---- User security fields ----
+                if "failed_login_attempts" not in existing:
+                    conn.execute(text(
+                        "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"
+                    ))
+                if "locked_until" not in existing:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN locked_until DATETIME"))
     except Exception as e:
         print(" User migration skipped:", e)
+
 safe_migrate()
+
 def create_login_token(user, minutes=15):
     token = secrets.token_urlsafe(32)
-login_token = LoginToken(
-    token=token,
-    user_id=user.id,
-    expires_at=pd.Timestamp.utcnow() + timedelta(minutes=minutes),
-)
-with SessionLocal() as s:
-    s.add(login_token)
-    s.commit()
-return token
-def verify_login_token(token: str):
+    login_token = LoginToken(
+        token=token,
+        user_id=user.id,
+        expires_at=pd.Timestamp.utcnow() + timedelta(minutes=minutes),
+    )
     with SessionLocal() as s:
-        login_token = (
-    s.query(LoginToken)
-    .filter(
-        LoginToken.token == token,
-        LoginToken.used == False,
-        LoginToken.expires_at > pd.Timestamp.utcnow(),
-    )
-    .first()
-    )
-    if not login_token:
-        return None
-    login_token.used = True
-    login_token.user.last_login_at = pd.Timestamp.utcnow()
-    s.commit()
-    return login_token.user
+        s.add(login_token)
+        s.commit()
+    return token
+
 from datetime import datetime
 def verify_login_token(token: str):
     with SessionLocal() as s:
@@ -854,39 +845,41 @@ def haversine_km(lat1, lon1, lat2, lon2):
     """
 Calculate distance between two lat/lon points in KM
 """
-R = 6371
-phi1, phi2 = math.radians(lat1), math.radians(lat2)
-dphi = math.radians(lat2 - lat1)
-dlambda = math.radians(lon2 - lon1)
-a = math.sin(dphi / 2) ** 2 + \
-    math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 +         math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 # ---------- BEGIN BLOCK D: COMPETITOR HELPERS ----------
 @st.cache_data(ttl=86400)
 def calculate_competitor_score(rating, reviews, distance_km):
     if distance_km <= 0:
         distance_km = 1
-return round((rating * reviews) / distance_km, 2)
+    return round((rating * reviews) / distance_km, 2)
+
 def save_competitor_snapshot(competitor_id, rating, total_reviews):
     s = get_session()
-try:
-    snap = CompetitorSnapshot(
-    competitor_id=competitor_id,
-    rating=rating,
-    total_reviews=total_reviews
-    )
-    s.add(snap)
-    s.commit()
-except Exception:
-    s.rollback()
-finally:
-    s.close()
+    try:
+        snap = CompetitorSnapshot(
+            competitor_id=competitor_id,
+            rating=rating,
+            total_reviews=total_reviews,
+        )
+        s.add(snap)
+        s.commit()
+    except Exception:
+        s.rollback()
+    finally:
+        s.close()
+
 def seo_visibility_gap(you_reviews, you_rating, competitors_df):
     avg_comp_reviews = competitors_df["Reviews"].mean()
-avg_comp_rating = competitors_df["Rating"].mean()
-review_gap = avg_comp_reviews - you_reviews
-rating_gap = avg_comp_rating - you_rating
-return {
+    avg_comp_rating = competitors_df["Rating"].mean()
+    review_gap = avg_comp_reviews - you_reviews
+    rating_gap = avg_comp_rating - you_rating
+    return {
     "review_gap": round(review_gap, 1),
     "rating_gap": round(rating_gap, 2),
     "pressure": "HIGH" if review_gap > 20 or rating_gap > 0.3 else "MODERATE"
