@@ -2860,38 +2860,39 @@ if uploaded:
             df_in = pd.read_csv(uploaded)
         else:
             df_in = pd.read_excel(uploaded)
+
         if "lead_id" not in df_in.columns:
             st.error(" File must include a lead_id column")
-        return
-        count = 0
-        for _, r in df_in.iterrows():
-            try:
-                upsert_lead_record(
-                {
-                "lead_id": str(r["lead_id"]),
-                "created_at": (
-                pd.to_datetime(r.get("created_at"))
-                if r.get("created_at") is not None
-                else pd.Timestamp.utcnow()
-                ),
-                "source": r.get("source"),
-                "contact_name": r.get("contact_name"),
-                "contact_phone": r.get("contact_phone"),
-                "contact_email": r.get("contact_email"),
-                "property_address": r.get("property_address"),
-                "damage_type": r.get("damage_type"),
-                "assigned_to": r.get("assigned_to"),
-                "notes": r.get("notes"),
-                "estimated_value": float(r.get("estimated_value") or 0.0),
-                "ad_cost": float(r.get("ad_cost") or 0.0),
-                "stage": r.get("stage") or "New",
-                "converted": bool(r.get("converted") or False),
-                },
-                actor="admin"
-                )
-                count += 1
-            except Exception:
-                continue
+        else:
+            count = 0
+            for _, r in df_in.iterrows():
+                try:
+                    upsert_lead_record(
+                        {
+                            "lead_id": str(r["lead_id"]),
+                            "created_at": (
+                                pd.to_datetime(r.get("created_at"))
+                                if r.get("created_at") is not None
+                                else pd.Timestamp.utcnow()
+                            ),
+                            "source": r.get("source"),
+                            "contact_name": r.get("contact_name"),
+                            "contact_phone": r.get("contact_phone"),
+                            "contact_email": r.get("contact_email"),
+                            "property_address": r.get("property_address"),
+                            "damage_type": r.get("damage_type"),
+                            "assigned_to": r.get("assigned_to"),
+                            "notes": r.get("notes"),
+                            "estimated_value": float(r.get("estimated_value") or 0.0),
+                            "ad_cost": float(r.get("ad_cost") or 0.0),
+                            "stage": r.get("stage") or "New",
+                            "converted": bool(r.get("converted") or False),
+                        },
+                        actor="admin",
+                    )
+                    count += 1
+                except Exception:
+                    continue
 
     except Exception as e:
         st.error(" Failed to import: " + str(e))
