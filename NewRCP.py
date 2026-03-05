@@ -171,9 +171,9 @@ BILLING_PROVIDER = DummyBillingProvider()
 def apply_plan_change(user, new_plan, amount):
     if not user:
         raise ValueError("Cannot apply plan: user is None")
-BILLING_PROVIDER.charge(user, amount)
-user.plan = new_plan
-user.subscription_status = "active"
+    BILLING_PROVIDER.charge(user, amount)
+    user.plan = new_plan
+    user.subscription_status = "active"
 # ---------- Country list helper (robust) ----------
 import requests
 from functools import lru_cache
@@ -184,126 +184,132 @@ Robust fetch of all countries. Uses restcountries.com.
 Returns list of dicts: [{ 'name': 'United States', 'code': 'US' }, ...]
 Falls back to a small built-in list if the request fails.
 """
-FALLBACK = [
-    {"name":"United States","code":"US"},
-    {"name":"Canada","code":"CA"},
-    {"name":"United Kingdom","code":"GB"},
-    {"name":"Australia","code":"AU"}
-]
-url = "https://restcountries.com/v3.1/all"
-try:
-    r = requests.get(url, timeout=8)
-    r.raise_for_status()
-    data = r.json()
-    out = []
-    for c in data:
-    # ensure structure exists
-        name = c.get("name", {}).get("common")
-    code = c.get("cca2") or c.get("cca3") or None
-    if name and code:
-        out.append({"name": name, "code": code})
-    if not out:
-    # unexpected schema
-        print("get_all_countries: empty result, using fallback")
-    return FALLBACK
-    # sort by name
-    out = sorted(out, key=lambda x: x["name"])
-    return out
-except Exception as e:
-    # print to stdout so Streamlit logs show it
-    print("get_all_countries() ERROR:", repr(e))
-    # return fallback so UI still works
-    return FALLBACK
+    FALLBACK = [
+        {"name": "United States", "code": "US"},
+        {"name": "Canada", "code": "CA"},
+        {"name": "United Kingdom", "code": "GB"},
+        {"name": "Australia", "code": "AU"},
+    ]
+    url = "https://restcountries.com/v3.1/all"
+    try:
+        r = requests.get(url, timeout=8)
+        r.raise_for_status()
+        data = r.json()
+        out = []
+        for c in data:
+            # ensure structure exists
+            name = c.get("name", {}).get("common")
+            code = c.get("cca2") or c.get("cca3") or None
+            if name and code:
+                out.append({"name": name, "code": code})
+
+        if not out:
+            # unexpected schema
+            print("get_all_countries: empty result, using fallback")
+            return FALLBACK
+
+        # sort by name
+        out = sorted(out, key=lambda x: x["name"])
+        return out
+    except Exception as e:
+        # print to stdout so Streamlit logs show it
+        print("get_all_countries() ERROR:", repr(e))
+        # return fallback so UI still works
+        return FALLBACK
 # ---------- end helper ----------
 # ---------- City search helper (GLOBAL) ----------
 def search_cities(country_code, city_name, limit=10):
     """
 Uses Open-Meteo geocoding to search cities globally by country.
 Returns: [{name, admin1, lat, lon}, ...]
-"""
-if not city_name:
-    return []
-try:
-    r = requests.get(
-    "https://geocoding-api.open-meteo.com/v1/search",
-    params={
-        "name": city_name,
-        "count": limit,
-        "language": "en",
-        "format": "json",
-        "country": country_code,
-    },
-    timeout=8,
-    )
-    r.raise_for_status()
-    results = r.json().get("results", [])
-    return [
-    {
-        "name": x.get("name"),
-        "admin1": x.get("admin1"),
-        "lat": x.get("latitude"),
-        "lon": x.get("longitude"),
-    }
-    for x in results
-    if x.get("latitude") and x.get("longitude")
-    ]
-except Exception as e:
-    print("search_cities ERROR:", repr(e))
-    return []
+    """
+    if not city_name:
+        return []
+    try:
+        r = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": city_name,
+                "count": limit,
+                "language": "en",
+                "format": "json",
+                "country": country_code,
+            },
+            timeout=8,
+        )
+        r.raise_for_status()
+        results = r.json().get("results", [])
+        return [
+            {
+                "name": x.get("name"),
+                "admin1": x.get("admin1"),
+                "lat": x.get("latitude"),
+                "lon": x.get("longitude"),
+            }
+            for x in results
+            if x.get("latitude") and x.get("longitude")
+        ]
+    except Exception as e:
+        print("search_cities ERROR:", repr(e))
+        return []
 # ---------- end helper ----------
 # ---------- Weather helpers (Open-Meteo) ----------
 @lru_cache(maxsize=128)
 def fetch_weather(lat, lon, months):
     """
 Historical daily weather for the past N months
-"""
-end = date.today()
-start = end - timedelta(days=months * 30)
-r = requests.get(
-    "https://archive-api.open-meteo.com/v1/archive",
-    params={
-    "latitude": lat,
-    "longitude": lon,
-    "start_date": start.isoformat(),
-    "end_date": end.isoformat(),
-    "daily": "precipitation_sum,temperature_2m_mean",
-    "timezone": "UTC",
-    },
-    timeout=10,
-)
-r.raise_for_status()
-d = r.json()["daily"]
-df = pd.DataFrame({
-    "date": pd.to_datetime(d["time"]),
-    "rainfall_mm": d["precipitation_sum"],
-    "temperature_c": d["temperature_2m_mean"],
-})
-return df.dropna().reset_index(drop=True)
+    """
+    end = date.today()
+    start = end - timedelta(days=months * 30)
+    r = requests.get(
+        "https://archive-api.open-meteo.com/v1/archive",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+            "daily": "precipitation_sum,temperature_2m_mean",
+            "timezone": "UTC",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    d = r.json()["daily"]
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(d["time"]),
+            "rainfall_mm": d["precipitation_sum"],
+            "temperature_c": d["temperature_2m_mean"],
+        }
+    )
+    return df.dropna().reset_index(drop=True)
 @lru_cache(maxsize=128)
 def fetch_forecast_weather(lat, lon, days):
     """
 Short-term daily forecast (Open-Meteo limit ~14 days)
-"""
-days = min(days, 14) # API limit
-r = requests.get(
-    "https://api.open-meteo.com/v1/forecast",
-    params={
-    "latitude": lat,
-    "longitude": lon,
-    "daily": "precipitation_sum,temperature_2m_mean",
-    "forecast_days": days,
-    "timezone": "UTC",
-    },
-    timeout=10,
-)
-r.raise_for_status()
-d = r.json()["daily"]
-df = pd.DataFrame({
-    "date": pd.to_datetime(d["time"]),
-    "rainfall_mm": d["precipitation_sum"],
-    "temperature_c": d["temperature_2m_mean"],
-})
-return df.dropna().reset_index(drop=True)
+    """
+    days = min(days, 14) # API limit
+    r = requests.get(
+        "https://api.open-meteo.com/v1/forecast",
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "daily": "precipitation_sum,temperature_2m_mean",
+            "forecast_days": days,
+            "timezone": "UTC",
+        },
+        timeout=10,
+    )
+    r.raise_for_status()
+    d = r.json()["daily"]
+    df = pd.DataFrame(
+        {
+            "date": pd.to_datetime(d["time"]),
+            "rainfall_mm": d["precipitation_sum"],
+            "temperature_c": d["temperature_2m_mean"],
+        }
+    )
+    return df.dropna().reset_index(drop=True)
 # ---------- end weather helpers ----------
 st.markdown("""
 <style>
@@ -656,69 +662,54 @@ from sqlalchemy import inspect
 inspector = inspect(engine)
 def safe_create_tables():
     inspector = inspect(engine)
-existing_tables = inspector.get_table_names()
-for table in Base.metadata.sorted_tables:
-    if table.name not in existing_tables:
-        table.create(bind=engine)
+    existing_tables = inspector.get_table_names()
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            table.create(bind=engine)
+
 safe_create_tables()
+
 # Safe migration attempt (best-effort add missing columns)
 def safe_migrate():
     try:
         inspector = inspect(engine)
         if "users" in inspector.get_table_names():
             existing = [c["name"] for c in inspector.get_columns("users")]
-        desired = {
-        "plan": "TEXT",
-        "trial_ends_at": "DATETIME",
-        "subscription_status": "TEXT",
-        }
-        with engine.begin() as conn:
-        # ---- Subscription / Plan Fields ----
-            for col, typ in desired.items():
-                if col not in existing:
-                    conn.execute(
-            text(f"ALTER TABLE users ADD COLUMN {col} {typ}")
-        )
-        # ---- User security fields ----
-        if "failed_login_attempts" not in existing:
-            conn.execute(text(
-        "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT0"
-        ))
-        if "locked_until" not in existing:
-            conn.execute(text(
-        "ALTER TABLE users ADD COLUMN locked_until DATETIME"
-        ))
+            desired = {
+                "plan": "TEXT",
+                "trial_ends_at": "DATETIME",
+                "subscription_status": "TEXT",
+            }
+            with engine.begin() as conn:
+                # ---- Subscription / Plan Fields ----
+                for col, typ in desired.items():
+                    if col not in existing:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {typ}"))
+
+                # ---- User security fields ----
+                if "failed_login_attempts" not in existing:
+                    conn.execute(text(
+                        "ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"
+                    ))
+                if "locked_until" not in existing:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN locked_until DATETIME"))
     except Exception as e:
         print(" User migration skipped:", e)
+
 safe_migrate()
+
 def create_login_token(user, minutes=15):
     token = secrets.token_urlsafe(32)
-login_token = LoginToken(
-    token=token,
-    user_id=user.id,
-    expires_at=pd.Timestamp.utcnow() + timedelta(minutes=minutes),
-)
-with SessionLocal() as s:
-    s.add(login_token)
-    s.commit()
-return token
-def verify_login_token(token: str):
+    login_token = LoginToken(
+        token=token,
+        user_id=user.id,
+        expires_at=pd.Timestamp.utcnow() + timedelta(minutes=minutes),
+    )
     with SessionLocal() as s:
-        login_token = (
-    s.query(LoginToken)
-    .filter(
-        LoginToken.token == token,
-        LoginToken.used == False,
-        LoginToken.expires_at > pd.Timestamp.utcnow(),
-    )
-    .first()
-    )
-    if not login_token:
-        return None
-    login_token.used = True
-    login_token.user.last_login_at = pd.Timestamp.utcnow()
-    s.commit()
-    return login_token.user
+        s.add(login_token)
+        s.commit()
+    return token
+
 from datetime import datetime
 def verify_login_token(token: str):
     with SessionLocal() as s:
@@ -854,39 +845,41 @@ def haversine_km(lat1, lon1, lat2, lon2):
     """
 Calculate distance between two lat/lon points in KM
 """
-R = 6371
-phi1, phi2 = math.radians(lat1), math.radians(lat2)
-dphi = math.radians(lat2 - lat1)
-dlambda = math.radians(lon2 - lon1)
-a = math.sin(dphi / 2) ** 2 + \
-    math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    R = 6371
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 +         math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
 # ---------- BEGIN BLOCK D: COMPETITOR HELPERS ----------
 @st.cache_data(ttl=86400)
 def calculate_competitor_score(rating, reviews, distance_km):
     if distance_km <= 0:
         distance_km = 1
-return round((rating * reviews) / distance_km, 2)
+    return round((rating * reviews) / distance_km, 2)
+
 def save_competitor_snapshot(competitor_id, rating, total_reviews):
     s = get_session()
-try:
-    snap = CompetitorSnapshot(
-    competitor_id=competitor_id,
-    rating=rating,
-    total_reviews=total_reviews
-    )
-    s.add(snap)
-    s.commit()
-except Exception:
-    s.rollback()
-finally:
-    s.close()
+    try:
+        snap = CompetitorSnapshot(
+            competitor_id=competitor_id,
+            rating=rating,
+            total_reviews=total_reviews,
+        )
+        s.add(snap)
+        s.commit()
+    except Exception:
+        s.rollback()
+    finally:
+        s.close()
+
 def seo_visibility_gap(you_reviews, you_rating, competitors_df):
     avg_comp_reviews = competitors_df["Reviews"].mean()
-avg_comp_rating = competitors_df["Rating"].mean()
-review_gap = avg_comp_reviews - you_reviews
-rating_gap = avg_comp_rating - you_rating
-return {
+    avg_comp_rating = competitors_df["Rating"].mean()
+    review_gap = avg_comp_reviews - you_reviews
+    rating_gap = avg_comp_rating - you_rating
+    return {
     "review_gap": round(review_gap, 1),
     "rating_gap": round(rating_gap, 2),
     "pressure": "HIGH" if review_gap > 20 or rating_gap > 0.3 else "MODERATE"
@@ -901,10 +894,9 @@ def ingest_competitors_openstreetmap(lat, lon, keyword, radius=5000):
     """
 Fetch competitors from OpenStreetMap around a point using Overpass API.
 """
-overpass_url = "https://overpass-api.de/api/interpreter"
-# Replace spaces in keyword for OSM query
-keyword = keyword.lower().replace(" ", "_")
-query = f"""
+    overpass_url = "https://overpass-api.de/api/interpreter"
+    keyword = keyword.lower().replace(" ", "_")
+    query = f"""
 [out:json][timeout:25];
 node
     ["name"]
@@ -912,140 +904,154 @@ node
     (around:{radius},{lat},{lon});
 out center;
 """
-try:
-    response = requests.get(overpass_url, params={"data": query})
-    response.raise_for_status()
-    data = response.json()
-    elements = data.get("elements", [])
-    if not elements:
-        st.warning("No competitors found in this area.")
-    return
+    try:
+        response = requests.get(overpass_url, params={"data": query})
+        response.raise_for_status()
+        data = response.json()
+        elements = data.get("elements", [])
+        if not elements:
+            st.warning("No competitors found in this area.")
+            return
+
+        s = get_session()
+        try:
+            for e in elements:
+                name = e.get("tags", {}).get("name")
+                category = e.get("tags", {}).get("amenity", "unknown")
+                lat_ = e.get("lat") or e.get("center", {}).get("lat")
+                lon_ = e.get("lon") or e.get("center", {}).get("lon")
+
+                if not (name and lat_ and lon_):
+                    continue
+
+                exists = s.query(Competitor).filter_by(name=name).first()
+                if not exists:
+                    comp = Competitor(
+                        name=name,
+                        primary_category=category,
+                        latitude=lat_,
+                        longitude=lon_,
+                        total_reviews=0,
+                        rating=0.0,
+                    )
+                    s.add(comp)
+            s.commit()
+        finally:
+            s.close()
+    except Exception as e:
+        raise RuntimeError(f"OSM competitor scan failed: {e}")
+
+
+def review_velocity(competitor_id, days):
     s = get_session()
     try:
-        for e in elements:
-            name = e.get("tags", {}).get("name")
-        category = e.get("tags", {}).get("amenity", "unknown")
-        lat_ = e.get("lat") or e.get("center", {}).get("lat")
-        lon_ = e.get("lon") or e.get("center", {}).get("lon")
-        if name and lat_ and lon_:
-        # Avoid duplicates
-            exists = s.query(Competitor).filter_by(name=name).first()
-        if not exists:
-            comp = Competitor(
-            name=name,
-            primary_category=category,
-            latitude=lat_,
-            longitude=lon_,
-            total_reviews=0,
-            rating=0.0,
+        since = pd.Timestamp.utcnow() - timedelta(days=days)
+        count = (
+            s.query(CompetitorSnapshot)
+            .filter(
+                CompetitorSnapshot.competitor_id == competitor_id,
+                CompetitorSnapshot.captured_at >= since,
+            )
+            .count()
         )
-        s.add(comp)
+        return round(count / max(days, 1), 2)
+    finally:
+        s.close()
+
+
+def generate_competitor_alerts():
+    s = get_session()
+    try:
+        competitors = s.query(Competitor).all()
+        for c in competitors:
+            v7 = review_velocity(c.id, 7)
+            v30 = review_velocity(c.id, 30)
+            if v7 >= 10:
+                s.add(
+                    CompetitorAlert(
+                        competitor_id=c.id,
+                        alert_type="REVIEW_SPIKE",
+                        severity="high",
+                        message=f"{c.name} gained {v7} reviews in 7 days.",
+                    )
+                )
+            if v30 >= 25:
+                s.add(
+                    CompetitorAlert(
+                        competitor_id=c.id,
+                        alert_type="AGGRESSIVE_GROWTH",
+                        severity="high",
+                        message=f"{c.name} gained {v30} reviews in 30 days.",
+                    )
+                )
         s.commit()
     finally:
         s.close()
-except Exception as e:
-    raise RuntimeError(f"OSM competitor scan failed: {e}")
-# ---------- END BLOCK F ----------
-def review_velocity(competitor_id, days):
-    s = get_session()
-try:
-    since = pd.Timestamp.utcnow() - timedelta(days=days)
-    count = (
-    s.query(CompetitorSnapshot)
-    .filter(
-        CompetitorSnapshot.competitor_id == competitor_id,
-        CompetitorSnapshot.captured_at >= since
-    )
-    .count()
-    )
-    return round(count / max(days, 1), 2)
-finally:
-    s.close()
-def generate_competitor_alerts():
-    s = get_session()
-try:
-    competitors = s.query(Competitor).all()
-    for c in competitors:
-        v7 = review_velocity(c.id, 7)
-    v30 = review_velocity(c.id, 30)
-    if v7 >= 10:
-        s.add(CompetitorAlert(
-        competitor_id=c.id,
-        alert_type="REVIEW_SPIKE",
-        severity="high",
-        message=f"{c.name} gained {v7} reviews in 7 days."
-        ))
-    if v30 >= 25:
-        s.add(CompetitorAlert(
-        competitor_id=c.id,
-        alert_type="AGGRESSIVE_GROWTH",
-        severity="high",
-        message=f"{c.name} gained {v30} reviews in 30 days."
-        ))
-    s.commit()
-finally:
-    s.close()
+
 # ----------------------
 # HELPERS: DB ops
 # ----------------------
 def get_session():
     return SessionLocal()
 def leads_to_df(start_date=None, end_date=None):
-    """Load leads into a DataFrame. Filter by optional start_date/end_date (date objects)"""
-s = get_session()
-try:
-    rows = s.query(Lead).order_by(Lead.created_at.desc()).all()
-    data = []
-    for r in rows:
-        data.append({
-        "id": r.id,
-        "lead_id": r.lead_id,
-        "created_at": r.created_at,
-        "source": r.source or "Other",
-        "source_details": getattr(r, "source_details", None),
-        "contact_name": getattr(r, "contact_name", None),
-        "contact_phone": getattr(r, "contact_phone", None),
-        "contact_email": getattr(r, "contact_email", None),
-        "property_address": getattr(r, "property_address", None),
-        "damage_type": getattr(r, "damage_type", None),
-        "assigned_to": getattr(r, "assigned_to", None),
-        "notes": r.notes,
-        "estimated_value": float(r.estimated_value or 0.0),
-        "stage": r.stage or "New",
-        "sla_hours": int(r.sla_hours or DEFAULT_SLA_HOURS),
-        "sla_entered_at": r.sla_entered_at or r.created_at,
-        "contacted": bool(r.contacted),
-        "inspection_scheduled": bool(r.inspection_scheduled),
-        "inspection_scheduled_at": r.inspection_scheduled_at,
-        "inspection_completed": bool(r.inspection_completed),
-        "estimate_submitted": bool(r.estimate_submitted),
-        "awarded_date": r.awarded_date,
-        "lost_date": r.lost_date,
-        "qualified": bool(r.qualified),
-        "ad_cost": float(r.ad_cost or 0.0),
-        "converted": bool(r.converted),
-        "score": float(r.score) if r.score is not None else None
-    })
-    df = pd.DataFrame(data)
-    if df.empty:
-    # return empty with expected columns
+    """Load leads into a DataFrame. Filter by optional start_date/end_date (date objects)."""
+    s = get_session()
+    try:
+        rows = s.query(Lead).order_by(Lead.created_at.desc()).all()
+        data = []
+        for r in rows:
+            data.append(
+                {
+                    "id": r.id,
+                    "lead_id": r.lead_id,
+                    "created_at": r.created_at,
+                    "source": r.source or "Other",
+                    "source_details": getattr(r, "source_details", None),
+                    "contact_name": getattr(r, "contact_name", None),
+                    "contact_phone": getattr(r, "contact_phone", None),
+                    "contact_email": getattr(r, "contact_email", None),
+                    "property_address": getattr(r, "property_address", None),
+                    "damage_type": getattr(r, "damage_type", None),
+                    "assigned_to": getattr(r, "assigned_to", None),
+                    "notes": r.notes,
+                    "estimated_value": float(r.estimated_value or 0.0),
+                    "stage": r.stage or "New",
+                    "sla_hours": int(r.sla_hours or DEFAULT_SLA_HOURS),
+                    "sla_entered_at": r.sla_entered_at or r.created_at,
+                    "contacted": bool(r.contacted),
+                    "inspection_scheduled": bool(r.inspection_scheduled),
+                    "inspection_scheduled_at": r.inspection_scheduled_at,
+                    "inspection_completed": bool(r.inspection_completed),
+                    "estimate_submitted": bool(r.estimate_submitted),
+                    "awarded_date": r.awarded_date,
+                    "lost_date": r.lost_date,
+                    "qualified": bool(r.qualified),
+                    "ad_cost": float(r.ad_cost or 0.0),
+                    "converted": bool(r.converted),
+                    "score": float(r.score) if r.score is not None else None,
+                }
+            )
 
-        ["id","lead_id","created_at","source","source_details","contact_name","contact_phone","contact_email",
-"property_address","damage_type","assigned_to","notes","estimated_value","stage","sla_hours"
-,"sla_entered_at",
-"contacted","inspection_scheduled","inspection_scheduled_at","inspection_completed","estimate_submitted",
-        "awarded_date","lost_date","qualified","ad_cost","converted","score"]
-    return pd.DataFrame(columns=cols)
-    # apply date filters
-    if start_date:
-        start_dt = datetime.combine(start_date, datetime.min.time())
-    df = df[df["created_at"] >= start_dt]
-    if end_date:
-        end_dt = datetime.combine(end_date, datetime.max.time())
-    df = df[df["created_at"] <= end_dt]
-    return df.reset_index(drop=True)
-finally:
-    s.close()
+        df = pd.DataFrame(data)
+        if df.empty:
+            cols = [
+                "id", "lead_id", "created_at", "source", "source_details", "contact_name", "contact_phone", "contact_email",
+                "property_address", "damage_type", "assigned_to", "notes", "estimated_value", "stage", "sla_hours",
+                "sla_entered_at", "contacted", "inspection_scheduled", "inspection_scheduled_at", "inspection_completed",
+                "estimate_submitted", "awarded_date", "lost_date", "qualified", "ad_cost", "converted", "score",
+            ]
+            return pd.DataFrame(columns=cols)
+
+        if start_date:
+            start_dt = datetime.combine(start_date, datetime.min.time())
+            df = df[df["created_at"] >= start_dt]
+        if end_date:
+            end_dt = datetime.combine(end_date, datetime.max.time())
+            df = df[df["created_at"] <= end_dt]
+        return df.reset_index(drop=True)
+    finally:
+        s.close()
+
 def set_logged_in_user(user: User):
     st.session_state["user_id"] = user.id
 # ----------------------
@@ -1063,70 +1069,74 @@ user.trial_ends_at = None
 # ----------------------
 # TRIAL REMINDER EMAILS
 # ----------------------
-TRIAL_REMINDER_DAYS = [7, 3, 1] # days before expiration
+TRIAL_REMINDER_DAYS = [7, 3, 1]  # days before expiration
+
 def send_trial_expiry_reminders():
     """
 Send reminder emails to users whose trials are expiring soon.
 Safe to run multiple times (idempotent by date).
 """
-import datetime as dt
-now = dt.pd.Timestamp.utcnow()
-with SessionLocal() as s:
-    users = (
-    s.query(User)
-    .filter(
-        User.subscription_status == "trial",
-        User.trial_ends_at.isnot(None),
-        User.is_active == True
-    )
-    .all()
-    )
-    from datetime import datetime, timedelta
+    now = pd.Timestamp.utcnow()
+    with SessionLocal() as s:
+        users = (
+            s.query(User)
+            .filter(
+                User.subscription_status == "trial",
+                User.trial_ends_at.isnot(None),
+                User.is_active == True,
+            )
+            .all()
+        )
+
     for user in users:
-        if user.trial_ends_at:
-            days_left = (user.trial_ends_at - now).days
-    else:
-        days_left = None
-    if days_left in TRIAL_REMINDER_DAYS:
-        try:
-            send_trial_reminder_email(user.email, days_left)
-        except Exception as e:
-            print(f"Failed reminder email for {user.email}: {e}")
+        days_left = (user.trial_ends_at - now).days if user.trial_ends_at else None
+        if days_left in TRIAL_REMINDER_DAYS:
+            try:
+                send_trial_reminder_email(user.email, days_left)
+            except Exception as e:
+                print(f"Failed reminder email for {user.email}: {e}")
+
+
 # ----------------------
 # BILLING PROVIDER ABSTRACTION
 # ----------------------
 class BillingProvider:
-    """
-Interface for all payment providers.
-"""
-def create_checkout(self, user, plan):
-    raise NotImplementedError
-def verify_payment(self, payload):
-    raise NotImplementedError
-def cancel_subscription(self, user):
-    raise NotImplementedError
+    """Interface for all payment providers."""
+
+    def create_checkout(self, user, plan):
+        raise NotImplementedError
+
+    def verify_payment(self, payload):
+        raise NotImplementedError
+
+    def cancel_subscription(self, user):
+        raise NotImplementedError
+
+
 class DummyBillingProvider(BillingProvider):
-    """
-Temporary provider for manual / offline payments.
-"""
-def create_checkout(self, user, plan):
-    return {
-    "status": "pending",
-    "message": "Payment instructions sent manually"
-    }
-def verify_payment(self, payload):
-    return True
-def cancel_subscription(self, user):
-    return True
+    """Temporary provider for manual / offline payments."""
+
+    def create_checkout(self, user, plan):
+        return {"status": "pending", "message": "Payment instructions sent manually"}
+
+    def verify_payment(self, payload):
+        return True
+
+    def cancel_subscription(self, user):
+        return True
+
+
 def upgrade_user_plan(user, new_plan):
-    checkout = BILLING_PROVIDER.create_checkout(user, new_plan)
-# Manual approval or webhook later
-user.plan = new_plan
-user.subscription_status = "active"
-user.trial_ends_at = None
-with SessionLocal() as s:
-    s.merge(user)
-    s.commit()
+    _checkout = BILLING_PROVIDER.create_checkout(user, new_plan)
+    # Manual approval or webhook later
+    user.plan = new_plan
+    user.subscription_status = "active"
+    user.trial_ends_at = None
+    with SessionLocal() as s:
+        s.merge(user)
+        s.commit()
+
+
 # ----------------------
 # AUTH HELPERS
 # ----------------------
@@ -1138,50 +1148,55 @@ def bootstrap_admin():
 Ensures at least one Admin user exists.
 MUST NEVER crash the app.
 """
-from sqlalchemy import inspect
-try:
-    inspector = inspect(engine)
-    # If users table does not exist yet, exit silently
-    if "users" not in inspector.get_table_names():
+    from sqlalchemy import inspect
+
+    try:
+        inspector = inspect(engine)
+        if "users" not in inspector.get_table_names():
+            return None
+
+        with SessionLocal() as s:
+            admin = s.query(User).filter(User.role == "Admin").first()
+            if admin:
+                return admin
+
+            admin = User(
+                email="admin@recapture.local",
+                username="admin",
+                full_name="System Admin",
+                role="Admin",
+                plan="pro",
+                is_active=True,
+                email_verified=True,
+            )
+            s.add(admin)
+            s.commit()
+            s.refresh(admin)
+            return admin
+    except Exception as e:
+        # NEVER crash auth bootstrap
+        print(" bootstrap_admin skipped:", e)
         return None
-    with SessionLocal() as s:
-        admin = s.query(User).filter(User.role == "Admin").first()
-    if admin:
-        return admin
-    # Create first admin ONLY if table exists
-    admin = User(
-        email="admin@recapture.local",
-        username="admin",
-        full_name="System Admin",
-        role="Admin",
-        plan="pro",
-        is_active=True,
-        email_verified=True,
-    )
-    s.add(admin)
-    s.commit()
-    return admin
-except Exception as e:
-    # NEVER crash auth bootstrap
-    print(" bootstrap_admin skipped:", e)
-    return None
+
+
 def get_current_user():
-# DEV / FIRST BOOTSTRAP SAFETY
+    # DEV / FIRST BOOTSTRAP SAFETY
     user_id = st.session_state.get("user_id")
-if not user_id:
-    admin = bootstrap_admin()
-    if admin:
-        st.session_state["user_id"] = admin.id
-    return admin
-    return None
-# ---- EXISTING LOGIC BELOW (UNCHANGED) ----
-with SessionLocal() as s:
-    user = s.query(User).get(user_id)
-    if not user:
-        st.session_state.clear()
-    st.warning("Invalid session")
-    st.stop()
-    return user
+    if not user_id:
+        admin = bootstrap_admin()
+        if admin:
+            st.session_state["user_id"] = admin.id
+        return admin
+
+    # ---- EXISTING LOGIC BELOW (UNCHANGED) ----
+    with SessionLocal() as s:
+        user = s.query(User).get(user_id)
+        if not user:
+            st.session_state.clear()
+            st.warning("Invalid session")
+            st.stop()
+        return user
+
 def decode_wp_token(token: str):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGO])
@@ -1230,17 +1245,19 @@ def generate_otp():
     return str(random.randint(100000, 999999))
 def send_otp_email(email, otp):
     subject = "Your ReCapture Pro verification code"
-body = f"""
+    body = f"""
 Your verification code is:
 {otp}
 This code expires in 5 minutes.
 If you did not request this, ignore this email.
 """
-send_email(email, subject, body)
+    send_email(email, subject, body)
+
+
 def has_feature(user, feature_key):
     if PUBLIC_FREE_LAUNCH:
         return True
-return feature_key in PLAN_FEATURES.get(user.plan, [])
+    return feature_key in PLAN_FEATURES.get(user.plan, [])
 # ----------------------
 # PLAN LIMIT ENFORCEMENT
 # ----------------------
@@ -1256,45 +1273,52 @@ def enforce_org_seat_limit(current_user):
 Enforces organization-based seat limits.
 Safe to call from anywhere.
 """
-# DEV MODE → never block
-if st.secrets.get("DEV_MODE") == "true":
-    return
-with SessionLocal() as s:
-    org = s.get(Organization, current_user.organization_id)
-    if not org or not org.max_users:
-        return # unlimited or misconfigured org
-    user_count = s.query(User).filter(
-    User.organization_id == org.id
-    ).count()
-    if user_count >= org.max_users:
-        st.error("User limit reached for your plan.")
-    st.stop()
+    # DEV MODE → never block
+    if st.secrets.get("DEV_MODE") == "true":
+        return
+
+    with SessionLocal() as s:
+        org = s.get(Organization, current_user.organization_id)
+        if not org or not org.max_users:
+            return  # unlimited or misconfigured org
+
+        user_count = s.query(User).filter(User.organization_id == org.id).count()
+        if user_count >= org.max_users:
+            st.error("User limit reached for your plan.")
+            st.stop()
+
+
 # ----------------------
 # BILLING PROVIDER (DEV / MANUAL)
 # ----------------------
 class ManualBillingProvider:
     def charge(self, user, amount):
         print(f"[BILLING] Simulated charge: {user.email} → ${amount}")
-    return True
-def cancel(self, user):
-    print(f"[BILLING] Simulated cancel for {user.email}")
-    return True
+        return True
+
+    def cancel(self, user):
+        print(f"[BILLING] Simulated cancel for {user.email}")
+        return True
+
+
 BILLING_PROVIDER = ManualBillingProvider()
-import requests
+
+
 def send_email(to_email, subject, html_body):
     url = "https://api.resend.com/emails"
-headers = {
-    "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
-    "Content-Type": "application/json"
-}
-payload = {
-    "from": st.secrets.get("EMAIL_FROM", "ReCapture Pro <onboarding@resend.dev>"),
-    "to": [to_email],
-    "subject": subject,
-    "html": html_body
-}
-response = requests.post(url, json=payload, headers=headers)
-return response.status_code, response.text
+    headers = {
+        "Authorization": f"Bearer {st.secrets['RESEND_API_KEY']}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "from": st.secrets.get("EMAIL_FROM", "ReCapture Pro <onboarding@resend.dev>"),
+        "to": [to_email],
+        "subject": subject,
+        "html": html_body,
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    return response.status_code, response.text
+
 def build_review_email(
 customer_name,
 business_name,
@@ -1319,269 +1343,324 @@ footer
 <small>{business_name}</small>
 """
 def send_review_request_email(
-contact,
-template,
-review_link,
-business_name
+    contact,
+    template,
+    review_link,
+    business_name,
 ):
     html = build_review_email(
-    customer_name=contact["name"],
-    business_name=business_name,
-    job_type=contact.get("job_type", "Recent service"),
-    review_link=review_link,
-    custom_message=template["body"],
-    footer=template["footer"]
-)
-status, response = send_email(
-    to_email=contact["email"],
-    subject=template["subject"],
-    html_body=html
-)
-return status == 200
+        customer_name=contact["name"],
+        business_name=business_name,
+        job_type=contact.get("job_type", "Recent service"),
+        review_link=review_link,
+        custom_message=template["body"],
+        footer=template["footer"],
+    )
+    status, _response = send_email(
+        to_email=contact["email"],
+        subject=template["subject"],
+        html_body=html,
+    )
+    return status == 200
+
+
 def log_review_request(user_id, email, status):
     with SessionLocal() as s:
-        s.add(ReviewRequestLog(
-    user_id=user_id,
-    recipient=email,
-    status=status
-    ))
-    s.commit()
+        s.add(
+            ReviewRequestLog(
+                user_id=user_id,
+                recipient=email,
+                status=status,
+            )
+        )
+        s.commit()
+
+
 def get_total_leads_for_account(user):
     """
 Temporary single-tenant helper.
 Returns total number of leads.
 """
-if not user:
-    return 0
-with SessionLocal() as s:
-    return s.query(Lead).count()
+    if not user:
+        return 0
+    with SessionLocal() as s:
+        return s.query(Lead).count()
+
+
 def sync_ai_insights(user_id, generated_insights):
     from models import AIInsight
-with SessionLocal() as s:
-    existing = {
-    i.insight_key: i
-    for i in s.query(AIInsight)
-    .filter(
-        AIInsight.user_id == user_id,
-        AIInsight.is_active == True
-    )
-    .all()
-    }
-    generated_keys = set()
-    for insight in generated_insights:
-        key = insight["key"]
-    generated_keys.add(key)
-    if key not in existing:
-        s.add(AIInsight(
-        user_id=user_id,
-        insight_key=key,
-        message=insight["message"]
-        ))
-    else:
-        if existing[key].message != insight["message"]:
-            existing[key].message = insight["message"]
-    for key, record in existing.items():
-        if key not in generated_keys:
-            record.is_active = False
-        record.resolved_at = pd.Timestamp.utcnow()
-    s.commit()
+
+    with SessionLocal() as s:
+        existing = {
+            i.insight_key: i
+            for i in s.query(AIInsight)
+            .filter(
+                AIInsight.user_id == user_id,
+                AIInsight.is_active == True,
+            )
+            .all()
+        }
+        generated_keys = set()
+
+        for insight in generated_insights:
+            key = insight["key"]
+            generated_keys.add(key)
+            if key not in existing:
+                s.add(
+                    AIInsight(
+                        user_id=user_id,
+                        insight_key=key,
+                        message=insight["message"],
+                    )
+                )
+            elif existing[key].message != insight["message"]:
+                existing[key].message = insight["message"]
+
+        for key, record in existing.items():
+            if key not in generated_keys:
+                record.is_active = False
+                record.resolved_at = pd.Timestamp.utcnow()
+
+        s.commit()
+
 # ---------- BEGIN BLOCK C: DB HELPERS FOR TECHNICIANS / ASSIGNMENTS / PINGS
-def create_task(title, technician_username=None, lead_id=None, due_at=None,
-description=None):
+def create_task(title, technician_username=None, lead_id=None, due_at=None, description=None):
     s = get_session()
-try:
-    task = Task(
-    title=title,
-    technician_username=technician_username,
-    lead_id=lead_id,
-    description=description,
-    status="open",
-    due_at=due_at
-    )
-    s.add(task)
-    s.commit()
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
+    try:
+        task = Task(
+            title=title,
+            technician_username=technician_username,
+            lead_id=lead_id,
+            description=description,
+            status="open",
+            due_at=due_at,
+        )
+        s.add(task)
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
 def update_task_status(task_id: int, new_status: str):
     s = get_session()
-try:
-    task = s.query(Task).filter(Task.id == task_id).first()
-    if not task:
-        return False
-    task.status = new_status
-    s.add(task)
-    s.commit()
-    return True
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
+    try:
+        task = s.query(Task).filter(Task.id == task_id).first()
+        if not task:
+            return False
+        task.status = new_status
+        s.add(task)
+        s.commit()
+        return True
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
 def get_tasks_for_user(username):
     s = get_session()
-try:
-    rows = s.query(Task).filter(Task.technician_username == username).all()
-    return pd.DataFrame([
-    {
-        "id": r.id,
-        "title": r.title,
-        "status": r.status,
-        "lead_id": r.lead_id,
-        "due_at": r.due_at
-    } for r in rows
-    ])
-finally:
-    s.close()
+    try:
+        rows = s.query(Task).filter(Task.technician_username == username).all()
+        return pd.DataFrame(
+            [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "status": r.status,
+                    "lead_id": r.lead_id,
+                    "due_at": r.due_at,
+                }
+                for r in rows
+            ]
+        )
+    finally:
+        s.close()
+
+
 def page_tasks():
     require_role_access("tasks")
-st.markdown("## Technician Tasks")
-techs = get_technicians_df(active_only=True)
-if techs.empty:
-    st.warning("No technicians available.")
-    return
-tech_username = st.selectbox(
-    "Select Technician",
-    techs["username"].tolist()
-)
-tasks_df = get_tasks_for_user(tech_username)
-if tasks_df.empty:
-    st.info(
-" No task assigned to a Technician yet! To assign a job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
-)
-    return
-for _, row in tasks_df.iterrows():
-    with st.expander(f" {row['title']} — {row['status'].upper()}"):
-        st.write(f"**Lead ID:** {row['lead_id'] or 'N/A'}")
-    st.write(f"**Due:** {row['due_at'] or 'No due date'}")
-    if row["status"] == "open":
-        if st.button(" Start Task", key=f"start_{row['id']}"):
-            update_task_status(row["id"], "in_progress")
-        st.success("Task started")
-        st.rerun()
-    elif row["status"] == "in_progress":
-        if st.button(" Mark Complete", key=f"done_{row['id']}"):
-            update_task_status(row["id"], "done")
-        st.success("Task completed")
-        st.rerun()
-    elif row["status"] == "done":
-        st.success("✔ Completed")
+    st.markdown("## Technician Tasks")
+
+    techs = get_technicians_df(active_only=True)
+    if techs.empty:
+        st.warning("No technicians available.")
+        return
+
+    tech_username = st.selectbox("Select Technician", techs["username"].tolist())
+    tasks_df = get_tasks_for_user(tech_username)
+    if tasks_df.empty:
+        st.info(
+            " No task assigned to a Technician yet! To assign a job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT."
+        )
+        return
+
+    for _, row in tasks_df.iterrows():
+        with st.expander(f" {row['title']} — {row['status'].upper()}"):
+            st.write(f"**Lead ID:** {row['lead_id'] or 'N/A'}")
+            st.write(f"**Due:** {row['due_at'] or 'No due date'}")
+
+            if row["status"] == "open":
+                if st.button(" Start Task", key=f"start_{row['id']}"):
+                    update_task_status(row["id"], "in_progress")
+                    st.success("Task started")
+                    st.rerun()
+            elif row["status"] == "in_progress":
+                if st.button(" Mark Complete", key=f"done_{row['id']}"):
+                    update_task_status(row["id"], "done")
+                    st.success("Task completed")
+                    st.rerun()
+            elif row["status"] == "done":
+                st.success("✔ Completed")
+
+
 def get_tasks_df():
     s = get_session()
-try:
-    rows = s.query(Task).order_by(Task.created_at.desc()).all()
-    return pd.DataFrame([
-    {
-        "id": r.id,
-        "title": r.title,
-        "technician_username": r.technician_username,
-        "lead_id": r.lead_id,
-        "status": r.status,
-        "due_at": r.due_at,
-        "created_at": r.created_at
-    } for r in rows
-    ])
-finally:
-    s.close()
-def add_technician(username: str, full_name: str = "", phone: str = "", specialization: str = "Tech",
-active: bool = True):
-    s = get_session()
-try:
-    existing = s.query(Technician).filter(Technician.username == username).first()
-    if existing:
-        existing.full_name = full_name
-    existing.phone = phone
-    existing.specialization = specialization
-    existing.active = active
-    s.add(existing); s.commit()
-    return existing.username
-    t = Technician(username=username, full_name=full_name, phone=phone,
-specialization=specialization, active=active)
-    s.add(t); s.commit()
-    return t.username
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
-def update_technician_status(username: str, status: str):
-    s = get_session()
-try:
-    tech = s.query(Technician).filter_by(username=username).first()
-    if not tech:
-        return False
-    tech.status = status
-    s.commit()
-    return True
-finally:
-    s.close()
-if "_save_location" in st.query_params:
-    data = st.get_json()
-save_location_ping(
-    data["username"],
-    data["lat"],
-    data["lon"],
-    data.get("accuracy")
-)
-st.stop()
-def save_location_ping(username, lat, lon, accuracy=None):
-    s = get_session()
-try:
-    ping = LocationPing(
-    tech_username=username,
-    latitude=float(lat),
-    longitude=float(lon),
-    accuracy=accuracy,
-    timestamp=pd.Timestamp.utcnow()
-    )
-    s.add(ping)
-    s.commit()
-finally:
-    s.close()
-def get_technicians_df(active_only=True):
-    s = get_session()
-try:
-    q = s.query(Technician)
-    if active_only:
-        q = q.filter(Technician.active == True)
-    rows = q.all()
-    return pd.DataFrame([
-    {
-        "username": t.username,
-        "full_name": t.full_name,
-        "phone": t.phone,
-        "specialization": t.specialization,
-        "active": t.active
-    }
-    for t in rows
-    ])
-finally:
-    s.close()
-def save_location_ping(
-tech_username: str,
-latitude: float,
-longitude: float,
-lead_id: str | None = None,
-accuracy: float | None = None,
+    try:
+        rows = s.query(Task).order_by(Task.created_at.desc()).all()
+        return pd.DataFrame(
+            [
+                {
+                    "id": r.id,
+                    "title": r.title,
+                    "technician_username": r.technician_username,
+                    "lead_id": r.lead_id,
+                    "status": r.status,
+                    "due_at": r.due_at,
+                    "created_at": r.created_at,
+                }
+                for r in rows
+            ]
+        )
+    finally:
+        s.close()
+
+
+def add_technician(
+    username: str,
+    full_name: str = "",
+    phone: str = "",
+    specialization: str = "Tech",
+    active: bool = True,
 ):
     s = get_session()
-try:
-    ping = LocationPing(
-    tech_username=tech_username,
-    latitude=latitude,
-    longitude=longitude,
-    lead_id=lead_id,
-    accuracy=accuracy
+    try:
+        existing = s.query(Technician).filter(Technician.username == username).first()
+        if existing:
+            existing.full_name = full_name
+            existing.phone = phone
+            existing.specialization = specialization
+            existing.active = active
+            s.add(existing)
+            s.commit()
+            return existing.username
+
+        t = Technician(
+            username=username,
+            full_name=full_name,
+            phone=phone,
+            specialization=specialization,
+            active=active,
+        )
+        s.add(t)
+        s.commit()
+        return t.username
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
+def update_technician_status(username: str, status: str):
+    s = get_session()
+    try:
+        tech = s.query(Technician).filter_by(username=username).first()
+        if not tech:
+            return False
+        tech.status = status
+        s.commit()
+        return True
+    finally:
+        s.close()
+
+
+if "_save_location" in st.query_params:
+    data = st.get_json()
+    save_location_ping(
+        data["username"],
+        data["lat"],
+        data["lon"],
+        data.get("accuracy"),
     )
-    s.add(ping)
-    s.commit()
-except Exception:
-    s.rollback()
-    raise
-finally:
-    s.close()
+    st.stop()
+
+
+def save_location_ping(username, lat, lon, accuracy=None):
+    s = get_session()
+    try:
+        ping = LocationPing(
+            tech_username=username,
+            latitude=float(lat),
+            longitude=float(lon),
+            accuracy=accuracy,
+            timestamp=pd.Timestamp.utcnow(),
+        )
+        s.add(ping)
+        s.commit()
+    finally:
+        s.close()
+
+def get_technicians_df(active_only=True):
+    s = get_session()
+    try:
+        q = s.query(Technician)
+        if active_only:
+            q = q.filter(Technician.active == True)
+        rows = q.all()
+        return pd.DataFrame(
+            [
+                {
+                    "username": t.username,
+                    "full_name": t.full_name,
+                    "phone": t.phone,
+                    "specialization": t.specialization,
+                    "active": t.active,
+                }
+                for t in rows
+            ]
+        )
+    finally:
+        s.close()
+
+
+def save_location_ping(
+    tech_username: str,
+    latitude: float,
+    longitude: float,
+    lead_id: str | None = None,
+    accuracy: float | None = None,
+):
+    s = get_session()
+    try:
+        ping = LocationPing(
+            tech_username=tech_username,
+            latitude=latitude,
+            longitude=longitude,
+            lead_id=lead_id,
+            accuracy=accuracy,
+        )
+        s.add(ping)
+        s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
 def get_leads_df():
     response = supabase.table("leads").select("*").execute()
 if not response.data:
