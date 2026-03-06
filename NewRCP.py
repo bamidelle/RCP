@@ -2463,25 +2463,29 @@ def send_password_reset_email(email: str, reset_link: str):
 #--------------------OPTIONAL PAGE RESET FOR STREAMLIT---------------
 def page_reset_password():
     st.markdown("## Reset Your Password")
-token = st.query_params.get("token")
-if not token:
-    st.error("Missing reset token")
-    st.stop()
-pw1 = st.text_input("New Password", type="password")
-pw2 = st.text_input("Confirm Password", type="password")
-if st.button("Reset Password"):
-    if not pw1 or len(pw1) < 8:
-        st.error("Password must be at least 8 characters")
-    st.stop()
-    if pw1 != pw2:
-        st.error("Passwords do not match")
-    st.stop()
-    try:
-        reset_password_with_token(token, pw1)
-        st.success("Password reset successful. You may now log in.")
+
+    token = st.query_params.get("token")
+    if not token:
+        st.error("Missing reset token")
         st.stop()
-    except Exception as e:
-        st.error(str(e))
+
+    pw1 = st.text_input("New Password", type="password")
+    pw2 = st.text_input("Confirm Password", type="password")
+
+    if st.button("Reset Password"):
+        if not pw1 or len(pw1) < 8:
+            st.error("Password must be at least 8 characters")
+            st.stop()
+        if pw1 != pw2:
+            st.error("Passwords do not match")
+            st.stop()
+
+        try:
+            reset_password_with_token(token, pw1)
+            st.success("Password reset successful. You may now log in.")
+            st.stop()
+        except Exception as e:
+            st.error(str(e))
 def record_invoice(user, amount, description):
     with SessionLocal() as s:
         invoice = Invoice(
