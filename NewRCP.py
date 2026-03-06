@@ -2576,6 +2576,27 @@ def admin_upgrade_user(user_id: int, plan: str):
 # -------------------------
 # Settings Page
 # -------------------------
+def get_users_df():
+    with SessionLocal() as s:
+        rows = s.query(User).order_by(User.created_at.desc()).all()
+
+    data = [
+        {
+            "id": u.id,
+            "email": u.email,
+            "username": u.username,
+            "full_name": u.full_name,
+            "role": u.role,
+            "plan": u.plan,
+            "is_active": bool(u.is_active),
+            "email_verified": bool(u.email_verified),
+            "created_at": u.created_at,
+        }
+        for u in rows
+    ]
+    return pd.DataFrame(data)
+
+
 def page_settings():
     require_role_access("settings")
 st.markdown(
