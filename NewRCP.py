@@ -3223,25 +3223,28 @@ def page_request_review():
 
 def page_review_redirect():
     token = st.query_params.get("token")
-settings = get_user_settings_safe()
-review_url = settings.get("google_review_url")
-if not review_url:
-    st.error("Review link not configured.")
-    return
-try:
-    log_event(
-    "review_tap",
-    entity_type="review",
-    entity_id=token,
-    metadata={"source": "nfc_or_qr"}
+    settings = get_user_settings_safe()
+    review_url = settings.get("google_review_url")
+    if not review_url:
+        st.error("Review link not configured.")
+        return
+
+    try:
+        log_event(
+            event_type="review_tap",
+            entity_type="review",
+            entity_id=token,
+            metadata={"source": "nfc_or_qr"},
+        )
+    except Exception:
+        pass
+
+    st.markdown("Redirecting to review page…")
+    st.markdown(
+        f"<meta http-equiv='refresh' content='1;url={review_url}'>",
+        unsafe_allow_html=True,
     )
-except Exception:
-    pass
-st.markdown("Redirecting to review page…")
-st.markdown(
-    f"<meta http-equiv='refresh' content='1;url={review_url}'>",
-    unsafe_allow_html=True
-)
+
 #-----------------------START OF COMMAND CENTER---------------------
 def page_command_center():
     require_role_access("overview")
