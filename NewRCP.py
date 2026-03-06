@@ -76,6 +76,12 @@ from pathlib import Path
 EVENT_LOG_FILE = Path("platform_events.log")
 import uuid
 from datetime import datetime
+
+def is_valid_email(email: str) -> bool:
+    if not email:
+        return False
+    return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email.strip()))
+
 def generate_review_token():
     return f"rvw_{uuid.uuid4().hex[:10]}"
 st.markdown("""
