@@ -1246,6 +1246,10 @@ def decode_wp_token(token: str):
         return None
 def generate_invite_token():
     return secrets.token_urlsafe(32)
+
+
+def generate_activation_token():
+    return secrets.token_urlsafe(32)
 def verify_invite_token(token: str) -> User:
     try:
         payload = jwt.decode(token, INVITE_SECRET, algorithms=["HS256"])
