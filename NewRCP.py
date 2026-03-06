@@ -434,228 +434,258 @@ Base = declarative_base()
 # ----------------------
 class Organization(Base):
     __tablename__ = "organizations"
-id = Column(Integer, primary_key=True)
-name = Column(String, nullable=False)
-plan = Column(String, default="trial")
-max_users = Column(Integer, default=1)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    plan = Column(String, default="trial")
+    max_users = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
-id = Column(Integer, primary_key=True)
-# =========================
-# ORGANIZATION RELATIONSHIP (NEW)
-# =========================
-organization_id = Column(Integer, ForeignKey("organizations.id"))
-organization = relationship("Organization")
-# =========================
-# PRIMARY IDENTITY
-# =========================
-email = Column(String, unique=True, nullable=False, index=True)
-email_verified = Column(Boolean, default=False)
-username = Column(String, unique=True, nullable=True)
-full_name = Column(String, default="")
-role = Column(String, default="Viewer")
-created_at = Column(DateTime, default=datetime.utcnow)
-activated_at = Column(DateTime, nullable=True)
-# =========================
-# BILLING / SUBSCRIPTION
-# =========================
-plan = Column(String, default="starter")
-subscription_status = Column(String, default="trial")
-trial_ends_at = Column(DateTime, nullable=True)
-# =========================
-# ACCOUNT STATUS
-# =========================
-is_active = Column(Boolean, default=True)
-last_login_at = Column(DateTime, nullable=True)
-# =========================
-# AUTH / SECURITY
-# =========================
-password_hash = Column(String, nullable=True)
-reset_token = Column(String, nullable=True)
-reset_expires_at = Column(DateTime, nullable=True)
-activation_token = Column(String, nullable=True)
-activation_expires_at = Column(DateTime, nullable=True)
-# =========================
-# OTP (2FA / STEP-UP AUTH)
-# =========================
-otp_code = Column(String, nullable=True)
-otp_expires_at = Column(DateTime, nullable=True)
-otp_required = Column(Boolean, default=False)
-# =========================
-# LOGIN PROTECTION
-# =========================
-failed_login_attempts = Column(Integer, default=0)
-locked_until = Column(DateTime, nullable=True)
-# =========================
-# JWT CONFIG (STATIC)
-# =========================
+
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"))
+    organization = relationship("Organization")
+
+    email = Column(String, unique=True, nullable=False, index=True)
+    email_verified = Column(Boolean, default=False)
+    username = Column(String, unique=True, nullable=True)
+    full_name = Column(String, default="")
+    role = Column(String, default="Viewer")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    activated_at = Column(DateTime, nullable=True)
+
+    plan = Column(String, default="starter")
+    subscription_status = Column(String, default="trial")
+    trial_ends_at = Column(DateTime, nullable=True)
+
+    is_active = Column(Boolean, default=True)
+    last_login_at = Column(DateTime, nullable=True)
+
+    password_hash = Column(String, nullable=True)
+    reset_token = Column(String, nullable=True)
+    reset_expires_at = Column(DateTime, nullable=True)
+    activation_token = Column(String, nullable=True)
+    activation_expires_at = Column(DateTime, nullable=True)
+
+    otp_code = Column(String, nullable=True)
+    otp_expires_at = Column(DateTime, nullable=True)
+    otp_required = Column(Boolean, default=False)
+
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)
+
+
 JWT_SECRET = os.environ.get("JWT_SECRET", "CHANGE_ME_NOW")
 JWT_ALGO = "HS256"
 JWT_EXP_MINUTES = 15
+
+
 class Invoice(Base):
     __tablename__ = "invoices"
-id = Column(Integer, primary_key=True)
-user_id = Column(Integer, ForeignKey("users.id"))
-amount = Column(Float)
-currency = Column(String, default="USD")
-status = Column(String) # paid / unpaid / refunded
-description = Column(String)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    amount = Column(Float)
+    currency = Column(String, default="USD")
+    status = Column(String)
+    description = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class UserInvite(Base):
     __tablename__ = "user_invites"
-id = Column(Integer, primary_key=True)
-email = Column(String, nullable=False, index=True)
-token = Column(String, unique=True, nullable=False)
-role = Column(String, default="Staff")
-invited_by = Column(String, nullable=True)
-expires_at = Column(DateTime, nullable=False)
-accepted = Column(Boolean, default=False)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String, nullable=False, index=True)
+    token = Column(String, unique=True, nullable=False)
+    role = Column(String, default="Staff")
+    invited_by = Column(String, nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    accepted = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class LoginToken(Base):
     __tablename__ = "login_tokens"
-id = Column(Integer, primary_key=True)
-token = Column(String, unique=True, nullable=False, index=True)
-user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-expires_at = Column(DateTime, nullable=False)
-used = Column(Boolean, default=False)
-user = relationship("User")
+
+    id = Column(Integer, primary_key=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False)
+    user = relationship("User")
+
+
 class Lead(Base):
     __tablename__ = "leads"
-id = Column(Integer, primary_key=True)
-lead_id = Column(String, unique=True, nullable=False)
-created_at = Column(DateTime, default=datetime.utcnow)
-source = Column(String, default="Other")
-source_details = Column(String, nullable=True)
-contact_name = Column(String, nullable=True)
-contact_phone = Column(String, nullable=True)
-contact_email = Column(String, nullable=True)
-property_address = Column(String, nullable=True)
-damage_type = Column(String, nullable=True)
-assigned_to = Column(String, nullable=True) # username of owner
-notes = Column(Text, nullable=True)
-estimated_value = Column(Float, default=0.0)
-stage = Column(String, default="New")
-sla_hours = Column(Integer, default=DEFAULT_SLA_HOURS)
-sla_entered_at = Column(DateTime, default=datetime.utcnow)
-contacted = Column(Boolean, default=False)
-inspection_scheduled = Column(Boolean, default=False)
-inspection_scheduled_at = Column(DateTime, nullable=True)
-inspection_completed = Column(Boolean, default=False)
-estimate_submitted = Column(Boolean, default=False)
-estimate_submitted_at = Column(DateTime, nullable=True)
-awarded_date = Column(DateTime, nullable=True)
-awarded_invoice = Column(String, nullable=True)
-lost_date = Column(DateTime, nullable=True)
-qualified = Column(Boolean, default=False)
-ad_cost = Column(Float, default=0.0) # cost to acquire
-converted = Column(Boolean, default=False)
-score = Column(Float, nullable=True) # ML probability
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    source = Column(String, default="Other")
+    source_details = Column(String, nullable=True)
+    contact_name = Column(String, nullable=True)
+    contact_phone = Column(String, nullable=True)
+    contact_email = Column(String, nullable=True)
+    property_address = Column(String, nullable=True)
+    damage_type = Column(String, nullable=True)
+    assigned_to = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
+    estimated_value = Column(Float, default=0.0)
+    stage = Column(String, default="New")
+    sla_hours = Column(Integer, default=DEFAULT_SLA_HOURS)
+    sla_entered_at = Column(DateTime, default=datetime.utcnow)
+    contacted = Column(Boolean, default=False)
+    inspection_scheduled = Column(Boolean, default=False)
+    inspection_scheduled_at = Column(DateTime, nullable=True)
+    inspection_completed = Column(Boolean, default=False)
+    estimate_submitted = Column(Boolean, default=False)
+    estimate_submitted_at = Column(DateTime, nullable=True)
+    awarded_date = Column(DateTime, nullable=True)
+    awarded_invoice = Column(String, nullable=True)
+    lost_date = Column(DateTime, nullable=True)
+    qualified = Column(Boolean, default=False)
+    ad_cost = Column(Float, default=0.0)
+    converted = Column(Boolean, default=False)
+    score = Column(Float, nullable=True)
+
+
 class LeadHistory(Base):
     __tablename__ = "lead_history"
-id = Column(Integer, primary_key=True)
-lead_id = Column(String, nullable=False)
-changed_by = Column(String, nullable=True)
-field = Column(String, nullable=True)
-old_value = Column(String, nullable=True)
-new_value = Column(String, nullable=True)
-timestamp = Column(DateTime, default=datetime.utcnow)
-# ---------- BEGIN BLOCK A: NEW MODELS (Technician, InspectionAssignment, LocationPing) ----------
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(String, nullable=False)
+    changed_by = Column(String, nullable=True)
+    field = Column(String, nullable=True)
+    old_value = Column(String, nullable=True)
+    new_value = Column(String, nullable=True)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+
 from sqlalchemy import DateTime as SA_DateTime
+
+
 class Technician(Base):
     __tablename__ = "technicians"
-id = Column(Integer, primary_key=True)
-username = Column(String, unique=True, nullable=False)
-full_name = Column(String, default="")
-phone = Column(String, nullable=True)
-specialization = Column(String, nullable=True)
-# ADD THIS LINE
-status = Column(String, default="available")
-# available, assigned, enroute, onsite, completed
-active = Column(Boolean, default=True)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    username = Column(String, unique=True, nullable=False)
+    full_name = Column(String, default="")
+    phone = Column(String, nullable=True)
+    specialization = Column(String, nullable=True)
+    status = Column(String, default="available")
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class InspectionAssignment(Base):
     __tablename__ = "inspection_assignments"
-id = Column(Integer, primary_key=True)
-lead_id = Column(String, nullable=False) # lead_id from Lead.lead_id
-technician_username = Column(String, nullable=False)
-assigned_at = Column(DateTime, default=datetime.utcnow)
-status = Column(String, default="assigned") # assigned, enroute, onsite, completed,
-cancelled
-notes = Column(Text, nullable=True)
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(String, nullable=False)
+    technician_username = Column(String, nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String, default="assigned")
+    notes = Column(Text, nullable=True)
+
+
 class LocationPing(Base):
     __tablename__ = "location_pings"
-id = Column(Integer, primary_key=True)
-tech_username = Column(String, nullable=False)
-lead_id = Column(String, nullable=True) # optional - link to lead if assigned
-latitude = Column(Float, nullable=False)
-longitude = Column(Float, nullable=False)
-timestamp = Column(DateTime, default=datetime.utcnow)
-accuracy = Column(Float, nullable=True) # optional accuracy (meters)
+
+    id = Column(Integer, primary_key=True)
+    tech_username = Column(String, nullable=False)
+    lead_id = Column(String, nullable=True)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    accuracy = Column(Float, nullable=True)
+
+
 class Task(Base):
     __tablename__ = "tasks"
-id = Column(Integer, primary_key=True)
-lead_id = Column(String, nullable=True)
-technician_username = Column(String, nullable=True)
-title = Column(String, nullable=False)
-description = Column(Text, nullable=True)
-status = Column(String, default="open") # open, in_progress, done
-due_at = Column(DateTime, nullable=True)
-created_at = Column(DateTime, default=datetime.utcnow)
-# ---------- BEGIN BLOCK A2: COMPETITOR INTELLIGENCE MODELS ----------
+
+    id = Column(Integer, primary_key=True)
+    lead_id = Column(String, nullable=True)
+    technician_username = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String, default="open")
+    due_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Competitor(Base):
     __tablename__ = "competitors"
-id = Column(Integer, primary_key=True)
-name = Column(String, nullable=False)
-place_id = Column(String, unique=True, nullable=True)
-latitude = Column(Float, nullable=True)
-longitude = Column(Float, nullable=True)
-rating = Column(Float, default=0.0)
-total_reviews = Column(Integer, default=0)
-primary_category = Column(String, nullable=True)
-service_area = Column(String, nullable=True)
-active = Column(Boolean, default=True)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    place_id = Column(String, unique=True, nullable=True)
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    rating = Column(Float, default=0.0)
+    total_reviews = Column(Integer, default=0)
+    primary_category = Column(String, nullable=True)
+    service_area = Column(String, nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class CompetitorSnapshot(Base):
     __tablename__ = "competitor_snapshots"
-id = Column(Integer, primary_key=True)
-competitor_id = Column(Integer, ForeignKey("competitors.id"))
-rating = Column(Float)
-total_reviews = Column(Integer)
-captured_at = Column(DateTime, default=datetime.utcnow)
-competitor = relationship("Competitor")
+
+    id = Column(Integer, primary_key=True)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"))
+    rating = Column(Float)
+    total_reviews = Column(Integer)
+    captured_at = Column(DateTime, default=datetime.utcnow)
+    competitor = relationship("Competitor")
+
+
 class CompetitorAlert(Base):
     __tablename__ = "competitor_alerts"
-id = Column(Integer, primary_key=True)
-competitor_id = Column(Integer)
-alert_type = Column(String)
-message = Column(String)
-severity = Column(String) # low / medium / high
-created_at = Column(DateTime, default=datetime.utcnow)
-# ---------- END BLOCK A2 ----------
+
+    id = Column(Integer, primary_key=True)
+    competitor_id = Column(Integer)
+    alert_type = Column(String)
+    message = Column(String)
+    severity = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ReviewSettings(Base):
     __tablename__ = "review_settings"
-id = Column(Integer, primary_key=True)
-user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-review_link = Column(String, nullable=False)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
+    review_link = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class ReviewEmailTemplate(Base):
     __tablename__ = "review_email_templates"
-id = Column(Integer, primary_key=True) # REQUIRED
-user_id = Column(Integer, nullable=False)
-subject = Column(String, nullable=True)
-body = Column(Text, nullable=True)
-footer = Column(Text, nullable=True)
-created_at = Column(DateTime, default=datetime.utcnow)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=False)
+    subject = Column(String, nullable=True)
+    body = Column(Text, nullable=True)
+    footer = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class AIInsight(Base):
     __tablename__ = "ai_insights"
-id = Column(Integer, primary_key=True)
-user_id = Column(Integer, ForeignKey("users.id"), index=True)
-insight_key = Column(String, index=True)
-message = Column(Text)
-is_active = Column(Boolean, default=True)
-created_at = Column(DateTime, default=datetime.utcnow)
-resolved_at = Column(DateTime, nullable=True)
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    insight_key = Column(String, index=True)
+    message = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
 # ---------- END BLOCK A ----------
 # Create tables if missing
 from sqlalchemy import inspect
