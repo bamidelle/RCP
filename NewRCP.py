@@ -404,7 +404,8 @@ PIPELINE_STAGES = [
 ]
 DEFAULT_SLA_HOURS = 24
 
-"https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;700&display=swap"
+FONT_URL = "https://fonts.googleapis.com/css2?family=Comfortaa:wght@300;400;700&display=swap"
+st.markdown(f"<style>@import url('{FONT_URL}'); html, body {{ font-family: 'Comfortaa', sans-serif; }}</style>", unsafe_allow_html=True)
 # KPI colors (numbers)
 KPI_COLORS = ["#2563eb", "#0ea5a4", "#a855f7", "#f97316", "#ef4444", "#6d28d9",
 "#22c55e"]
@@ -1093,11 +1094,11 @@ def reactivate_user_account(user: User, plan: str):
     """
 Re-enables a locked account after successful upgrade
 """
-user.plan = plan
-user.subscription_status = "active"
-user.is_active = True
-user.email_verified = True # safe if coming from Stripe / admin
-user.trial_ends_at = None
+    user.plan = plan
+    user.subscription_status = "active"
+    user.is_active = True
+    user.email_verified = True  # safe if coming from Stripe / admin
+    user.trial_ends_at = None
 # ----------------------
 # TRIAL REMINDER EMAILS
 # ----------------------
