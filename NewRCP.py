@@ -2377,64 +2377,60 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # ----------------------
 def wp_auth_bridge():
     st.title("Authenticating...")
-token = st.query_params.get("token")
-if not token:
-    st.error("Missing authentication token")
-    st.stop()
-payload = decode_wp_token(token)
-if not payload:
-    st.error("Invalid or expired token")
-    st.stop()
-email = payload.get("email")
-name = payload.get("name", "")
-role = payload.get("role", "Viewer")
-if not email:
-    st.error("Invalid token payload")
-    st.stop()
-with SessionLocal() as s:
-    user = s.query(User).filter(User.email == email).first()
-    # ----------------------------
-    # CREATE USER IF NOT EXISTS
-    # ----------------------------
-    if not user:
-        user = User(
-        email=email.lower(),
-        username=email.split("@")[0],
-        full_name=name,
-        role=role,
-        plan="starter",
-        subscription_status="trial",
-        trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-        email_verified=True, # WP auth = verified
-        is_active=True,
-    )
-    s.add(user)
-    s.commit()
-    # ----------------------------
-    # STEP H — ENFORCEMENT
-    # ----------------------------
-    if not user.is_active:
-        st.error("Your account has been deactivated.")
-    st.stop()
-    if not user.email_verified:
-        st.error("Please verify your email address before accessing the app.")
-    st.stop()
-    # ----------------------------
-    # SESSION BINDING (CRITICAL)
-    # ----------------------------
-    st.session_state["user_id"] = user.id
-    st.session_state["role"] = user.role
-    st.session_state["plan"] = user.plan
-st.success("Authentication successful")
-st.query_params.clear()
-st.rerun()
-# Authenticate Streamlit session
-st.session_state["authenticated"] = True
-st.session_state["user_email"] = email
-st.session_state["role"] = role
-st.session_state["plan"] = user.plan
-st.success("Login successful")
-st.rerun()
+
+    token = st.query_params.get("token")
+    if not token:
+        st.error("Missing authentication token")
+        st.stop()
+
+    payload = decode_wp_token(token)
+    if not payload:
+        st.error("Invalid or expired token")
+        st.stop()
+
+    email = payload.get("email")
+    name = payload.get("name", "")
+    role = payload.get("role", "Viewer")
+    if not email:
+        st.error("Invalid token payload")
+        st.stop()
+
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.email == email).first()
+
+        if not user:
+            user = User(
+                email=email.lower(),
+                username=email.split("@")[0],
+                full_name=name,
+                role=role,
+                plan="starter",
+                subscription_status="trial",
+                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
+                email_verified=True,
+                is_active=True,
+            )
+            s.add(user)
+            s.commit()
+            s.refresh(user)
+
+        if not user.is_active:
+            st.error("Your account has been deactivated.")
+            st.stop()
+        if not user.email_verified:
+            st.error("Please verify your email address before accessing the app.")
+            st.stop()
+
+        st.session_state["user_id"] = user.id
+        st.session_state["authenticated"] = True
+        st.session_state["user_email"] = user.email
+        st.session_state["role"] = user.role
+        st.session_state["plan"] = user.plan
+
+    st.success("Authentication successful")
+    st.query_params.clear()
+    st.rerun()
+
 def reset_password_with_token(token: str, new_password: str):
     with SessionLocal() as s:
         user = s.query(User).filter(
