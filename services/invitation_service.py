@@ -44,6 +44,7 @@ def create_invitation(email: str, role: str, invited_by: str, expires_in_days: i
         "token": token,
         "invited_by": invited_by,
         "expires_at": expires_at,
+        "used": False,
     }
     res = supabase.table("invitations").insert(payload).execute()
     if not res.data:
@@ -57,6 +58,7 @@ def get_active_invitation(token: str) -> Optional[dict]:
         supabase.table("invitations")
         .select("id,email,role,token,expires_at,used_at")
         .eq("token", token)
+        .eq("used", False)
         .is_("used_at", "null")
         .gt("expires_at", datetime.now(timezone.utc).isoformat())
         .limit(1)
@@ -68,6 +70,7 @@ def get_active_invitation(token: str) -> Optional[dict]:
 def mark_invitation_used(token: str, accepted_user_id: str, user_email: str) -> None:
     supabase = get_supabase_client(admin=True)
     updates = {
+        "used": True,
         "used_at": datetime.now(timezone.utc).isoformat(),
         "accepted_user_id": accepted_user_id,
     }

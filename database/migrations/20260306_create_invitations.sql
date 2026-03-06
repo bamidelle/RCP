@@ -4,11 +4,13 @@ create extension if not exists pgcrypto;
 create table if not exists public.invitations (
     id uuid primary key default gen_random_uuid(),
     email text not null,
+    company_id uuid,
     role text not null default 'Staff',
     token text not null unique,
     invited_by text,
     invited_at timestamptz not null default now(),
     expires_at timestamptz not null,
+    used boolean not null default false,
     used_at timestamptz,
     accepted_user_id uuid,
     created_at timestamptz not null default now(),
@@ -43,7 +45,8 @@ create policy "public_read_active_invite_by_token"
 on public.invitations
 for select
 using (
-    used_at is null
+    used = false
+    and used_at is null
     and expires_at > now()
 );
 
