@@ -5065,7 +5065,7 @@ if not st.session_state.get("authenticated"):
     st.stop()
 
 # Logged-in users hitting login page are redirected to command center
-if requested_page in {"login", "signup", "auth"}:
+if requested_page in {"login", "signup", "auth"} or str(st.session_state.get("page", "")).lower() in {"login", "signup", "auth"}:
     st.session_state["page"] = "command_center"
     st.query_params.clear()
     st.rerun()
