@@ -1362,6 +1362,17 @@ def send_email(to_email, subject, html_body):
     response = requests.post(url, json=payload, headers=headers)
     return response.status_code, response.text
 
+
+def send_invite_email(email: str, invite_link: str):
+    subject = "You're invited to ReCapture Pro"
+    html = (
+        "<p>You have been invited to join ReCapture Pro.</p>"
+        f"<p><a href='{invite_link}'>Activate your account</a></p>"
+    )
+    status, response = send_email(email, subject, html)
+    if status >= 400:
+        raise RuntimeError(f"Invite email failed ({status}): {response}")
+
 def build_review_email(
 customer_name,
 business_name,
@@ -2660,7 +2671,7 @@ with st.form("invite_user_form"):
             s.add(user)
             s.commit()
 
-        invite_link = f"{FRONTEND_URL}/activate?token={token}"
+        invite_link = f"{FRONTEND_URL.rstrip('/')}/activate?token={token}"
         st.write("Invite link:", invite_link)
         try:
             send_invite_email(invite_email, invite_link)
