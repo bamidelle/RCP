@@ -2967,304 +2967,117 @@ Adds rolling time windows (3, 6, 12 months) for seasonal comparison
 # -------------------------------------------------------------
 def page_seasonal_trends():
     require_role_access("business_intelligence")
-import numpy as np
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
-import streamlit as st
-from datetime import datetime, timedelta
-# =========================================================
-# DEMO MODE (NO API COST)
-# =========================================================
-DEMO_MODE = st.toggle(" Demo Mode (No API usage)", value=False)
-# =========================================================
-# SAFE HELPERS (PATCHED)
-# =========================================================
-def safe_df(df):
-    return df if isinstance(df, pd.DataFrame) else pd.DataFrame()
-def confidence(score):
-    if score >= 0.75:
-        return "High"
-    if score >= 0.5:
-        return "Medium"
-    return "Low"
-# =========================================================
-# LOW-COST CACHED API WRAPPERS
-# =========================================================
-@st.cache_data(ttl=86400)
-def fetch_weather_cached(lat, lon, months):
-    if DEMO_MODE:
-        return demo_weather(months)
-    return fetch_weather(lat, lon, months)
-@st.cache_data(ttl=86400)
-def fetch_forecast_cached(lat, lon, days):
-    if DEMO_MODE:
-        return demo_weather(days // 30)
-    return fetch_forecast_weather(lat, lon, days)
-def demo_weather(months):
-    dates = pd.date_range(end=pd.Timestamp.utcnow(), periods=months * 30)
-    return pd.DataFrame({
-    "date": dates,
-    "temperature_c": np.random.normal(25, 4, len(dates)),
-    "rainfall_mm": np.abs(np.random.normal(6, 3, len(dates)))
-    })
-# =========================================================
-# HEADER
-# =========================================================
-st.markdown("## Seasonal Trends & Weather-Based Damage Insights")
-st.caption("Location-based risk forecasting with business impact intelligence")
-st.divider()
-# =========================================================
-# LOCATION SELECTION
-# =========================================================
-countries = get_all_countries()
-country = st.selectbox("Country", [c["name"] for c in countries])
-country_code = next(c["code"] for c in countries if c["name"] == country)
-city_query = st.text_input("City", placeholder="Type at least 3 letters")
-if len(city_query) < 3:
-    st.info("Start typing a city name (3+ characters)")
-    return
-matches = search_cities(country_code, city_query)
-if not matches:
-    st.warning("No cities found")
-    return
-labels = [f"{m['name']}, {m.get('admin1','')}" for m in matches]
-selected = st.selectbox("Select City", labels)
-chosen = matches[labels.index(selected)]
-st.success(f" {selected}")
-st.divider()
-# =========================================================
-# CONTROLS (CAPPED FOR COST)
-# =========================================================
-hist_range = st.selectbox("Historical Window", ["3 months", "6 months", "12 months"],
-index=1)
-forecast_range = st.selectbox("Forecast Horizon", ["3 months", "6 months"])
-months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-forecast_months = {"3 months": 3, "6 months": 6}[forecast_range]
-if not st.button("Generate Insights", use_container_width=True):
-    return
-st.divider()
-# =========================================================
-# DATA FETCH (SAFE + CAPPED)
-# =========================================================
-with st.spinner("Generating insights..."):
-    hist_df = fetch_weather_cached(chosen["lat"], chosen["lon"], months)
-    forecast_days = min(forecast_months * 30, 90)
-    forecast_df = fetch_forecast_cached(chosen["lat"], chosen["lon"], forecast_days)
-hist_df = safe_df(hist_df)
-forecast_df = safe_df(forecast_df)
-if hist_df.empty:
-    st.error("No historical data available")
-    return
-# =========================================================
-# FEATURE ENGINEERING
-# =========================================================
-for df_ in [hist_df, forecast_df]:
-    df_["humidity_pct"] = np.clip(60 + df_["rainfall_mm"] * 0.3, 30, 100)
-    df_["water_risk"] = np.clip(df_["rainfall_mm"] / 120, 0, 1)
-    df_["mold_risk"] = np.clip(df_["humidity_pct"] / 100, 0, 1)
-    df_["storm_risk"] = (df_["rainfall_mm"] > 20).astype(int)
-    df_["freeze_risk"] = (df_["temperature_c"] < 1).astype(int)
-st.divider()
-# =========================================================
-# KPI SUMMARY
-# =========================================================
-risk_scores = {
-    "Water Damage": forecast_df["water_risk"].mean(),
-    "Mold Growth": forecast_df["mold_risk"].mean(),
-    "Storm Damage": forecast_df["storm_risk"].mean(),
-    "Freeze Burst": forecast_df["freeze_risk"].mean()
-}
-k1, k2, k3, k4 = st.columns(4)
-for col, (label, val) in zip([k1, k2, k3, k4], risk_scores.items()):
-    col.metric(label, f"{val:.2f}", confidence(val))
-st.divider()
-# =========================================================
-# TRENDS VISUALS
-# =========================================================
-st.subheader(" Weather & Risk Trends")
-fig = go.Figure()
-fig.add_trace(go.Scatter(x=hist_df["date"], y=hist_df["rainfall_mm"], name="Rainfall(History)"))
-fig.add_trace(go.Scatter(x=forecast_df["date"], y=forecast_df["rainfall_mm"],
-            name="Rainfall (Forecast)", line=dict(dash="dash")))
-fig.update_layout(height=400)
-st.plotly_chart(fig, use_container_width=True)
-st.divider()
-# =========================================================
-# EXECUTIVE INSIGHTS (WITH CONFIDENCE)
-# =========================================================
-st.subheader(" Executive Seasonal Insights")
-insights = []
-if risk_scores["Water Damage"] > 0.6:
-    insights.append(("High water intrusion risk expected", confidence(risk_scores["WaterDamage"])))
-if risk_scores["Mold Growth"] > 0.5:
-    insights.append(("Elevated mold remediation demand likely", confidence(risk_scores["MoldGrowth"])))
-if risk_scores["Storm Damage"] > 0.4:
-    insights.append(("Storm-related damage frequency increasing",
-confidence(risk_scores["Storm Damage"])))
-if not insights:
-    st.success("No significant seasonal risk signals detected")
-else:
-    for text, conf in insights:
-        st.info(f" {text} — Confidence: **{conf}**")
-st.divider()
-# =========================================================
-# STRATEGIC RECOMMENDATIONS
-# =========================================================
-st.subheader(" Strategic Recommendations")
-avg_risk = np.mean(list(risk_scores.values()))
-if avg_risk >= 0.6:
-    st.error(" Peak season detected — increase staffing, emergency inventory, and adspend")
-elif avg_risk >= 0.4:
-    st.warning(" Elevated demand expected — prepare flexible schedules")
-else:
-    st.success(" Normal season — focus on marketing, SEO, and internal optimization")
-st.divider()
-# =========================================================
-# EXPECTED JOB VOLUME
-# =========================================================
-BASE_MONTHLY_LEADS = 40
-expected_jobs = int(BASE_MONTHLY_LEADS * (0.6 + avg_risk) * forecast_months)
-st.subheader(" Estimated Job Volume")
-st.metric("Expected Jobs", expected_jobs)
-techs = max(1, int(np.ceil(expected_jobs / (18 * forecast_months))))
-st.metric("Recommended Technicians", techs)
-# ---------- BEGIN BLOCK E: PAGE – COMPETITOR INTELLIGENCE ----------
+
+    st.markdown("## Seasonal Trends & Weather-Based Damage Insights")
+    st.caption("Location-based risk forecasting with business impact intelligence")
+    st.divider()
+
+    countries = get_all_countries()
+    country = st.selectbox("Country", [c["name"] for c in countries])
+    country_code = next(c["code"] for c in countries if c["name"] == country)
+
+    city_query = st.text_input("City", placeholder="Type at least 3 letters")
+    if len(city_query) < 3:
+        st.info("Start typing a city name (3+ characters)")
+        return
+
+    matches = search_cities(country_code, city_query)
+    if not matches:
+        st.warning("No cities found")
+        return
+
+    labels = [f"{m['name']}, {m.get('admin1', '')}" for m in matches]
+    selected = st.selectbox("Select City", labels)
+    chosen = matches[labels.index(selected)]
+
+    hist_range = st.selectbox("Historical Window", ["3 months", "6 months", "12 months"], index=1)
+    months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
+
+    if not st.button("Generate Insights", use_container_width=True):
+        return
+
+    with st.spinner("Generating insights..."):
+        hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
+
+    if hist_df is None or hist_df.empty:
+        st.error("No historical data available")
+        return
+
+    hist_df = hist_df.copy()
+    hist_df["date"] = pd.to_datetime(hist_df["date"], errors="coerce")
+    hist_df = hist_df.dropna(subset=["date"]).sort_values("date")
+
+    st.line_chart(hist_df.set_index("date")[["rainfall_mm", "temperature_c"]])
+
 def page_competitor_intelligence():
     st.title(" Competitor Intelligence")
-# ===============================
-# COMPETITIVE ALERTS (TOP)
-# ===============================
-st.subheader(" Competitive Alerts")
-s = get_session()
-alerts = (
-    s.query(CompetitorAlert)
-    .order_by(CompetitorAlert.created_at.desc())
-    .limit(5)
-    .all()
-)
-s.close()
-if not alerts:
-    st.success("No competitive threats detected.")
-else:
-    for i, a in enumerate(alerts):
-        key = f"alert_{i}"
-    if a.severity == "high":
-        st.error(a.message, key=key)
+
+    st.subheader(" Competitive Alerts")
+    s = get_session()
+    try:
+        alerts = (
+            s.query(CompetitorAlert)
+            .order_by(CompetitorAlert.created_at.desc())
+            .limit(5)
+            .all()
+        )
+    finally:
+        s.close()
+
+    if not alerts:
+        st.success("No competitive threats detected.")
     else:
-        st.warning(a.message, key=key)
-st.divider()
-# ===============================
-# COMPETITOR DISCOVERY
-# ===============================
-with st.expander(" Discover Competitors"):
-    lat = st.number_input("Latitude", value=39.9612, key="comp_lat")
-    lon = st.number_input("Longitude", value=-82.9988, key="comp_lon")
-    keyword = st.text_input(
-    "Search keyword",
-    "water damage restoration",
-    key="comp_keyword"
-    )
-    if st.button("Run Competitor Scan", key="run_comp_scan"):
-        ingest_competitors_openstreetmap(lat, lon, keyword)
-    st.success("Competitor scan completed.")
-# ===============================
-# FETCH COMPETITORS
-# ===============================
-s = get_session()
-try:
-    competitors = s.query(Competitor).all()
-finally:
-    s.close()
-if not competitors:
-    st.info("No competitors tracked yet.")
-    return
-# ===============================
-# BUILD COMPETITOR TABLE
-# ===============================
-rows = []
-hq_lat = st.session_state.get("hq_lat")
-hq_lon = st.session_state.get("hq_lon")
-for c in competitors:
-    distance = 10
-    if hq_lat and hq_lon and c.latitude and c.longitude:
-        distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
-    score = calculate_competitor_score(
-    c.rating or 0,
-    c.total_reviews or 0,
-    distance
-    )
-    rows.append({
-    "Name": c.name,
-    "Rating": c.rating,
-    "Reviews": c.total_reviews,
-    "Category": c.primary_category,
-    "Distance (km)": round(distance, 2),
-    "Strength Score": score,
-    "Velocity (7d)": review_velocity(c.id, 7),
-    "Velocity (30d)": review_velocity(c.id, 30),
-    })
-df = pd.DataFrame(rows).sort_values(
-    "Strength Score", ascending=False
-)
-st.subheader("Top Competitors")
-st.dataframe(df, use_container_width=True, key="competitor_table")
-# ===============================
-# MARKET PRESSURE
-# ===============================
-def market_pressure_score(df):
-    if df.empty:
-        return 0
-    return round(
-    df["Velocity (7d)"].mean() * 0.4 +
-    df["Strength Score"].mean() * 60,
-    1
-    )
-pressure = market_pressure_score(df)
-st.metric(
-    "Market Pressure Score",
-    pressure,
-    delta="Rising" if pressure > 60 else "Stable",
-    key="market_pressure"
-)
-# ===============================
-# SEO VISIBILITY GAP
-# ===============================
-st.subheader(" SEO Visibility Gap")
-you_reviews = st.number_input("Your total reviews", value=120, key="you_reviews")
-you_rating = st.number_input("Your rating", value=4.6, key="you_rating")
-if not df.empty:
-    gap = seo_visibility_gap(you_reviews, you_rating, df)
-    if gap["pressure"] == "HIGH":
-        st.error(
-        f"Competitors average {gap['review_gap']} more reviews and "
-        f"{gap['rating_gap']} higher rating. SEO pressure is HIGH.",
-        key="seo_gap_high"
-    )
-    else:
-        st.warning(
-        "You are competitive, but review velocity must be maintained.",
-        key="seo_gap_warn"
-    )
-# ===============================
-# EXECUTIVE COMPETITIVE SUMMARY
-# ===============================
-st.subheader(" Executive Competitive Summary")
-if not df.empty:
-    top = df.iloc[0]
-    st.markdown(f"""
-**Market Overview**
-The local restoration market is currently under **{gap['pressure']} competitive pressure**.
-**Key Threat**
-- {top['Name']} leads the market with {top['Reviews']} reviews and rapid growth velocity.
-**Risk Outlook**
-- Continued review acceleration from competitors could reduce inbound lead share.
-- Immediate review acquisition and proximity-focused SEO are recommended.
-**Recommended Actions**
-1. Launch review campaigns immediately
-2. Optimize GMB categories and services
-3. Increase local landing page coverage
-""", unsafe_allow_html=True)
+        for a in alerts:
+            if a.severity == "high":
+                st.error(a.message)
+            else:
+                st.warning(a.message)
+
+    st.divider()
+
+    with st.expander(" Discover Competitors"):
+        lat = st.number_input("Latitude", value=39.9612, key="comp_lat")
+        lon = st.number_input("Longitude", value=-82.9988, key="comp_lon")
+        keyword = st.text_input("Search keyword", "water damage restoration", key="comp_keyword")
+        if st.button("Run Competitor Scan", key="run_comp_scan"):
+            ingest_competitors_openstreetmap(lat, lon, keyword)
+            st.success("Competitor scan completed.")
+
+    s = get_session()
+    try:
+        competitors = s.query(Competitor).all()
+    finally:
+        s.close()
+
+    if not competitors:
+        st.info("No competitors tracked yet.")
+        return
+
+    rows = []
+    hq_lat = st.session_state.get("hq_lat")
+    hq_lon = st.session_state.get("hq_lon")
+    for c in competitors:
+        distance = 10
+        if hq_lat and hq_lon and c.latitude and c.longitude:
+            distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
+        score = calculate_competitor_score(c.rating or 0, c.total_reviews or 0, distance)
+        rows.append(
+            {
+                "Name": c.name,
+                "Rating": c.rating,
+                "Reviews": c.total_reviews,
+                "Category": c.primary_category,
+                "Distance (km)": round(distance, 2),
+                "Strength Score": score,
+                "Velocity (7d)": review_velocity(c.id, 7),
+                "Velocity (30d)": review_velocity(c.id, 30),
+            }
+        )
+
+    df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
+    st.subheader("Top Competitors")
+    st.dataframe(df, use_container_width=True, key="competitor_table")
+
 def save_review_link_for_user(user, review_link):
     if not user or not review_link:
         return
@@ -3282,51 +3095,45 @@ with SessionLocal() as s:
     s.add(settings)
     s.commit()
 def page_google_reviews():
-    st.header("Google Review Requests ")
-st.caption(
-    "Request Google reviews from completed jobs to boost reputation and local SEO."
-)
-# ==============================
-# Phase A – Save GMB Review Link
-# ==============================
-st.subheader(" Google Review Link")
-review_link = st.text_input(
-    "Paste your Google Review link",
-    placeholder="https://g.page/your-business/review"
-)
-if st.button(" Save Review Link"):
-    if not review_link:
-        st.error("Review link is required")
-    else:
-        save_review_link_for_user(get_current_user(), review_link)
-    st.success("Review link saved")
-st.divider()
-# ==============================
-# Phase B – Select Contact
-# ==============================
-st.subheader(" Select Customer")
-contacts = get_completed_job_contacts(get_current_user())
-if not contacts:
-    st.info("No completed job contacts yet.")
-    return
-contact = st.selectbox(
-    "Choose a customer",
-    contacts,
-    format_func=lambda c: f"{c['name']} ({c['email']})"
-)
-st.divider()
-# ==============================
-# Phase C – SEND REQUEST (Option 6 goes here)
-# ==============================
-st.subheader(" Send Review Request")
-if st.button("Send Google Review Request"):
-    send_google_review_request(
-    to_email=contact.email,
-    customer_name=contact.name,
-    review_link=review_link,
-    job_name=getattr(contact, "job_title", "")
+    st.subheader(" Google Reviews")
+    st.caption("Request Google reviews from completed jobs to boost reputation and local SEO.")
+
+    st.subheader(" Google Review Link")
+    review_link = st.text_input(
+        "Paste your Google Review link",
+        placeholder="https://g.page/your-business/review",
     )
-    st.success("Review request sent")
+    if st.button(" Save Review Link"):
+        if not review_link:
+            st.error("Review link is required")
+        else:
+            save_review_link_for_user(get_current_user(), review_link)
+            st.success("Review link saved")
+
+    st.divider()
+    st.subheader(" Select Customer")
+    contacts = get_completed_job_contacts(get_current_user())
+    if not contacts:
+        st.info("No completed job contacts yet.")
+        return
+
+    contact = st.selectbox(
+        "Choose a customer",
+        contacts,
+        format_func=lambda c: f"{c['name']} ({c['email']})",
+    )
+
+    st.divider()
+    st.subheader(" Send Review Request")
+    if st.button("Send Google Review Request"):
+        send_google_review_request(
+            to_email=contact["email"],
+            customer_name=contact["name"],
+            review_link=review_link,
+            job_name=contact.get("job_title", ""),
+        )
+        st.success("Review request sent")
+
 def send_google_review_request(
 to_email: str,
 customer_name: str,
