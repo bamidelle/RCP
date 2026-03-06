@@ -2949,18 +2949,19 @@ def add_time_windows(hist_df):
     """
 Adds rolling time windows (3, 6, 12 months) for seasonal comparison
 """
-if hist_df.empty:
-    return {}
-df = hist_df.copy()
-df["date"] = pd.to_datetime(df["date"])
-df = df.sort_values("date")
-latest_date = df["date"].max()
-windows = {
-    "3_months": df[df["date"] >= latest_date - pd.DateOffset(months=3)],
-    "6_months": df[df["date"] >= latest_date - pd.DateOffset(months=6)],
-    "12_months": df[df["date"] >= latest_date - pd.DateOffset(months=12)],
-}
-return windows
+    if hist_df.empty:
+        return {}
+
+    df = hist_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")
+    latest_date = df["date"].max()
+    windows = {
+        "3_months": df[df["date"] >= latest_date - pd.DateOffset(months=3)],
+        "6_months": df[df["date"] >= latest_date - pd.DateOffset(months=6)],
+        "12_months": df[df["date"] >= latest_date - pd.DateOffset(months=12)],
+    }
+    return windows
 # -------------------------------------------------------------
 # SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
 # -------------------------------------------------------------
