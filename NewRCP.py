@@ -2657,25 +2657,27 @@ with st.form("create_user_form"):
     )
     submitted_create = st.form_submit_button("Create User")
     if submitted_create:
-    # ORG SEAT LIMIT ENFORCEMENT
+        # ORG SEAT LIMIT ENFORCEMENT
         current_user = get_current_user()
-    enforce_org_seat_limit(current_user)
-    if not email:
-        st.error("Email is required")
-        st.stop()
-    if not is_valid_email(email):
-        st.error("Invalid email")
-        st.stop()
-    add_user(
-        email=email.lower(),
-        username=username.strip() if username else email.lower(),
-        full_name=full_name.strip(),
-        role=role,
-        is_active=True,
-        email_verified=True,
-    )
-    st.success("User created successfully")
-    st.rerun()
+        enforce_org_seat_limit(current_user)
+
+        if not email:
+            st.error("Email is required")
+            st.stop()
+        if not is_valid_email(email):
+            st.error("Invalid email")
+            st.stop()
+
+        add_user(
+            email=email.lower(),
+            username=username.strip() if username else email.lower(),
+            full_name=full_name.strip(),
+            role=role,
+            is_active=True,
+            email_verified=True,
+        )
+        st.success("User created successfully")
+        st.rerun()
 # ======================================================
 # USERS TABLE
 # ======================================================
