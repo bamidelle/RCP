@@ -698,11 +698,22 @@ class AIInsight(Base):
 from sqlalchemy import inspect
 inspector = inspect(engine)
 def safe_create_tables():
+    """Best-effort table creation that won't crash startup on partial schema drift."""
+    try:
+        Base.metadata.create_all(bind=engine, checkfirst=True)
+        return
+    except Exception as e:
+        print("safe_create_tables: bulk create_all failed, falling back:", e)
+
     inspector = inspect(engine)
-    existing_tables = inspector.get_table_names()
+    existing_tables = set(inspector.get_table_names())
     for table in Base.metadata.sorted_tables:
-        if table.name not in existing_tables:
-            table.create(bind=engine)
+        if table.name in existing_tables:
+            continue
+        try:
+            table.create(bind=engine, checkfirst=True)
+        except Exception as inner_e:
+            print(f"safe_create_tables: skipped table '{table.name}':", inner_e)
 
 safe_create_tables()
 
