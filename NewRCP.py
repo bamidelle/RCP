@@ -3518,6 +3518,7 @@ def set_auth_session(user_obj):
     st.session_state["authenticated"] = True
     st.session_state["supabase_user_id"] = user_obj.id
     st.session_state["user_email"] = user_obj.email
+    st.session_state["page"] = "command_center"
 
 
 def page_auth():
@@ -3569,7 +3570,9 @@ def page_auth():
                 )
                 if result and result.user:
                     upsert_profile_from_auth(result.user)
+                    set_auth_session(result.user)
                     st.success("Signup successful. Check your email to confirm your account.")
+                    st.rerun()
                 else:
                     st.info("Signup request submitted. Check your email for confirmation.")
             except Exception as e:
@@ -5127,9 +5130,13 @@ pages = [
 ]
 # Ensure page exists
 if "page" not in st.session_state:
-    st.session_state.page = "Command Center"
+    st.session_state.page = "command_center"
 # Build labeled options
 page_labels = [f"{NAV_ICONS.get(p, ' ')} {p}" for p in pages]
+# Normalize router aliases
+if st.session_state.page == "command_center":
+    st.session_state.page = "Command Center"
+
 # Find current index safely
 current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
 selected_label = st.radio(
@@ -5146,7 +5153,7 @@ if selected_page != st.session_state.page:
 # SESSION DEFAULTS (AFTER AUTH)
 # =========================================================
 if "page" not in st.session_state:
-    st.session_state.page = "Command Center"
+    st.session_state.page = "command_center"
 #-----------------Persit AI-----------------------
 if "ai_insights" not in st.session_state:
     st.session_state.ai_insights = []
