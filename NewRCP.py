@@ -760,8 +760,10 @@ def verify_login_token(token: str):
     return login_token.user
 def login_user(user):
     st.session_state["user_id"] = user.id
-st.session_state["user_role"] = user.role
-st.session_state["user_email"] = user.email
+    st.session_state["user_role"] = user.role
+    st.session_state["user_email"] = user.email
+
+
 def logout_user():
     st.session_state.clear()
 from sqlalchemy import inspect, text
