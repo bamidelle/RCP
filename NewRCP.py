@@ -3277,7 +3277,7 @@ if df.empty:
     if st.button(" Capture your first lead", use_container_width=True):
         st.session_state.page = "Lead Capture"
     st.rerun()
-    return
+    st.stop()
 # =========================================================
 # NORMALIZATION
 # =========================================================
