@@ -3168,22 +3168,6 @@ def page_competitor_intelligence():
     st.subheader("Top Competitors")
     st.dataframe(df, use_container_width=True, key="competitor_table")
 
-def save_review_link_for_user(user, review_link):
-    if not user or not review_link:
-        return
-with SessionLocal() as s:
-    existing = s.query(ReviewSettings).filter(
-    ReviewSettings.user_id == user.id
-    ).first()
-    if existing:
-        existing.review_link = review_link
-    else:
-        settings = ReviewSettings(
-        user_id=user.id,
-        review_link=review_link
-    )
-    s.add(settings)
-    s.commit()
 def page_google_reviews():
     st.subheader(" Google Reviews")
     st.caption("Request Google reviews from completed jobs to boost reputation and local SEO.")
@@ -3224,31 +3208,6 @@ def page_google_reviews():
         )
         st.success("Review request sent")
 
-def send_google_review_request(
-to_email: str,
-customer_name: str,
-review_link: str,
-job_name: str = ""
-):
-    subject = "We’d love your Google review "
-job_line = f" regarding your recent {job_name}" if job_name else ""
-body = f"""
-Hi {customer_name},
-Thank you for choosing us{job_line}.
-If you have a moment, we’d truly appreciate a quick Google review.
-Your feedback helps us improve and helps others find our services.
-Leave a review here:
-{review_link}
-Thank you again for your trust.
-Best regards,
-The Team
-"""
-send_email(
-    to_email=to_email,
-    subject=subject,
-    body=body
-)
-# ---------- END SETTINGS AND EMAIL INVITES ----------
 def page_request_review():
     require_role_access("overview")
     st.markdown("## Request Google Review")
@@ -4726,59 +4685,7 @@ def page_technician_mobile():
         persist_location_ping(tech, lat, lon)
         st.success("Location sent")
 
-# ---------- BEGIN BLOCK D: SETTINGS UI - TECHNICIANS MANAGEMENT ----------
-st.markdown("---")
-st.subheader("Technicians (Field Users)")
-tech_df = get_technicians_df(active_only=False)
-with st.form("add_technician_form"):
-    t_uname = st.text_input("Technician username (unique)")
-    t_name = st.text_input("Full name")
-    t_phone = st.text_input("Phone")
-    t_role_sel = st.selectbox("Specialization", ["Tech", "Estimator", "Adjuster", "Driver"],
-index=0)
-    t_active = st.checkbox("Active", value=True)
-    if st.form_submit_button("Add / Update Technician"):
-        if not t_uname:
-            st.error("Technician username required")
-    else:
-        try:
-            add_technician(
-        username=tech_username.strip(),
-        full_name=tech_name.strip(),
-        phone=tech_phone.strip(),
-        specialization=tech_role,
-        active=tech_active
-        )
-        except Exception as e:
-            st.error("Failed to save technician: " + str(e))
-if tech_df is not None and not tech_df.empty:
-    st.dataframe(tech_df)
-else:
-    st.info("No technicians yet.")
-# ---------- END BLOCK D ----------
-st.subheader("Priority weight tuning (internal)")
-wscore = st.slider("Model score weight", 0.0, 1.0, 0.6, 0.05)
-wvalue = st.slider("Estimate value weight", 0.0, 1.0, 0.3, 0.05)
-wsla = st.slider("SLA urgency weight", 0.0, 1.0, 0.1, 0.05)
-baseline = st.number_input("Value baseline (for normalization)", value=5000.0)
-if st.button("Save weights"):
-    st.session_state.weights = {"score_w": wscore, "value_w": wvalue, "sla_w": wsla,
-"value_baseline": baseline}
-    st.success("Weights updated (in session)")
-st.markdown("---")
-st.subheader("Audit Trail")
-s = get_session()
-try:
-    hist = s.query(LeadHistory).order_by(LeadHistory.timestamp.desc()).limit(200).all()
-    if hist:
 
-        pd.DataFrame([{"lead_id":h.lead_id,"changed_by":h.changed_by,"field":h.field,"old":h.old_value,
-"new":h.new_value,"timestamp":h.timestamp} for h in hist])
-    st.dataframe(hist_df)
-
-    st.info("No audit entries yet.")
-finally:
-    s.close()
 #---------------------------Exports page--------------------------------------------
 def page_exports():
     require_role_access("exports")
@@ -5045,19 +4952,15 @@ def page_competitor_intelligence():
 def save_review_link_for_user(user, review_link):
     if not user or not review_link:
         return
-with SessionLocal() as s:
-    existing = s.query(ReviewSettings).filter(
-    ReviewSettings.user_id == user.id
-    ).first()
-    if existing:
-        existing.review_link = review_link
-    else:
-        settings = ReviewSettings(
-        user_id=user.id,
-        review_link=review_link
-    )
-    s.add(settings)
-    s.commit()
+    with SessionLocal() as s:
+        existing = s.query(ReviewSettings).filter(
+            ReviewSettings.user_id == user.id
+        ).first()
+        if existing:
+            existing.review_link = review_link
+        else:
+            s.add(ReviewSettings(user_id=user.id, review_link=review_link))
+        s.commit()
 def page_google_reviews():
     st.subheader(" Google Reviews")
     st.caption("Request Google reviews from completed jobs to boost reputation and local SEO.")
@@ -5117,45 +5020,26 @@ Thank you again for your trust.
 Best regards,
 The Team
 """
-send_email(
-    to_email=to_email,
-    subject=subject,
-    body=body
-)
 # ---------- END SETTINGS AND EMAIL INVITES ----------
 def page_request_review_settings():
     require_role_access("settings")
     st.markdown("## Request Review Settings")
     st.caption("Configure how you collect Google reviews")
     st.markdown("---")
-# Load existing settings so saved link persists
-settings = get_user_settings_safe()
-existing_review_link = settings.get("google_review_url", "")
-review_link = st.text_input(
-    "Google Review Link",
-    value=existing_review_link,
-    placeholder="https://g.page/your-business/review"
-)
-st.markdown(
-    """
-    ℹ
-        This link will be used for:
-    - NFC tap cards
-    - QR codes
-    - Manual review requests
-    """
-)
-if st.button(" Save Review Link"):
     settings = get_user_settings_safe()
-    settings["google_review_url"] = review_link
-    st.success(" Review link saved successfully.")
-st.markdown("---")
-st.markdown("### NFC & QR Review Tools")
-st.info(
-    "NFC tap cards and QR codes will redirect customers "
-    "to your saved Google review link.\n\n"
-    "No paid API required."
-)
+    existing_review_link = settings.get("google_review_url", "")
+    review_link = st.text_input(
+        "Google Review Link",
+        value=existing_review_link,
+        placeholder="https://g.page/your-business/review"
+    )
+    st.markdown("ℹ This link will be used for NFC tap cards, QR codes, and manual review requests.")
+    if st.button("Save Review Link"):
+        settings["google_review_url"] = review_link
+        st.success("Review link saved successfully.")
+    st.markdown("---")
+    st.markdown("### NFC & QR Review Tools")
+    st.info("NFC tap cards and QR codes will redirect customers to your saved Google review link. No paid API required.")
 def page_request_review():
     require_role_access("overview")
     st.markdown("## Request Google Review")
