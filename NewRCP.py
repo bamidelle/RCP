@@ -3531,6 +3531,34 @@ def set_auth_session(user_obj):
     st.session_state["user_email"] = user_obj.email
     st.session_state["page"] = "command_center"
 
+    profile_payload = {
+        "id": user_obj.id,
+        "email": user_obj.email,
+        "full_name": "",
+        "role": "Technician",
+        "company_id": None,
+    }
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("id,email,full_name,role,company_id")
+            .eq("id", user_obj.id)
+            .limit(1)
+            .execute()
+        )
+        if profile_res.data:
+            profile_payload.update(profile_res.data[0])
+    except Exception:
+        pass
+
+    st.session_state["user"] = {
+        "id": profile_payload.get("id") or user_obj.id,
+        "email": profile_payload.get("email") or user_obj.email,
+        "full_name": profile_payload.get("full_name") or "",
+        "role": profile_payload.get("role") or "Technician",
+        "company_id": profile_payload.get("company_id"),
+    }
+
 
 def page_auth():
     st.title("Welcome to ReCapture Pro")
@@ -6620,6 +6648,34 @@ def set_auth_session(user_obj):
     st.session_state["user_email"] = user_obj.email
     st.session_state["page"] = "command_center"
 
+    profile_payload = {
+        "id": user_obj.id,
+        "email": user_obj.email,
+        "full_name": "",
+        "role": "Technician",
+        "company_id": None,
+    }
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("id,email,full_name,role,company_id")
+            .eq("id", user_obj.id)
+            .limit(1)
+            .execute()
+        )
+        if profile_res.data:
+            profile_payload.update(profile_res.data[0])
+    except Exception:
+        pass
+
+    st.session_state["user"] = {
+        "id": profile_payload.get("id") or user_obj.id,
+        "email": profile_payload.get("email") or user_obj.email,
+        "full_name": profile_payload.get("full_name") or "",
+        "role": profile_payload.get("role") or "Technician",
+        "company_id": profile_payload.get("company_id"),
+    }
+
 
 def page_auth():
     st.title("Welcome to ReCapture Pro")
@@ -7256,7 +7312,7 @@ def get_users_df():
 def page_settings():
     require_role_access("settings")
     if st.session_state.get("user") is None:
-        st.session_state.page = "auth"
+        st.session_state["page"] = "auth"
         st.warning("Please log in to access Settings.")
         st.rerun()
 
@@ -7269,7 +7325,7 @@ def page_settings():
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<em>Manage team members, invitations, and role permissions.</em>",
+        "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
         unsafe_allow_html=True,
     )
 
@@ -7279,89 +7335,86 @@ def page_settings():
 
     with tab_team:
         if user_role != "Admin":
-            st.warning("Only Admin users can access Team Members.")
+            st.warning("Only Admin users can access this tab.")
         else:
             response = (
                 supabase.table("profiles")
-                .select("id,full_name,email,role,is_active,last_login_at,company_id")
+                .select("id,full_name,email,role,is_active,company_id")
                 .eq("company_id", company_id)
                 .order("full_name")
                 .execute()
             )
-            team_rows = response.data or []
-            if not team_rows:
+            members = response.data or []
+            if not members:
                 st.info("No team members found for your company.")
             else:
-                header = st.columns([2, 2, 1.4, 1.2, 1.5])
-                header[0].markdown("**Full Name**")
-                header[1].markdown("**Email**")
-                header[2].markdown("**Role**")
-                header[3].markdown("**Status**")
-                header[4].markdown("**Last Login**")
+                headers = st.columns([2, 2, 1.4, 1.2])
+                headers[0].markdown("**Full Name**")
+                headers[1].markdown("**Email**")
+                headers[2].markdown("**Role**")
+                headers[3].markdown("**Status (Active/Inactive)**")
 
-                for member in team_rows:
-                    cols = st.columns([2, 2, 1.4, 1.2, 1.5])
+                role_options = ["Admin", "Manager", "Technician"]
+                for member in members:
+                    cols = st.columns([2, 2, 1.4, 1.2])
                     cols[0].write(member.get("full_name") or "—")
                     cols[1].write(member.get("email") or "—")
+                    current_role = member.get("role") if member.get("role") in role_options else "Technician"
 
-                    role_value = cols[2].selectbox(
+                    new_role = cols[2].selectbox(
                         "Role",
-                        ["Admin", "Manager", "Technician"],
-                        index=["Admin", "Manager", "Technician"].index(
-                            member.get("role") if member.get("role") in ["Admin", "Manager", "Technician"] else "Technician"
-                        ),
-                        key=f"team_role_{member['id']}",
+                        role_options,
+                        index=role_options.index(current_role),
+                        key=f"settings_role_{member['id']}",
                         label_visibility="collapsed",
                     )
-
-                    active_value = cols[3].toggle(
+                    is_active = cols[3].toggle(
                         "Active",
                         value=bool(member.get("is_active", True)),
-                        key=f"team_active_{member['id']}",
+                        key=f"settings_active_{member['id']}",
                         label_visibility="collapsed",
                     )
 
-                    cols[4].write(member.get("last_login_at") or "—")
-
-                    if role_value != (member.get("role") or "Technician"):
-                        supabase.table("profiles").update({"role": role_value}).eq("id", member["id"]).execute()
-                        st.rerun()
-
-                    if active_value != bool(member.get("is_active", True)):
-                        supabase.table("profiles").update({"is_active": active_value}).eq("id", member["id"]).execute()
+                    updates = {}
+                    if new_role != current_role:
+                        updates["role"] = new_role
+                    if is_active != bool(member.get("is_active", True)):
+                        updates["is_active"] = is_active
+                    if updates:
+                        supabase.table("profiles").update(updates).eq("id", member["id"]).execute()
                         st.rerun()
 
     with tab_invite:
         if user_role not in ["Admin", "Manager"]:
-            st.warning("Only Admin and Manager users can access Invite.")
+            st.warning("Only Admin and Manager users can access this tab.")
         else:
             with st.form("settings_invite_form"):
-                invite_email = st.text_input("Email")
+                invite_email = st.text_input("Email (required)")
                 invite_role = st.selectbox("Role", ["Admin", "Manager", "Technician"])
-                send_invite = st.form_submit_button("Send Invite")
+                submit_invite = st.form_submit_button("Send Invite")
 
-            if send_invite:
+            if submit_invite:
                 if not invite_email or not is_valid_email(invite_email):
-                    st.error("A valid email is required.")
+                    st.error("Please enter a valid email address.")
                 else:
-                    invite_token = secrets.token_urlsafe(32)
+                    token = secrets.token_urlsafe(32)
                     expires_at = (datetime.utcnow() + timedelta(hours=48)).isoformat()
                     supabase.table("invitations").insert(
                         {
                             "email": invite_email.strip().lower(),
                             "role": invite_role,
                             "company_id": company_id,
-                            "token": invite_token,
+                            "token": token,
                             "expires_at": expires_at,
                             "used": False,
                         }
                     ).execute()
                     supabase.auth.invite_user_by_email(invite_email.strip().lower())
-                    st.success("Invite sent successfully.")
+                    st.success("Invitation sent.")
                     st.rerun()
 
             st.markdown("### Pending Invites")
-            pending_res = (
+            pending = (
                 supabase.table("invitations")
                 .select("id,email,role,expires_at")
                 .eq("company_id", company_id)
@@ -7369,19 +7422,17 @@ def page_settings():
                 .order("expires_at")
                 .execute()
             )
-            pending_invites = pending_res.data or []
-
-            if not pending_invites:
+            pending_rows = pending.data or []
+            if not pending_rows:
                 st.info("No pending invites.")
             else:
-                for inv in pending_invites:
-                    cols = st.columns([2, 1.2, 1.5, 1])
-                    cols[0].write(inv.get("email"))
-                    cols[1].write(inv.get("role"))
-                    cols[2].write(inv.get("expires_at"))
-                    if cols[3].button("Cancel", key=f"cancel_invite_{inv['id']}"):
-                        supabase.table("invitations").delete().eq("id", inv["id"]).execute()
-                        st.success("Invite cancelled.")
+                for invite in pending_rows:
+                    row = st.columns([2, 1.4, 1.8, 1])
+                    row[0].write(invite.get("email") or "—")
+                    row[1].write(invite.get("role") or "—")
+                    row[2].write(invite.get("expires_at") or "—")
+                    if row[3].button("Cancel", key=f"cancel_inv_{invite['id']}"):
+                        supabase.table("invitations").delete().eq("id", invite["id"]).execute()
                         st.rerun()
 
     with tab_roles:
@@ -7397,89 +7448,88 @@ def page_settings():
             ]
         )
         st.table(permissions_df)
-        st.caption("To request a role change, contact your account Admin.")
 
-st.markdown("---")
-# ======================================================
-# ADMIN — TRIAL REMINDERS
-# ======================================================
-user = get_current_user()
-if user.role == "Admin":
-    st.markdown("### Trial Management")
-    if st.button(" Send Trial Reminder Emails (Admin)"):
-        try:
-            send_trial_expiry_reminders()
-            st.success("Trial reminders sent")
-        except Exception as e:
-            if DEV_MODE:
-                st.warning(f"Trial reminder skipped (dev): {e}")
-        else:
-            raise
-st.markdown("---")
-# ======================================================
-# TECHNICIAN MANAGEMENT
-# ======================================================
-st.markdown("## Technician Management")
-with st.expander(" Add Technician"):
-    tech_username = st.text_input("Username")
-    tech_name = st.text_input("Full Name")
-    tech_phone = st.text_input("Phone Number")
-    tech_role = st.selectbox(
-    "Specialization",
-    ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
-    )
-    tech_active = st.checkbox("Active", True)
-    if st.button("Save Technician"):
-        add_technician(
-        tech_username.strip(),
-        full_name=tech_name.strip(),
-        phone=tech_phone.strip(),
-        specialization=tech_role,
-        active=tech_active,
-    )
-    st.success("Technician saved")
-    st.rerun()
-tech_df = get_technicians_df(active_only=False)
-if not tech_df.empty:
-    for _, row in tech_df.iterrows():
-        cols = st.columns([3, 2, 2])
-    cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
-    new_status = cols[1].selectbox(
-        "Status",
-        ["available", "assigned", "enroute", "onsite", "completed"],
-        index=["available","assigned","enroute","onsite","completed"].index(
-        row.get("status", "available")
-        ),
-        key=f"status_{row['username']}",
-    )
-    if cols[2].button("Update", key=f"upd_{row['username']}"):
-        update_technician_status(row["username"], new_status)
-        st.success("Status updated")
-        st.rerun()
-st.markdown("---")
-# ======================================================
-# CHANGE PASSWORD
-# ======================================================
-st.markdown("## Change Password")
-with st.form("change_password_form"):
-    current_password = st.text_input("Current Password", type="password")
-    new_password = st.text_input("New Password", type="password")
-    confirm_password = st.text_input("Confirm New Password", type="password")
-    if st.form_submit_button("Update Password"):
-        if new_password != confirm_password:
-            st.error("Passwords do not match")
-        st.stop()
+    st.markdown("---")
+    # ======================================================
+    # ADMIN — TRIAL REMINDERS
+    # ======================================================
     user = get_current_user()
-    with SessionLocal() as s:
-        db_user = s.query(User).filter(User.id == user.id).first()
-        if not pwd_context.verify(current_password, db_user.password_hash):
-            st.error("Current password incorrect")
-        st.stop()
-        db_user.password_hash = pwd_context.hash(new_password)
-        s.commit()
-    st.success("Password updated")
-    st.rerun()
-st.markdown("---")
+    if user.role == "Admin":
+        st.markdown("### Trial Management")
+        if st.button(" Send Trial Reminder Emails (Admin)"):
+            try:
+                send_trial_expiry_reminders()
+                st.success("Trial reminders sent")
+            except Exception as e:
+                if DEV_MODE:
+                    st.warning(f"Trial reminder skipped (dev): {e}")
+            else:
+                raise
+    st.markdown("---")
+    # ======================================================
+    # TECHNICIAN MANAGEMENT
+    # ======================================================
+    st.markdown("## Technician Management")
+    with st.expander(" Add Technician"):
+        tech_username = st.text_input("Username")
+        tech_name = st.text_input("Full Name")
+        tech_phone = st.text_input("Phone Number")
+        tech_role = st.selectbox(
+            "Specialization",
+            ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
+        )
+        tech_active = st.checkbox("Active", True)
+        if st.button("Save Technician"):
+            add_technician(
+                tech_username.strip(),
+                full_name=tech_name.strip(),
+                phone=tech_phone.strip(),
+                specialization=tech_role,
+                active=tech_active,
+            )
+            st.success("Technician saved")
+            st.rerun()
+    tech_df = get_technicians_df(active_only=False)
+    if not tech_df.empty:
+        for _, row in tech_df.iterrows():
+            cols = st.columns([3, 2, 2])
+            cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
+            new_status = cols[1].selectbox(
+                "Status",
+                ["available", "assigned", "enroute", "onsite", "completed"],
+                index=["available", "assigned", "enroute", "onsite", "completed"].index(
+                    row.get("status", "available")
+                ),
+                key=f"status_{row['username']}",
+            )
+            if cols[2].button("Update", key=f"upd_{row['username']}"):
+                update_technician_status(row["username"], new_status)
+                st.success("Status updated")
+                st.rerun()
+    st.markdown("---")
+    # ======================================================
+    # CHANGE PASSWORD
+    # ======================================================
+    st.markdown("## Change Password")
+    with st.form("change_password_form"):
+        current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        if st.form_submit_button("Update Password"):
+            if new_password != confirm_password:
+                st.error("Passwords do not match")
+                st.stop()
+            user = get_current_user()
+            with SessionLocal() as s:
+                db_user = s.query(User).filter(User.id == user.id).first()
+                if not pwd_context.verify(current_password, db_user.password_hash):
+                    st.error("Current password incorrect")
+                    st.stop()
+                db_user.password_hash = pwd_context.hash(new_password)
+                s.commit()
+            st.success("Password updated")
+            st.rerun()
+    st.markdown("---")
 def page_technician_mobile():
     st.markdown("## Technician Mobile")
     techs = get_technicians_df(active_only=True)
