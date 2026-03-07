@@ -82,89 +82,6 @@ def is_valid_email(email: str) -> bool:
         return False
     return bool(re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email.strip()))
 
-def generate_review_token():
-    return f"rvw_{uuid.uuid4().hex[:10]}"
-st.markdown("""
-<style>
-/* Page spacing */
-.block-container {
-padding-top: 1.5rem;
-}
-/* KPI cards */
-.kpi-card {
-background: white;
-border-radius: 12px;
-padding: 18px;
-border-left: 5px solid #eee;
-box-shadow: 0 4px 14px rgba(0,0,0,0.04);
-}
-.kpi-title {
-font-size: 0.85rem;
-color: #777;
-}
-.kpi-value {
-font-size: 1.6rem;
-font-weight: 700;
-margin-top: 6px;
-}
-.kpi-sub {
-font-size: 0.75rem;
-color: #999;
-}
-/* Colored borders */
-.kpi-purple { border-left-color: #8b5cf6; }
-.kpi-blue { border-left-color: #3b82f6; }
-.kpi-yellow { border-left-color: #f59e0b; }
-.kpi-green { border-left-color: #22c55e; }
-.kpi-red { border-left-color: #ef4444; }
-/* Attention list */
-.attention-item {
-padding: 14px;
-border-left: 4px solid;
-margin-bottom: 12px;
-background: #fff;
-border-radius: 10px;
-}
-.attention-red { border-color: #ef4444; }
-.attention-yellow { border-color: #f59e0b; }
-.attention-blue { border-color: #3b82f6; }
-.attention-green { border-color: #22c55e; }
-/* Timeline */
-.timeline-item {
-padding: 10px 0;
-border-bottom: 1px solid #eee;
-font-size: 0.9rem;
-}
-/* Section headers */
-.section-title {
-font-weight: 600;
-color: #555;
-margin-bottom: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
-# -----------------------------
-# DEV MODE: Unlock all features
-# -----------------------------
-DEV_MODE = True # Set False in production
-# ----------------------
-# APP CONFIG
-# ----------------------
-FRONTEND_URL = (
-st.secrets.get("FRONTEND_URL")
-if "FRONTEND_URL" in st.secrets
-else "http://localhost:8501"
-)
-STAGE_MAX_DAYS = {
-"New": 1,
-"Contacted": 2,
-"Inspection Scheduled": 3,
-"Inspection": 5,
-"Estimate Sent": 7,
-}
-# ======================
-# BILLING PROVIDER (DEV)
-# ======================
 class DummyBillingProvider:
     def charge(self, user, amount):
         if not user:
@@ -1282,10 +1199,6 @@ def verify_invite_token(token: str) -> User:
         return user
     except jwt.ExpiredSignatureError:
         raise ValueError("Invite expired")
-def hash_password(password: str) -> str:
-    return bcrypt.hash(password)
-def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.verify(password, hashed)
 def generate_reset_token() -> str:
     return secrets.token_urlsafe(32)
 import random
@@ -1658,21 +1571,6 @@ if "_save_location" in st.query_params:
     st.stop()
 
 
-def save_location_ping(username, lat, lon, accuracy=None):
-    s = get_session()
-    try:
-        ping = LocationPing(
-            tech_username=username,
-            latitude=float(lat),
-            longitude=float(lon),
-            accuracy=accuracy,
-            timestamp=pd.Timestamp.utcnow(),
-        )
-        s.add(ping)
-        s.commit()
-    finally:
-        s.close()
-
 def get_technicians_df(active_only=True):
     s = get_session()
     try:
@@ -2044,1700 +1942,11 @@ PLAN_LIMITS = {
 # PAGE ACCESS GUARD
 # ----------------------
 def require_role_access(page_key):
-    user = get_current_user()
-
-
-
-def get_user_settings_safe():
-    """
-Safe wrapper to prevent Request Review page crashes
-"""
-    try:
-        return get_user_settings()
-    except Exception:
-        return {
-            "google_review_url": "",
-            "enable_nfc_review": True,
-            "enable_qr_review": True,
-        }
-
-
-def generate_review_token():
-    """
-Generates a short-lived anonymous review token.
-DB persistence can be added later.
-"""
-    return uuid.uuid4().hex
-
-def log_event(
-*,
-event_type: str,
-user_id: str | None = None,
-org_id: str | None = None,
-entity_type: str | None = None,
-entity_id: str | None = None,
-metadata: dict | None = None,
-severity: str = "info",
-source: str = "app"
-):
-    try:
-        payload = {
-        "id": str(uuid4()),
-        "event_type": event_type,
-        "metadata": json.dumps(metadata or {}),
-        "created_at": pd.Timestamp.utcnow()
-        }
-        if user_id:
-            payload.update({
-        "user_id": user_id,
-        "org_id": org_id,
-        "entity_type": entity_type,
-        "entity_id": entity_id
-        })
-        run_query(
-        """
-        INSERT INTO platform_user_events
-        (id, user_id, org_id, event_type, entity_type, entity_id, metadata, created_at)
-        VALUES (%(id)s, %(user_id)s, %(org_id)s, %(event_type)s, %(entity_type)s,
-        %(entity_id)s, %(metadata)s, %(created_at)s)
-        """,
-        payload
-        )
-
-        payload.update({
-        "severity": severity,
-        "source": source
-        })
-        run_query(
-        """
-        INSERT INTO platform_events
-        (id, event_type, severity, source, metadata, created_at)
-        VALUES (%(id)s, %(event_type)s, %(severity)s, %(source)s, %(metadata)s,
-        %(created_at)s)
-        """,
-        payload
-        )
-    except Exception:
-    # NEVER crash the app because of logging
-        pass
-def analyze_job_types(df):
-    if df.empty:
-        return {}
-
-    grouped = (
-        df.groupby("damage_type")
-        .agg(
-            jobs=("id", "count"),
-            revenue=("estimated_value", "sum"),
-            avg_revenue=("estimated_value", "mean"),
-            revenue_std=("estimated_value", "std"),
-        )
-        .reset_index()
-    )
-
-    total_jobs = grouped["jobs"].sum()
-    total_revenue = grouped["revenue"].sum()
-    grouped["job_share"] = grouped["jobs"] / total_jobs if total_jobs else 0
-    grouped["revenue_share"] = grouped["revenue"] / total_revenue if total_revenue else 0
-    grouped["volatility"] = grouped["revenue_std"].fillna(0)
-
-    insights = []
-    for _, r in grouped.iterrows():
-        if r["job_share"] > 0.45:
-            insights.append(f" Over-dependence on **{r['damage_type']}** jobs")
-        if r["job_share"] > 0.3 and r["avg_revenue"] < grouped["avg_revenue"].mean():
-            insights.append(f" **{r['damage_type']}** jobs are high-volume but low-value")
-        if r["volatility"] > grouped["volatility"].mean() * 1.5:
-            insights.append(f" **{r['damage_type']}** revenue is highly volatile")
-
-    return {
-        "table": grouped.sort_values("revenue", ascending=False),
-        "insights": insights,
-    }
-
-
-def pct_change(current, previous):
-    """
-Safe percentage change calculation.
-Returns 0 if previous is zero or missing.
-"""
-    try:
-        if previous in (0, None):
-            return 0
-        return ((current - previous) / previous) * 100
-    except Exception:
-        return 0
-
-
-def generate_executive_narrative(data):
-    narrative = []
-    risk_flags = []
-    volume = data.get("volume", {})
-    revenue = data.get("revenue", {})
-    efficiency = data.get("efficiency", {})
-
-    narrative.append(
-        {
-            "text": (
-                f"Total jobs: {volume.get('total_jobs', 0)} | "
-                f"Revenue: ${revenue.get('total_revenue', 0):,.0f} | "
-                f"Revenue/job: ${efficiency.get('revenue_per_job', 0):,.0f}"
-            ),
-            "confidence": 85,
-        }
-    )
-
-    health_score = 82
-    return {
-        "lines": narrative,
-        "risk_flags": risk_flags,
-        "health_score": health_score,
-        "version": "G-hardened-v1",
-    }
-
-def page_business_intelligence():
-    require_role_access("business_intelligence")
-
-    st.markdown("## Business Intelligence")
-
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        range_key = st.selectbox(
-            "Time Range",
-            ["daily", "weekly", "30d", "90d", "6m", "12m", "custom"],
-            index=2,
-        )
-    with col2:
-        custom_start, custom_end = None, None
-        if range_key == "custom":
-            custom_start = st.date_input("Start date")
-            custom_end = st.date_input("End date")
-
-    data = compute_business_intelligence(range_key, custom_start, custom_end)
-    df = data.get("raw_df")
-    if df is None or df.empty:
-        st.warning("No jobs found for this period.")
-        return
-
-    health = data.get("health")
-    if health:
-        st.metric("Overall Business Health", f"{health.get('score', 0)} / 100")
-
-    v = data.get("volume", {})
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Jobs", v.get("total_jobs", 0))
-    c2.metric("Jobs / Day", v.get("jobs_per_day", 0))
-    c3.metric("Lead Sources", len(v.get("lead_sources", {})))
-
-    r = data.get("revenue", {})
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Revenue", f"${r.get('total_revenue', 0):,.0f}")
-    c2.metric("Avg / Job", f"${r.get('avg_revenue_per_job', 0):,.0f}")
-    c3.metric("Revenue Risk", f"{int(r.get('revenue_concentration', 0) * 100)}% Top Dependency")
-
-def page_technician_map_tracking():
-    st.markdown("## Technician Live Map")
-    df = get_latest_location_pings()
-    if df.empty:
-        st.warning("No technician GPS data available.")
-        return
-
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-
-    def classify_status(ts):
-        if pd.isna(ts):
-            return "offline"
-        mins = (pd.Timestamp.utcnow() - ts).total_seconds() / 60
-        if mins <= 10:
-            return "active"
-        if mins <= 30:
-            return "idle"
-        return "offline"
-
-    df["status"] = df["timestamp"].apply(classify_status)
-    status_color = {"active": "green", "idle": "orange", "offline": "red"}
-
-    center_lat = df["latitude"].mean()
-    center_lon = df["longitude"].mean()
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=11, tiles="OpenStreetMap")
-
-    for _, r in df.iterrows():
-        folium.CircleMarker(
-            location=[r["latitude"], r["longitude"]],
-            radius=8,
-            color=status_color.get(r["status"], "gray"),
-            fill=True,
-            fill_opacity=0.85,
-            popup=f"{r.get('tech_username', 'tech')} ({r['status']})",
-        ).add_to(m)
-
-    st_folium(m, width=900, height=500)
-
-
-def page_technician_mobile():
-    st.markdown("## Technician Mobile")
-    st.info("Use the mobile endpoint to push technician GPS pings.")
-
-def page_cpa_roi():
-    require_role_access("analytics")
-    st.markdown("<div class='header'> CPA & ROI</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Total Marketing Spend vs Conversions and ROI calculations.</em>",
-        unsafe_allow_html=True,
-    )
-
-    df = leads_to_df()
-    if df.empty:
-        st.info("No leads")
-        return
-
-    total_spend = float(df.get("ad_cost", 0).sum())
-    won_df = df[df["stage"] == "Won"] if "stage" in df.columns else pd.DataFrame()
-    conversions = len(won_df)
-    cpa = (total_spend / conversions) if conversions else 0.0
-    revenue = float(won_df.get("estimated_value", 0).sum()) if not won_df.empty else 0.0
-    roi = revenue - total_spend
-    roi_pct = (roi / total_spend * 100) if total_spend else 0.0
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Marketing Spend", f"${total_spend:,.2f}")
-    c2.metric("Conversions (Won)", f"{conversions}")
-    c3.metric("CPA", f"${cpa:,.2f}")
-    c4.metric("ROI", f"${roi:,.2f} ({roi_pct:.1f}%)")
-
-
-def page_ml_internal():
-    st.markdown("<div class='header'> Internal ML — Lead Scoring</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Model runs internally and writes score back to leads. No user tuning exposed.</em>",
-        unsafe_allow_html=True,
-    )
-
-    if st.button("Train model (internal)"):
-        with st.spinner("Training..."):
-            try:
-                acc, msg = train_internal_model()
-                if acc is None:
-                    st.error(f"Training aborted: {msg}")
-                else:
-                    st.success(f"Model trained (accuracy approx): {acc:.3f}")
-            except Exception as e:
-                st.error("Training failed: " + str(e))
-
-def page_ai_recommendations():
-    require_role_access("business_intelligence")
-    st.markdown("<div class='header'> AI Recommendations</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Heuristic recommendations and quick diagnostics for the pipeline.</em>",
-        unsafe_allow_html=True,
-    )
-
-    try:
-        df = leads_to_df()
-    except Exception as e:
-        st.error(f"Failed to load leads: {e}")
-        df = pd.DataFrame()
-
-    if df.empty:
-        st.info("No leads to analyze.")
-        return
-
-    st.subheader("Top Overdue Leads")
-    overdue_list = []
-    for _, r in df.iterrows():
-        rem_s, overdue_flag = calculate_remaining_sla(
-            r.get("sla_entered_at") or r.get("created_at"),
-            r.get("sla_hours"),
-        )
-        if overdue_flag and r.get("stage") not in ("Won", "Lost"):
-            overdue_list.append(
-                {
-                    "lead_id": r.get("lead_id"),
-                    "stage": r.get("stage"),
-                    "assigned_to": r.get("assigned_to"),
-                    "value": r.get("estimated_value") or 0.0,
-                    "overdue_seconds": rem_s,
-                }
-            )
-
-    over_df = pd.DataFrame(overdue_list)
-    if not over_df.empty:
-        over_df = over_df.sort_values("value", ascending=False)
-        st.table(over_df[["lead_id", "stage", "assigned_to", "value"]].head(10))
-    else:
-        st.info("No overdue leads.")
-
-pwd_context = CryptContext(
-schemes=["bcrypt"],
-deprecated="auto"
-)
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-# ----------------------
-# WORDPRESS AUTH
-# ----------------------
-def reset_password_with_token(token: str, new_password: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-    User.reset_token == token,
-    User.reset_expires_at > pd.Timestamp.utcnow()
-    ).first()
-    if not user:
-        raise Exception("Invalid or expired reset token")
-    user.password_hash = hash_password(new_password)
-    user.reset_token = None
-    user.reset_expires_at = None
-    user.email_verified = True
-    s.commit()
-def request_password_reset(email: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email.lower()).first()
-    if not user:
-        return # Silent fail for security
-    token = generate_password_reset_token()
-    user.password_reset_token = token
-    user.password_reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-    s.commit()
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(user.email, reset_link)
-def send_password_reset_email(email: str, reset_link: str):
-# TEMP: console output for testing
-    print("PASSWORD RESET LINK:", reset_link)
-# Later you can wire:
-# SendGrid / Mailgun / SMTP / SES
-#--------------------OPTIONAL PAGE RESET FOR STREAMLIT---------------
-def page_reset_password():
-    st.markdown("## Reset Your Password")
-
-    token = st.query_params.get("token")
-    if not token:
-        st.error("Missing reset token")
+    """Check auth via session state - works for both SQLite and Supabase users."""
+    if not st.session_state.get("authenticated"):
+        st.warning("Please log in to access this page.")
         st.stop()
 
-    pw1 = st.text_input("New Password", type="password")
-    pw2 = st.text_input("Confirm Password", type="password")
-
-    if st.button("Reset Password"):
-        if not pw1 or len(pw1) < 8:
-            st.error("Password must be at least 8 characters")
-            st.stop()
-        if pw1 != pw2:
-            st.error("Passwords do not match")
-            st.stop()
-
-        try:
-            reset_password_with_token(token, pw1)
-            st.success("Password reset successful. You may now log in.")
-            st.stop()
-        except Exception as e:
-            st.error(str(e))
-def record_invoice(user, amount, description):
-    with SessionLocal() as s:
-        invoice = Invoice(
-    user_id=user.id,
-    amount=amount,
-    status="paid",
-    description=description,
-    )
-    s.add(invoice)
-    s.commit()
-def authenticate_user(email: str, password: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-    User.email == email.lower(),
-    User.is_active == True
-    ).first()
-    if not user:
-        return None
-    if not user.password_hash:
-        return None
-    # ---- Check if account is locked ----
-    if user.locked_until and user.locked_until > pd.Timestamp.utcnow():
-        raise Exception("Account locked. Try again later.")
-    # ---- Verify password ----
-    if not verify_password(password, user.password_hash):
-        user.failed_login_attempts += 1
-    if user.failed_login_attempts >= 5:
-        user.locked_until = pd.Timestamp.utcnow() + timedelta(minutes=30)
-    s.commit()
-    raise Exception("Invalid credentials")
-    # ---- SUCCESS: reset failed attempts ----
-    user.failed_login_attempts = 0
-    user.locked_until = None
-    user.last_login_at = pd.Timestamp.utcnow()
-    # Generate OTP for Admins or first-time login
-    otp = generate_otp()
-    user.otp_code = otp
-    user.otp_expires_at = pd.Timestamp.utcnow() + timedelta(minutes=5)
-    user.otp_required = True
-    send_otp_email(user.email, otp)
-    s.commit()
-    # Mark user as pending OTP
-    st.session_state["otp_user_id"] = user.id
-    return "OTP_REQUIRED"
-def request_password_reset(email: str):
-    token = generate_reset_token()
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email).first()
-        if not user:
-            return  # silent fail (security)
-
-        user.reset_token = token
-        user.reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-        s.commit()
-
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(email, reset_link)
-
-
-def admin_upgrade_user(user_id: int, plan: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.id == user_id).first()
-        if not user:
-            return False
-
-        reactivate_user_account(user, plan)
-        s.commit()
-        return True
-
-# -------------------------
-# Settings Page
-# -------------------------
-def get_users_df():
-    with SessionLocal() as s:
-        rows = s.query(User).order_by(User.created_at.desc()).all()
-
-    data = [
-        {
-            "id": u.id,
-            "email": u.email,
-            "username": u.username,
-            "full_name": u.full_name,
-            "role": u.role,
-            "plan": u.plan,
-            "is_active": bool(u.is_active),
-            "email_verified": bool(u.email_verified),
-            "created_at": u.created_at,
-        }
-        for u in rows
-    ]
-    return pd.DataFrame(data)
-
-
-def get_user_settings_safe():
-    """
-Safe wrapper to prevent Request Review page crashes
-"""
-    try:
-        return get_user_settings()
-    except Exception:
-        return {
-            "google_review_url": "",
-            "enable_nfc_review": True,
-            "enable_qr_review": True,
-        }
-
-
-def generate_review_token():
-    """
-Generates a short-lived anonymous review token.
-DB persistence can be added later.
-"""
-    return uuid.uuid4().hex
-
-def log_event(
-*,
-event_type: str,
-user_id: str | None = None,
-org_id: str | None = None,
-entity_type: str | None = None,
-entity_id: str | None = None,
-metadata: dict | None = None,
-severity: str = "info",
-source: str = "app"
-):
-    try:
-        payload = {
-        "id": str(uuid4()),
-        "event_type": event_type,
-        "metadata": json.dumps(metadata or {}),
-        "created_at": pd.Timestamp.utcnow()
-        }
-        if user_id:
-            payload.update({
-        "user_id": user_id,
-        "org_id": org_id,
-        "entity_type": entity_type,
-        "entity_id": entity_id
-        })
-        run_query(
-        """
-        INSERT INTO platform_user_events
-        (id, user_id, org_id, event_type, entity_type, entity_id, metadata, created_at)
-        VALUES (%(id)s, %(user_id)s, %(org_id)s, %(event_type)s, %(entity_type)s,
-        %(entity_id)s, %(metadata)s, %(created_at)s)
-        """,
-        payload
-        )
-
-        payload.update({
-        "severity": severity,
-        "source": source
-        })
-        run_query(
-        """
-        INSERT INTO platform_events
-        (id, event_type, severity, source, metadata, created_at)
-        VALUES (%(id)s, %(event_type)s, %(severity)s, %(source)s, %(metadata)s,
-        %(created_at)s)
-        """,
-        payload
-        )
-    except Exception:
-    # NEVER crash the app because of logging
-        pass
-def analyze_job_types(df):
-    if df.empty:
-        return {}
-
-    grouped = (
-        df.groupby("damage_type")
-        .agg(
-            jobs=("id", "count"),
-            revenue=("estimated_value", "sum"),
-            avg_revenue=("estimated_value", "mean"),
-            revenue_std=("estimated_value", "std"),
-        )
-        .reset_index()
-    )
-
-    total_jobs = grouped["jobs"].sum()
-    total_revenue = grouped["revenue"].sum()
-    grouped["job_share"] = grouped["jobs"] / total_jobs if total_jobs else 0
-    grouped["revenue_share"] = grouped["revenue"] / total_revenue if total_revenue else 0
-    grouped["volatility"] = grouped["revenue_std"].fillna(0)
-
-    insights = []
-    for _, r in grouped.iterrows():
-        if r["job_share"] > 0.45:
-            insights.append(f" Over-dependence on **{r['damage_type']}** jobs")
-        if r["job_share"] > 0.3 and r["avg_revenue"] < grouped["avg_revenue"].mean():
-            insights.append(f" **{r['damage_type']}** jobs are high-volume but low-value")
-        if r["volatility"] > grouped["volatility"].mean() * 1.5:
-            insights.append(f" **{r['damage_type']}** revenue is highly volatile")
-
-    return {
-        "table": grouped.sort_values("revenue", ascending=False),
-        "insights": insights,
-    }
-
-
-def pct_change(current, previous):
-    """
-Safe percentage change calculation.
-Returns 0 if previous is zero or missing.
-"""
-    try:
-        if previous in (0, None):
-            return 0
-        return ((current - previous) / previous) * 100
-    except Exception:
-        return 0
-
-
-def generate_executive_narrative(data):
-    narrative = []
-    risk_flags = []
-    volume = data.get("volume", {})
-    revenue = data.get("revenue", {})
-    efficiency = data.get("efficiency", {})
-
-    narrative.append(
-        {
-            "text": (
-                f"Total jobs: {volume.get('total_jobs', 0)} | "
-                f"Revenue: ${revenue.get('total_revenue', 0):,.0f} | "
-                f"Revenue/job: ${efficiency.get('revenue_per_job', 0):,.0f}"
-            ),
-            "confidence": 85,
-        }
-    )
-
-    health_score = 82
-    return {
-        "lines": narrative,
-        "risk_flags": risk_flags,
-        "health_score": health_score,
-        "version": "G-hardened-v1",
-    }
-
-def page_business_intelligence():
-    require_role_access("business_intelligence")
-
-    st.markdown("## Business Intelligence")
-
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        range_key = st.selectbox(
-            "Time Range",
-            ["daily", "weekly", "30d", "90d", "6m", "12m", "custom"],
-            index=2,
-        )
-    with col2:
-        custom_start, custom_end = None, None
-        if range_key == "custom":
-            custom_start = st.date_input("Start date")
-            custom_end = st.date_input("End date")
-
-    data = compute_business_intelligence(range_key, custom_start, custom_end)
-    df = data.get("raw_df")
-    if df is None or df.empty:
-        st.warning("No jobs found for this period.")
-        return
-
-    health = data.get("health")
-    if health:
-        st.metric("Overall Business Health", f"{health.get('score', 0)} / 100")
-
-    v = data.get("volume", {})
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Jobs", v.get("total_jobs", 0))
-    c2.metric("Jobs / Day", v.get("jobs_per_day", 0))
-    c3.metric("Lead Sources", len(v.get("lead_sources", {})))
-
-    r = data.get("revenue", {})
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Revenue", f"${r.get('total_revenue', 0):,.0f}")
-    c2.metric("Avg / Job", f"${r.get('avg_revenue_per_job', 0):,.0f}")
-    c3.metric("Revenue Risk", f"{int(r.get('revenue_concentration', 0) * 100)}% Top Dependency")
-
-def page_technician_map_tracking():
-    st.markdown("## Technician Live Map")
-    df = get_latest_location_pings()
-    if df.empty:
-        st.warning("No technician GPS data available.")
-        return
-
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-
-    def classify_status(ts):
-        if pd.isna(ts):
-            return "offline"
-        mins = (pd.Timestamp.utcnow() - ts).total_seconds() / 60
-        if mins <= 10:
-            return "active"
-        if mins <= 30:
-            return "idle"
-        return "offline"
-
-    df["status"] = df["timestamp"].apply(classify_status)
-    status_color = {"active": "green", "idle": "orange", "offline": "red"}
-
-    center_lat = df["latitude"].mean()
-    center_lon = df["longitude"].mean()
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=11, tiles="OpenStreetMap")
-
-    for _, r in df.iterrows():
-        folium.CircleMarker(
-            location=[r["latitude"], r["longitude"]],
-            radius=8,
-            color=status_color.get(r["status"], "gray"),
-            fill=True,
-            fill_opacity=0.85,
-            popup=f"{r.get('tech_username', 'tech')} ({r['status']})",
-        ).add_to(m)
-
-    st_folium(m, width=900, height=500)
-
-
-def page_technician_mobile():
-    st.markdown("## Technician Mobile")
-    st.info("Use the mobile endpoint to push technician GPS pings.")
-
-def page_cpa_roi():
-    require_role_access("analytics")
-    st.markdown("<div class='header'> CPA & ROI</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Total Marketing Spend vs Conversions and ROI calculations.</em>",
-        unsafe_allow_html=True,
-    )
-
-    df = leads_to_df()
-    if df.empty:
-        st.info("No leads")
-        return
-
-    total_spend = float(df.get("ad_cost", 0).sum())
-    won_df = df[df["stage"] == "Won"] if "stage" in df.columns else pd.DataFrame()
-    conversions = len(won_df)
-    cpa = (total_spend / conversions) if conversions else 0.0
-    revenue = float(won_df.get("estimated_value", 0).sum()) if not won_df.empty else 0.0
-    roi = revenue - total_spend
-    roi_pct = (roi / total_spend * 100) if total_spend else 0.0
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Marketing Spend", f"${total_spend:,.2f}")
-    c2.metric("Conversions (Won)", f"{conversions}")
-    c3.metric("CPA", f"${cpa:,.2f}")
-    c4.metric("ROI", f"${roi:,.2f} ({roi_pct:.1f}%)")
-
-
-def page_ml_internal():
-    st.markdown("<div class='header'> Internal ML — Lead Scoring</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Model runs internally and writes score back to leads. No user tuning exposed.</em>",
-        unsafe_allow_html=True,
-    )
-
-    if st.button("Train model (internal)"):
-        with st.spinner("Training..."):
-            try:
-                acc, msg = train_internal_model()
-                if acc is None:
-                    st.error(f"Training aborted: {msg}")
-                else:
-                    st.success(f"Model trained (accuracy approx): {acc:.3f}")
-            except Exception as e:
-                st.error("Training failed: " + str(e))
-
-def page_ai_recommendations():
-    require_role_access("business_intelligence")
-    st.markdown("<div class='header'> AI Recommendations</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Heuristic recommendations and quick diagnostics for the pipeline.</em>",
-        unsafe_allow_html=True,
-    )
-
-    try:
-        df = leads_to_df()
-    except Exception as e:
-        st.error(f"Failed to load leads: {e}")
-        df = pd.DataFrame()
-
-    if df.empty:
-        st.info("No leads to analyze.")
-        return
-
-    st.subheader("Top Overdue Leads")
-    overdue_list = []
-    for _, r in df.iterrows():
-        rem_s, overdue_flag = calculate_remaining_sla(
-            r.get("sla_entered_at") or r.get("created_at"),
-            r.get("sla_hours"),
-        )
-        if overdue_flag and r.get("stage") not in ("Won", "Lost"):
-            overdue_list.append(
-                {
-                    "lead_id": r.get("lead_id"),
-                    "stage": r.get("stage"),
-                    "assigned_to": r.get("assigned_to"),
-                    "value": r.get("estimated_value") or 0.0,
-                    "overdue_seconds": rem_s,
-                }
-            )
-
-    over_df = pd.DataFrame(overdue_list)
-    if not over_df.empty:
-        over_df = over_df.sort_values("value", ascending=False)
-        st.table(over_df[["lead_id", "stage", "assigned_to", "value"]].head(10))
-    else:
-        st.info("No overdue leads.")
-
-pwd_context = CryptContext(
-schemes=["bcrypt"],
-deprecated="auto"
-)
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-# ----------------------
-# WORDPRESS AUTH
-# ----------------------
-def reset_password_with_token(token: str, new_password: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-    User.reset_token == token,
-    User.reset_expires_at > pd.Timestamp.utcnow()
-    ).first()
-    if not user:
-        raise Exception("Invalid or expired reset token")
-    user.password_hash = hash_password(new_password)
-    user.reset_token = None
-    user.reset_expires_at = None
-    user.email_verified = True
-    s.commit()
-def request_password_reset(email: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email.lower()).first()
-    if not user:
-        return # Silent fail for security
-    token = generate_password_reset_token()
-    user.password_reset_token = token
-    user.password_reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-    s.commit()
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(user.email, reset_link)
-def send_password_reset_email(email: str, reset_link: str):
-# TEMP: console output for testing
-    print("PASSWORD RESET LINK:", reset_link)
-# Later you can wire:
-# SendGrid / Mailgun / SMTP / SES
-#--------------------OPTIONAL PAGE RESET FOR STREAMLIT---------------
-def page_reset_password():
-    st.markdown("## Reset Your Password")
-
-    token = st.query_params.get("token")
-    if not token:
-        st.error("Missing reset token")
-        st.stop()
-
-    pw1 = st.text_input("New Password", type="password")
-    pw2 = st.text_input("Confirm Password", type="password")
-
-    if st.button("Reset Password"):
-        if not pw1 or len(pw1) < 8:
-            st.error("Password must be at least 8 characters")
-            st.stop()
-        if pw1 != pw2:
-            st.error("Passwords do not match")
-            st.stop()
-
-        try:
-            reset_password_with_token(token, pw1)
-            st.success("Password reset successful. You may now log in.")
-            st.stop()
-        except Exception as e:
-            st.error(str(e))
-def record_invoice(user, amount, description):
-    with SessionLocal() as s:
-        invoice = Invoice(
-    user_id=user.id,
-    amount=amount,
-    status="paid",
-    description=description,
-    )
-    s.add(invoice)
-    s.commit()
-def authenticate_user(email: str, password: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-    User.email == email.lower(),
-    User.is_active == True
-    ).first()
-    if not user:
-        return None
-    if not user.password_hash:
-        return None
-    # ---- Check if account is locked ----
-    if user.locked_until and user.locked_until > pd.Timestamp.utcnow():
-        raise Exception("Account locked. Try again later.")
-    # ---- Verify password ----
-    if not verify_password(password, user.password_hash):
-        user.failed_login_attempts += 1
-    if user.failed_login_attempts >= 5:
-        user.locked_until = pd.Timestamp.utcnow() + timedelta(minutes=30)
-    s.commit()
-    raise Exception("Invalid credentials")
-    # ---- SUCCESS: reset failed attempts ----
-    user.failed_login_attempts = 0
-    user.locked_until = None
-    user.last_login_at = pd.Timestamp.utcnow()
-    # Generate OTP for Admins or first-time login
-    otp = generate_otp()
-    user.otp_code = otp
-    user.otp_expires_at = pd.Timestamp.utcnow() + timedelta(minutes=5)
-    user.otp_required = True
-    send_otp_email(user.email, otp)
-    s.commit()
-    # Mark user as pending OTP
-    st.session_state["otp_user_id"] = user.id
-    return "OTP_REQUIRED"
-def request_password_reset(email: str):
-    token = generate_reset_token()
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email).first()
-        if not user:
-            return  # silent fail (security)
-
-        user.reset_token = token
-        user.reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-        s.commit()
-
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(email, reset_link)
-
-
-def admin_upgrade_user(user_id: int, plan: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.id == user_id).first()
-        if not user:
-            return False
-
-        reactivate_user_account(user, plan)
-        s.commit()
-        return True
-
-# -------------------------
-# Settings Page
-# -------------------------
-def get_users_df():
-    with SessionLocal() as s:
-        rows = s.query(User).order_by(User.created_at.desc()).all()
-
-    data = [
-        {
-            "id": u.id,
-            "email": u.email,
-            "username": u.username,
-            "full_name": u.full_name,
-            "role": u.role,
-            "plan": u.plan,
-            "is_active": bool(u.is_active),
-            "email_verified": bool(u.email_verified),
-            "created_at": u.created_at,
-        }
-        for u in rows
-    ]
-    return pd.DataFrame(data)
-
-
-def page_technician_mobile():
-    st.markdown("## Technician Mobile")
-    techs = get_technicians_df(active_only=True)
-    if techs.empty:
-        st.warning("No active technicians found.")
-        return
-
-    tech = st.selectbox("Select Technician", techs["username"].tolist())
-    st.markdown("### My Tasks")
-    tasks = get_tasks_for_user(tech)
-    if tasks.empty:
-        st.info(
-            "No task assigned to a Technician yet! To assign job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT"
-        )
-    else:
-        for _, t in tasks.iterrows():
-            st.checkbox(
-                f"{t['title']} (Lead: {t['lead_id']})",
-                value=(t["status"] == "done"),
-                key=f"task_{t['id']}",
-            )
-
-    st.markdown("### Send Location Ping")
-    lat = st.number_input("Latitude", format="%.6f")
-    lon = st.number_input("Longitude", format="%.6f")
-    if st.button("Send Location Ping"):
-        persist_location_ping(tech, lat, lon)
-        st.success("Location sent")
-
-# (loose technician block removed - managed inside page_settings)
-#---------------------------Exports page--------------------------------------------
-def add_time_windows(hist_df):
-    """
-Adds rolling time windows (3, 6, 12 months) for seasonal comparison
-"""
-    if hist_df.empty:
-        return {}
-
-    df = hist_df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
-    latest_date = df["date"].max()
-    windows = {
-        "3_months": df[df["date"] >= latest_date - pd.DateOffset(months=3)],
-        "6_months": df[df["date"] >= latest_date - pd.DateOffset(months=6)],
-        "12_months": df[df["date"] >= latest_date - pd.DateOffset(months=12)],
-    }
-    return windows
-# -------------------------------------------------------------
-# SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
-# -------------------------------------------------------------
-def page_seasonal_trends():
-    require_role_access("business_intelligence")
-
-    st.markdown("## Seasonal Trends & Weather-Based Damage Insights")
-    st.caption("Location-based risk forecasting with business impact intelligence")
-    st.divider()
-
-    countries = get_all_countries()
-    country = st.selectbox("Country", [c["name"] for c in countries])
-    country_code = next(c["code"] for c in countries if c["name"] == country)
-
-    city_query = st.text_input("City", placeholder="Type at least 3 letters")
-    if len(city_query) < 3:
-        st.info("Start typing a city name (3+ characters)")
-        return
-
-    matches = search_cities(country_code, city_query)
-    if not matches:
-        st.warning("No cities found")
-        return
-
-    labels = [f"{m['name']}, {m.get('admin1', '')}" for m in matches]
-    selected = st.selectbox("Select City", labels)
-    chosen = matches[labels.index(selected)]
-
-    hist_range = st.selectbox("Historical Window", ["3 months", "6 months", "12 months"], index=1)
-    months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-
-    if not st.button("Generate Insights", use_container_width=True):
-        return
-
-    with st.spinner("Generating insights..."):
-        hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
-
-    if hist_df is None or hist_df.empty:
-        st.error("No historical data available")
-        return
-
-    hist_df = hist_df.copy()
-    hist_df["date"] = pd.to_datetime(hist_df["date"], errors="coerce")
-    hist_df = hist_df.dropna(subset=["date"]).sort_values("date")
-
-    st.line_chart(hist_df.set_index("date")[["rainfall_mm", "temperature_c"]])
-
-def page_competitor_intelligence():
-    st.title(" Competitor Intelligence")
-
-    st.subheader(" Competitive Alerts")
-    s = get_session()
-    try:
-        alerts = (
-            s.query(CompetitorAlert)
-            .order_by(CompetitorAlert.created_at.desc())
-            .limit(5)
-            .all()
-        )
-    finally:
-        s.close()
-
-    if not alerts:
-        st.success("No competitive threats detected.")
-    else:
-        for a in alerts:
-            if a.severity == "high":
-                st.error(a.message)
-            else:
-                st.warning(a.message)
-
-    st.divider()
-
-    with st.expander(" Discover Competitors"):
-        lat = st.number_input("Latitude", value=39.9612, key="comp_lat")
-        lon = st.number_input("Longitude", value=-82.9988, key="comp_lon")
-        keyword = st.text_input("Search keyword", "water damage restoration", key="comp_keyword")
-        if st.button("Run Competitor Scan", key="run_comp_scan"):
-            ingest_competitors_openstreetmap(lat, lon, keyword)
-            st.success("Competitor scan completed.")
-
-    s = get_session()
-    try:
-        competitors = s.query(Competitor).all()
-    finally:
-        s.close()
-
-    if not competitors:
-        st.info("No competitors tracked yet.")
-        return
-
-    rows = []
-    hq_lat = st.session_state.get("hq_lat")
-    hq_lon = st.session_state.get("hq_lon")
-    for c in competitors:
-        distance = 10
-        if hq_lat and hq_lon and c.latitude and c.longitude:
-            distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
-        score = calculate_competitor_score(c.rating or 0, c.total_reviews or 0, distance)
-        rows.append(
-            {
-                "Name": c.name,
-                "Rating": c.rating,
-                "Reviews": c.total_reviews,
-                "Category": c.primary_category,
-                "Distance (km)": round(distance, 2),
-                "Strength Score": score,
-                "Velocity (7d)": review_velocity(c.id, 7),
-                "Velocity (30d)": review_velocity(c.id, 30),
-            }
-        )
-
-    df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
-    st.subheader("Top Competitors")
-    st.dataframe(df, use_container_width=True, key="competitor_table")
-
-def page_google_reviews():
-    st.subheader(" Google Reviews")
-    st.caption("Request Google reviews from completed jobs to boost reputation and local SEO.")
-
-    st.subheader(" Google Review Link")
-    review_link = st.text_input(
-        "Paste your Google Review link",
-        placeholder="https://g.page/your-business/review",
-    )
-    if st.button(" Save Review Link"):
-        if not review_link:
-            st.error("Review link is required")
-        else:
-            save_review_link_for_user(get_current_user(), review_link)
-            st.success("Review link saved")
-
-    st.divider()
-    st.subheader(" Select Customer")
-    contacts = get_completed_job_contacts(get_current_user())
-    if not contacts:
-        st.info("No completed job contacts yet.")
-        return
-
-    contact = st.selectbox(
-        "Choose a customer",
-        contacts,
-        format_func=lambda c: f"{c['name']} ({c['email']})",
-    )
-
-    st.divider()
-    st.subheader(" Send Review Request")
-    if st.button("Send Google Review Request"):
-        send_google_review_request(
-            to_email=contact["email"],
-            customer_name=contact["name"],
-            review_link=review_link,
-            job_name=contact.get("job_title", ""),
-        )
-        st.success("Review request sent")
-
-def page_request_review():
-    require_role_access("overview")
-    st.markdown("## Request Google Review")
-    st.caption("Instant on-site review request via Tap or QR")
-
-    settings = get_user_settings_safe()
-    review_url = settings.get("google_review_url")
-    if not review_url:
-        st.warning("Google Review link not set. Add it in Settings.")
-        return
-
-    lead_id = st.session_state.get("active_lead_id")
-    token = generate_review_token()
-    base_url = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
-    review_request_url = f"{base_url}/?page=review_redirect&token={token}"
-
-    try:
-        log_event(
-            event_type="review_requested",
-            entity_type="lead" if lead_id else "session",
-            entity_id=lead_id,
-            metadata={"method": "manual"},
-        )
-    except Exception:
-        pass
-
-    st.write("Share this review link with your customer:")
-    st.code(review_request_url)
-
-def page_review_redirect():
-    token = st.query_params.get("token")
-    settings = get_user_settings_safe()
-    review_url = settings.get("google_review_url")
-    if not review_url:
-        st.error("Review link not configured.")
-        return
-
-    try:
-        log_event(
-            event_type="review_tap",
-            entity_type="review",
-            entity_id=token,
-            metadata={"source": "nfc_or_qr"},
-        )
-    except Exception:
-        pass
-
-    st.markdown("Redirecting to review page…")
-    st.markdown(
-        f"<meta http-equiv='refresh' content='1;url={review_url}'>",
-        unsafe_allow_html=True,
-    )
-
-#-----------------------START OF COMMAND CENTER---------------------
-def get_user_settings_safe():
-    """
-Safe wrapper to prevent Request Review page crashes
-"""
-    try:
-        return get_user_settings()
-    except Exception:
-        return {
-            "google_review_url": "",
-            "enable_nfc_review": True,
-            "enable_qr_review": True,
-        }
-
-
-def generate_review_token():
-    """
-Generates a short-lived anonymous review token.
-DB persistence can be added later.
-"""
-    return uuid.uuid4().hex
-
-def log_event(
-*,
-event_type: str,
-user_id: str | None = None,
-org_id: str | None = None,
-entity_type: str | None = None,
-entity_id: str | None = None,
-metadata: dict | None = None,
-severity: str = "info",
-source: str = "app"
-):
-    try:
-        payload = {
-        "id": str(uuid4()),
-        "event_type": event_type,
-        "metadata": json.dumps(metadata or {}),
-        "created_at": pd.Timestamp.utcnow()
-        }
-        if user_id:
-            payload.update({
-        "user_id": user_id,
-        "org_id": org_id,
-        "entity_type": entity_type,
-        "entity_id": entity_id
-        })
-        run_query(
-        """
-        INSERT INTO platform_user_events
-        (id, user_id, org_id, event_type, entity_type, entity_id, metadata, created_at)
-        VALUES (%(id)s, %(user_id)s, %(org_id)s, %(event_type)s, %(entity_type)s,
-        %(entity_id)s, %(metadata)s, %(created_at)s)
-        """,
-        payload
-        )
-
-        payload.update({
-        "severity": severity,
-        "source": source
-        })
-        run_query(
-        """
-        INSERT INTO platform_events
-        (id, event_type, severity, source, metadata, created_at)
-        VALUES (%(id)s, %(event_type)s, %(severity)s, %(source)s, %(metadata)s,
-        %(created_at)s)
-        """,
-        payload
-        )
-    except Exception:
-    # NEVER crash the app because of logging
-        pass
-def analyze_job_types(df):
-    if df.empty:
-        return {}
-
-    grouped = (
-        df.groupby("damage_type")
-        .agg(
-            jobs=("id", "count"),
-            revenue=("estimated_value", "sum"),
-            avg_revenue=("estimated_value", "mean"),
-            revenue_std=("estimated_value", "std"),
-        )
-        .reset_index()
-    )
-
-    total_jobs = grouped["jobs"].sum()
-    total_revenue = grouped["revenue"].sum()
-    grouped["job_share"] = grouped["jobs"] / total_jobs if total_jobs else 0
-    grouped["revenue_share"] = grouped["revenue"] / total_revenue if total_revenue else 0
-    grouped["volatility"] = grouped["revenue_std"].fillna(0)
-
-    insights = []
-    for _, r in grouped.iterrows():
-        if r["job_share"] > 0.45:
-            insights.append(f" Over-dependence on **{r['damage_type']}** jobs")
-        if r["job_share"] > 0.3 and r["avg_revenue"] < grouped["avg_revenue"].mean():
-            insights.append(f" **{r['damage_type']}** jobs are high-volume but low-value")
-        if r["volatility"] > grouped["volatility"].mean() * 1.5:
-            insights.append(f" **{r['damage_type']}** revenue is highly volatile")
-
-    return {
-        "table": grouped.sort_values("revenue", ascending=False),
-        "insights": insights,
-    }
-
-
-def pct_change(current, previous):
-    """
-Safe percentage change calculation.
-Returns 0 if previous is zero or missing.
-"""
-    try:
-        if previous in (0, None):
-            return 0
-        return ((current - previous) / previous) * 100
-    except Exception:
-        return 0
-
-
-def generate_executive_narrative(data):
-    narrative = []
-    risk_flags = []
-    volume = data.get("volume", {})
-    revenue = data.get("revenue", {})
-    efficiency = data.get("efficiency", {})
-
-    narrative.append(
-        {
-            "text": (
-                f"Total jobs: {volume.get('total_jobs', 0)} | "
-                f"Revenue: ${revenue.get('total_revenue', 0):,.0f} | "
-                f"Revenue/job: ${efficiency.get('revenue_per_job', 0):,.0f}"
-            ),
-            "confidence": 85,
-        }
-    )
-
-    health_score = 82
-    return {
-        "lines": narrative,
-        "risk_flags": risk_flags,
-        "health_score": health_score,
-        "version": "G-hardened-v1",
-    }
-
-def page_business_intelligence():
-    require_role_access("business_intelligence")
-
-    st.markdown("## Business Intelligence")
-
-    col1, col2 = st.columns([2, 3])
-    with col1:
-        range_key = st.selectbox(
-            "Time Range",
-            ["daily", "weekly", "30d", "90d", "6m", "12m", "custom"],
-            index=2,
-        )
-    with col2:
-        custom_start, custom_end = None, None
-        if range_key == "custom":
-            custom_start = st.date_input("Start date")
-            custom_end = st.date_input("End date")
-
-    data = compute_business_intelligence(range_key, custom_start, custom_end)
-    df = data.get("raw_df")
-    if df is None or df.empty:
-        st.warning("No jobs found for this period.")
-        return
-
-    health = data.get("health")
-    if health:
-        st.metric("Overall Business Health", f"{health.get('score', 0)} / 100")
-
-    v = data.get("volume", {})
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Jobs", v.get("total_jobs", 0))
-    c2.metric("Jobs / Day", v.get("jobs_per_day", 0))
-    c3.metric("Lead Sources", len(v.get("lead_sources", {})))
-
-    r = data.get("revenue", {})
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Revenue", f"${r.get('total_revenue', 0):,.0f}")
-    c2.metric("Avg / Job", f"${r.get('avg_revenue_per_job', 0):,.0f}")
-    c3.metric("Revenue Risk", f"{int(r.get('revenue_concentration', 0) * 100)}% Top Dependency")
-
-def page_technician_map_tracking():
-    st.markdown("## Technician Live Map")
-    df = get_latest_location_pings()
-    if df.empty:
-        st.warning("No technician GPS data available.")
-        return
-
-    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
-
-    def classify_status(ts):
-        if pd.isna(ts):
-            return "offline"
-        mins = (pd.Timestamp.utcnow() - ts).total_seconds() / 60
-        if mins <= 10:
-            return "active"
-        if mins <= 30:
-            return "idle"
-        return "offline"
-
-    df["status"] = df["timestamp"].apply(classify_status)
-    status_color = {"active": "green", "idle": "orange", "offline": "red"}
-
-    center_lat = df["latitude"].mean()
-    center_lon = df["longitude"].mean()
-    m = folium.Map(location=[center_lat, center_lon], zoom_start=11, tiles="OpenStreetMap")
-
-    for _, r in df.iterrows():
-        folium.CircleMarker(
-            location=[r["latitude"], r["longitude"]],
-            radius=8,
-            color=status_color.get(r["status"], "gray"),
-            fill=True,
-            fill_opacity=0.85,
-            popup=f"{r.get('tech_username', 'tech')} ({r['status']})",
-        ).add_to(m)
-
-    st_folium(m, width=900, height=500)
-
-
-def page_technician_mobile():
-    st.markdown("## Technician Mobile")
-    st.info("Use the mobile endpoint to push technician GPS pings.")
-
-def page_cpa_roi():
-    require_role_access("analytics")
-    st.markdown("<div class='header'> CPA & ROI</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Total Marketing Spend vs Conversions and ROI calculations.</em>",
-        unsafe_allow_html=True,
-    )
-
-    df = leads_to_df()
-    if df.empty:
-        st.info("No leads")
-        return
-
-    total_spend = float(df.get("ad_cost", 0).sum())
-    won_df = df[df["stage"] == "Won"] if "stage" in df.columns else pd.DataFrame()
-    conversions = len(won_df)
-    cpa = (total_spend / conversions) if conversions else 0.0
-    revenue = float(won_df.get("estimated_value", 0).sum()) if not won_df.empty else 0.0
-    roi = revenue - total_spend
-    roi_pct = (roi / total_spend * 100) if total_spend else 0.0
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Marketing Spend", f"${total_spend:,.2f}")
-    c2.metric("Conversions (Won)", f"{conversions}")
-    c3.metric("CPA", f"${cpa:,.2f}")
-    c4.metric("ROI", f"${roi:,.2f} ({roi_pct:.1f}%)")
-
-
-def page_ml_internal():
-    st.markdown("<div class='header'> Internal ML — Lead Scoring</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Model runs internally and writes score back to leads. No user tuning exposed.</em>",
-        unsafe_allow_html=True,
-    )
-
-    if st.button("Train model (internal)"):
-        with st.spinner("Training..."):
-            try:
-                acc, msg = train_internal_model()
-                if acc is None:
-                    st.error(f"Training aborted: {msg}")
-                else:
-                    st.success(f"Model trained (accuracy approx): {acc:.3f}")
-            except Exception as e:
-                st.error("Training failed: " + str(e))
-
-def page_ai_recommendations():
-    require_role_access("business_intelligence")
-    st.markdown("<div class='header'> AI Recommendations</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Heuristic recommendations and quick diagnostics for the pipeline.</em>",
-        unsafe_allow_html=True,
-    )
-
-    try:
-        df = leads_to_df()
-    except Exception as e:
-        st.error(f"Failed to load leads: {e}")
-        df = pd.DataFrame()
-
-    if df.empty:
-        st.info("No leads to analyze.")
-        return
-
-    st.subheader("Top Overdue Leads")
-    overdue_list = []
-    for _, r in df.iterrows():
-        rem_s, overdue_flag = calculate_remaining_sla(
-            r.get("sla_entered_at") or r.get("created_at"),
-            r.get("sla_hours"),
-        )
-        if overdue_flag and r.get("stage") not in ("Won", "Lost"):
-            overdue_list.append(
-                {
-                    "lead_id": r.get("lead_id"),
-                    "stage": r.get("stage"),
-                    "assigned_to": r.get("assigned_to"),
-                    "value": r.get("estimated_value") or 0.0,
-                    "overdue_seconds": rem_s,
-                }
-            )
-
-    over_df = pd.DataFrame(overdue_list)
-    if not over_df.empty:
-        over_df = over_df.sort_values("value", ascending=False)
-        st.table(over_df[["lead_id", "stage", "assigned_to", "value"]].head(10))
-    else:
-        st.info("No overdue leads.")
-
-pwd_context = CryptContext(
-schemes=["bcrypt"],
-deprecated="auto"
-)
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-# ----------------------
-# WORDPRESS AUTH
-# ----------------------
-def reset_password_with_token(token: str, new_password: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-    User.reset_token == token,
-    User.reset_expires_at > pd.Timestamp.utcnow()
-    ).first()
-    if not user:
-        raise Exception("Invalid or expired reset token")
-    user.password_hash = hash_password(new_password)
-    user.reset_token = None
-    user.reset_expires_at = None
-    user.email_verified = True
-    s.commit()
-def request_password_reset(email: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email.lower()).first()
-    if not user:
-        return # Silent fail for security
-    token = generate_password_reset_token()
-    user.password_reset_token = token
-    user.password_reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-    s.commit()
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(user.email, reset_link)
-def send_password_reset_email(email: str, reset_link: str):
-# TEMP: console output for testing
-    print("PASSWORD RESET LINK:", reset_link)
-# Later you can wire:
-# SendGrid / Mailgun / SMTP / SES
-#--------------------OPTIONAL PAGE RESET FOR STREAMLIT---------------
-def page_reset_password():
-    st.markdown("## Reset Your Password")
-
-    token = st.query_params.get("token")
-    if not token:
-        st.error("Missing reset token")
-        st.stop()
-
-    pw1 = st.text_input("New Password", type="password")
-    pw2 = st.text_input("Confirm Password", type="password")
-
-    if st.button("Reset Password"):
-        if not pw1 or len(pw1) < 8:
-            st.error("Password must be at least 8 characters")
-            st.stop()
-        if pw1 != pw2:
-            st.error("Passwords do not match")
-            st.stop()
-
-        try:
-            reset_password_with_token(token, pw1)
-            st.success("Password reset successful. You may now log in.")
-            st.stop()
-        except Exception as e:
-            st.error(str(e))
-def record_invoice(user, amount, description):
-    with SessionLocal() as s:
-        invoice = Invoice(
-    user_id=user.id,
-    amount=amount,
-    status="paid",
-    description=description,
-    )
-    s.add(invoice)
-    s.commit()
-def authenticate_user(email: str, password: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-    User.email == email.lower(),
-    User.is_active == True
-    ).first()
-    if not user:
-        return None
-    if not user.password_hash:
-        return None
-    # ---- Check if account is locked ----
-    if user.locked_until and user.locked_until > pd.Timestamp.utcnow():
-        raise Exception("Account locked. Try again later.")
-    # ---- Verify password ----
-    if not verify_password(password, user.password_hash):
-        user.failed_login_attempts += 1
-    if user.failed_login_attempts >= 5:
-        user.locked_until = pd.Timestamp.utcnow() + timedelta(minutes=30)
-    s.commit()
-    raise Exception("Invalid credentials")
-    # ---- SUCCESS: reset failed attempts ----
-    user.failed_login_attempts = 0
-    user.locked_until = None
-    user.last_login_at = pd.Timestamp.utcnow()
-    # Generate OTP for Admins or first-time login
-    otp = generate_otp()
-    user.otp_code = otp
-    user.otp_expires_at = pd.Timestamp.utcnow() + timedelta(minutes=5)
-    user.otp_required = True
-    send_otp_email(user.email, otp)
-    s.commit()
-    # Mark user as pending OTP
-    st.session_state["otp_user_id"] = user.id
-    return "OTP_REQUIRED"
-def request_password_reset(email: str):
-    token = generate_reset_token()
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email).first()
-        if not user:
-            return  # silent fail (security)
-
-        user.reset_token = token
-        user.reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-        s.commit()
-
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(email, reset_link)
-
-
-def admin_upgrade_user(user_id: int, plan: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.id == user_id).first()
-        if not user:
-            return False
-
-        reactivate_user_account(user, plan)
-        s.commit()
-        return True
-
-# -------------------------
-# Settings Page
-# -------------------------
-def get_users_df():
-    with SessionLocal() as s:
-        rows = s.query(User).order_by(User.created_at.desc()).all()
-
-    data = [
-        {
-            "id": u.id,
-            "email": u.email,
-            "username": u.username,
-            "full_name": u.full_name,
-            "role": u.role,
-            "plan": u.plan,
-            "is_active": bool(u.is_active),
-            "email_verified": bool(u.email_verified),
-            "created_at": u.created_at,
-        }
-        for u in rows
-    ]
-    return pd.DataFrame(data)
 
 
 def is_company_email(email: str) -> bool:
@@ -3879,9 +2088,6 @@ if not st.session_state.get("authenticated"):
     page_auth()
     st.stop()
 
-user = get_current_user()
-
-
 
 def get_user_settings_safe():
     """
@@ -4108,10 +2314,6 @@ def page_technician_map_tracking():
 
     st_folium(m, width=900, height=500)
 
-
-def page_technician_mobile():
-    st.markdown("## Technician Mobile")
-    st.info("Use the mobile endpoint to push technician GPS pings.")
 
 def page_cpa_roi():
     require_role_access("analytics")
@@ -4282,17 +2484,6 @@ def reset_password_with_token(token: str, new_password: str):
     user.reset_expires_at = None
     user.email_verified = True
     s.commit()
-def request_password_reset(email: str):
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email.lower()).first()
-    if not user:
-        return # Silent fail for security
-    token = generate_password_reset_token()
-    user.password_reset_token = token
-    user.password_reset_expires_at = pd.Timestamp.utcnow() + timedelta(hours=1)
-    s.commit()
-    reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
-    send_password_reset_email(user.email, reset_link)
 def send_password_reset_email(email: str, reset_link: str):
 # TEMP: console output for testing
     print("PASSWORD RESET LINK:", reset_link)
@@ -4436,14 +2627,12 @@ def get_users_df():
 
 
 def page_settings():
-    require_role_access("settings")
-    if st.session_state.get("user") is None:
-        st.session_state["page"] = "auth"
+    if not st.session_state.get("authenticated"):
         st.warning("Please log in to access Settings.")
-        st.rerun()
+        st.stop()
 
-    session_user = st.session_state.get("user", {})
-    user_role = session_user.get("role")
+    session_user = st.session_state.get("user") or {}
+    user_role = session_user.get("role") or st.session_state.get("role", "Technician")
     company_id = session_user.get("company_id")
 
     st.markdown(
@@ -4579,8 +2768,8 @@ def page_settings():
     # ======================================================
     # ADMIN — TRIAL REMINDERS
     # ======================================================
-    user = get_current_user()
-    if user.role == "Admin":
+    _session_role = st.session_state.get("role") or (st.session_state.get("user") or {}).get("role", "")
+    if _session_role == "Admin":
         st.markdown("### Trial Management")
         if st.button(" Send Trial Reminder Emails (Admin)"):
             try:
@@ -4645,14 +2834,20 @@ def page_settings():
             if new_password != confirm_password:
                 st.error("Passwords do not match")
                 st.stop()
-            user = get_current_user()
+            _uid = st.session_state.get("user_id")
+            if not _uid:
+                st.error("Session expired, please log in again.")
+                st.stop()
             with SessionLocal() as s:
-                db_user = s.query(User).filter(User.id == user.id).first()
-                if not pwd_context.verify(current_password, db_user.password_hash):
-                    st.error("Current password incorrect")
-                    st.stop()
-                db_user.password_hash = pwd_context.hash(new_password)
-                s.commit()
+                db_user = s.query(User).filter(User.id == _uid).first()
+                if db_user and db_user.password_hash:
+                    if not pwd_context.verify(current_password, db_user.password_hash):
+                        st.error("Current password incorrect")
+                        st.stop()
+                    db_user.password_hash = pwd_context.hash(new_password)
+                    s.commit()
+                else:
+                    st.info("Password change is managed via your email login.")
             st.success("Password updated")
             st.rerun()
     st.markdown("---")
@@ -5227,6 +3422,151 @@ def page_command_center():
         st.markdown(
             f"• **Lead #{row['lead_id']}** → **{row['stage']}** — {row['updated_at'].strftime('%b %d, %Y %H:%M')}"
         )
+
+# =========================================================
+# PAGE: OVERVIEW
+# =========================================================
+def page_overview():
+    require_role_access("overview")
+    st.markdown("## Overview")
+    st.caption("Pipeline summary and lead performance")
+    st.divider()
+    try:
+        df = leads_to_df()
+    except Exception:
+        df = pd.DataFrame()
+    if df.empty:
+        st.info("No leads yet. Capture your first lead to see overview data.")
+        return
+    total = len(df)
+    won = len(df[df["stage"] == "Won"]) if "stage" in df.columns else 0
+    lost = len(df[df["stage"] == "Lost"]) if "stage" in df.columns else 0
+    active = total - won - lost
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Leads", total)
+    c2.metric("Active", active)
+    c3.metric("Won", won)
+    c4.metric("Lost", lost)
+    st.divider()
+    if "stage" in df.columns:
+        stage_counts = df["stage"].value_counts().reset_index()
+        stage_counts.columns = ["Stage", "Count"]
+        st.subheader("Pipeline by Stage")
+        st.bar_chart(stage_counts.set_index("Stage"))
+
+# =========================================================
+# PAGE: LEAD CAPTURE
+# =========================================================
+def page_lead_capture():
+    require_role_access("overview")
+    st.markdown("## Lead Capture")
+    st.caption("Add new restoration leads to your pipeline")
+    st.divider()
+    with st.form("lead_capture_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            contact_name = st.text_input("Contact Name")
+            contact_phone = st.text_input("Phone")
+            contact_email = st.text_input("Email")
+        with col2:
+            property_address = st.text_input("Property Address")
+            damage_type = st.selectbox("Damage Type", ["Water", "Fire", "Mold", "Storm", "Other"])
+            source = st.selectbox("Lead Source", ["Referral", "Insurance", "Google", "Facebook", "Direct", "Other"])
+        estimated_value = st.number_input("Estimated Value ($)", min_value=0.0, step=100.0)
+        notes = st.text_area("Notes")
+        assigned_to = st.text_input("Assigned To")
+        submitted = st.form_submit_button("Capture Lead", use_container_width=True)
+
+    if submitted:
+        if not contact_name:
+            st.error("Contact name is required")
+        else:
+            try:
+                import uuid as _uuid
+                lead_id = f"L-{_uuid.uuid4().hex[:8].upper()}"
+                upsert_lead_record({
+                    "lead_id": lead_id,
+                    "contact_name": contact_name,
+                    "contact_phone": contact_phone,
+                    "contact_email": contact_email,
+                    "property_address": property_address,
+                    "damage_type": damage_type,
+                    "source": source,
+                    "estimated_value": estimated_value,
+                    "notes": notes,
+                    "assigned_to": assigned_to,
+                    "stage": "New",
+                    "created_at": pd.Timestamp.utcnow(),
+                }, actor=st.session_state.get("user_email", "user"))
+                st.success(f"Lead {lead_id} captured successfully!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to save lead: {e}")
+
+# =========================================================
+# PAGE: PIPELINE BOARD
+# =========================================================
+def page_pipeline_board():
+    require_role_access("overview")
+    st.markdown("## Pipeline Board")
+    st.caption("Drag leads through your restoration pipeline stages")
+    st.divider()
+    try:
+        df = leads_to_df()
+    except Exception:
+        df = pd.DataFrame()
+    if df.empty:
+        st.info("No leads in pipeline yet.")
+        return
+    stages = ["New", "Contacted", "Inspection Scheduled", "Inspection Completed",
+              "Estimate Sent", "Qualified", "Won", "Lost"]
+    cols = st.columns(len(stages))
+    for i, stage in enumerate(stages):
+        with cols[i]:
+            stage_df = df[df["stage"] == stage] if "stage" in df.columns else pd.DataFrame()
+            count = len(stage_df)
+            value = stage_df["estimated_value"].sum() if "estimated_value" in stage_df.columns else 0
+            st.markdown(f"**{stage}**")
+            st.caption(f"{count} leads · ${value:,.0f}")
+            st.divider()
+            for _, lead in stage_df.head(5).iterrows():
+                with st.container():
+                    st.markdown(f"🏠 **{lead.get('contact_name', 'Unknown')}**")
+                    st.caption(f"${lead.get('estimated_value', 0):,.0f} · {lead.get('damage_type', '')}")
+
+# =========================================================
+# PAGE: ANALYTICS
+# =========================================================
+def page_analytics():
+    require_role_access("analytics")
+    st.markdown("## Analytics")
+    st.caption("Revenue trends, conversion rates, and pipeline performance")
+    st.divider()
+    try:
+        df = leads_to_df()
+    except Exception:
+        df = pd.DataFrame()
+    if df.empty:
+        st.info("No data yet. Add leads to see analytics.")
+        return
+    df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+    df["month"] = df["created_at"].dt.to_period("M").astype(str)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Leads by Month")
+        monthly = df.groupby("month").size().reset_index(name="count")
+        st.bar_chart(monthly.set_index("month"))
+    with col2:
+        st.subheader("Revenue by Stage")
+        if "stage" in df.columns and "estimated_value" in df.columns:
+            rev = df.groupby("stage")["estimated_value"].sum().reset_index()
+            st.bar_chart(rev.set_index("stage"))
+    st.divider()
+    st.subheader("Lead Sources")
+    if "source" in df.columns:
+        source_counts = df["source"].value_counts()
+        st.bar_chart(source_counts)
+
 
 # =============================================================
 # MAIN ENTRY POINT
