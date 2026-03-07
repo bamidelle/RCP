@@ -1230,20 +1230,14 @@ MUST NEVER crash the app.
 
 
 def get_current_user():
-    # DEV / FIRST BOOTSTRAP SAFETY
     user_id = st.session_state.get("user_id")
     if not user_id:
-        admin = bootstrap_admin()
-        if admin:
-            st.session_state["user_id"] = admin.id
-        return admin
-
-    # ---- EXISTING LOGIC BELOW (UNCHANGED) ----
+        return None
     with SessionLocal() as s:
         user = s.query(User).get(user_id)
         if not user:
             st.session_state.clear()
-            st.warning("Invalid session")
+            st.warning("Session expired. Please log in again.")
             st.stop()
         return user
 
@@ -2384,62 +2378,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # ----------------------
 # WORDPRESS AUTH
 # ----------------------
-def wp_auth_bridge():
-    st.title("Authenticating...")
-
-    token = st.query_params.get("token")
-    if not token:
-        st.error("Missing authentication token")
-        st.stop()
-
-    payload = decode_wp_token(token)
-    if not payload:
-        st.error("Invalid or expired token")
-        st.stop()
-
-    email = payload.get("email")
-    name = payload.get("name", "")
-    role = payload.get("role", "Viewer")
-    if not email:
-        st.error("Invalid token payload")
-        st.stop()
-
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email).first()
-
-        if not user:
-            user = User(
-                email=email.lower(),
-                username=email.split("@")[0],
-                full_name=name,
-                role=role,
-                plan="starter",
-                subscription_status="trial",
-                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                email_verified=True,
-                is_active=True,
-            )
-            s.add(user)
-            s.commit()
-            s.refresh(user)
-
-        if not user.is_active:
-            st.error("Your account has been deactivated.")
-            st.stop()
-        if not user.email_verified:
-            st.error("Please verify your email address before accessing the app.")
-            st.stop()
-
-        st.session_state["user_id"] = user.id
-        st.session_state["authenticated"] = True
-        st.session_state["user_email"] = user.email
-        st.session_state["role"] = user.role
-        st.session_state["plan"] = user.plan
-
-    st.success("Authentication successful")
-    st.query_params.clear()
-    st.rerun()
-
 def reset_password_with_token(token: str, new_password: str):
     with SessionLocal() as s:
         user = s.query(User).filter(
@@ -2539,24 +2477,6 @@ def authenticate_user(email: str, password: str):
     # Mark user as pending OTP
     st.session_state["otp_user_id"] = user.id
     return "OTP_REQUIRED"
-def page_login():
-    st.markdown("## Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        result = authenticate_user(email, password)
-        if result == "OTP_REQUIRED":
-            st.info("OTP sent to your email.")
-            st.rerun()
-        elif not result:
-            st.error("Invalid credentials or inactive account")
-        else:
-            set_logged_in_user(result)
-            st.success("Logged in successfully")
-            st.rerun()
-
-
 def request_password_reset(email: str):
     token = generate_reset_token()
     with SessionLocal() as s:
@@ -2604,1040 +2524,6 @@ def get_users_df():
         for u in rows
     ]
     return pd.DataFrame(data)
-
-
-def page_settings():
-    require_role_access("settings")
-if False:
-    st.markdown(
-        "<div class='header'> Settings & User Management</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
-        unsafe_allow_html=True
-    )
-    # ======================================================
-    # INVITE USER
-    # ======================================================
-    st.markdown("### Invite User")
-    with st.form("invite_user_form"):
-        invite_email = st.text_input("Email (required)")
-        invite_role = st.selectbox("Role", ["Admin", "Manager", "Staff"], key="invite_role")
-        submitted_invite = st.form_submit_button("Send Invite")
-
-        if submitted_invite:
-            # ORG SEAT LIMIT ENFORCEMENT
-            current_user = get_current_user()
-            enforce_org_seat_limit(current_user)
-
-            if not invite_email:
-                st.error("Email is required")
-                st.stop()
-            if not is_valid_email(invite_email):
-                st.error("Enter a valid email address")
-                st.stop()
-
-            with SessionLocal() as s:
-                exists = s.query(User).filter(User.email == invite_email.lower()).first()
-                if exists:
-                    st.error("User already exists")
-                    st.stop()
-
-                token = generate_activation_token()
-                user = User(
-                    username=invite_email,
-                    email=invite_email.lower(),
-                    role=invite_role,
-                    organization_id=current_user.organization_id,
-                    plan=current_user.plan,
-                    subscription_status="trial",
-                    trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                    activation_token=token,
-                    activation_expires_at=pd.Timestamp.utcnow() + timedelta(hours=48),
-                    is_active=False,
-                )
-                s.add(user)
-                s.commit()
-
-            invite_link = f"{FRONTEND_URL.rstrip('/')}/activate?token={token}"
-            st.write("Invite link:", invite_link)
-            try:
-                send_invite_email(invite_email, invite_link)
-                st.success("Invitation email sent successfully")
-            except Exception as e:
-                if DEV_MODE:
-                    st.warning(f"Invite created, email skipped (dev): {e}")
-                else:
-                    st.warning("Invite created, but email failed to send")
-            st.rerun()
-
-    st.markdown("---")
-    # ======================================================
-    # ADD USER (ADMIN)
-    # ======================================================
-    st.markdown("### Add User")
-    with st.form("create_user_form"):
-        email = st.text_input("Email (required)")
-        username = st.text_input("Username (optional)")
-        full_name = st.text_input("Full Name")
-        role = st.selectbox(
-        "Role",
-        ["Admin", "Manager", "Staff"],
-        key="create_role"
-        )
-        submitted_create = st.form_submit_button("Create User")
-        if submitted_create:
-            # ORG SEAT LIMIT ENFORCEMENT
-            current_user = get_current_user()
-            enforce_org_seat_limit(current_user)
-
-            if not email:
-                st.error("Email is required")
-                st.stop()
-            if not is_valid_email(email):
-                st.error("Invalid email")
-                st.stop()
-
-            add_user(
-                email=email.lower(),
-                username=username.strip() if username else email.lower(),
-                full_name=full_name.strip(),
-                role=role,
-                is_active=True,
-                email_verified=True,
-            )
-            st.success("User created successfully")
-            st.rerun()
-    # ======================================================
-    # USERS TABLE
-    # ======================================================
-    st.markdown("### Existing Users")
-    users_df = get_users_df()
-    if users_df.empty:
-        st.info("No users yet.")
-    else:
-        st.dataframe(users_df, use_container_width=True)
-    st.markdown("---")
-    # ======================================================
-    # ADMIN — TRIAL REMINDERS
-    # ======================================================
-    user = get_current_user()
-    if user.role == "Admin":
-        st.markdown("### Trial Management")
-        if st.button(" Send Trial Reminder Emails (Admin)"):
-            try:
-                send_trial_expiry_reminders()
-                st.success("Trial reminders sent")
-            except Exception as e:
-                if DEV_MODE:
-                    st.warning(f"Trial reminder skipped (dev): {e}")
-            else:
-                raise
-    st.markdown("---")
-    # ======================================================
-    # TECHNICIAN MANAGEMENT
-    # ======================================================
-    st.markdown("## Technician Management")
-    with st.expander(" Add Technician"):
-        tech_username = st.text_input("Username")
-        tech_name = st.text_input("Full Name")
-        tech_phone = st.text_input("Phone Number")
-        tech_role = st.selectbox(
-        "Specialization",
-        ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
-        )
-        tech_active = st.checkbox("Active", True)
-        if st.button("Save Technician"):
-            add_technician(
-            tech_username.strip(),
-            full_name=tech_name.strip(),
-            phone=tech_phone.strip(),
-            specialization=tech_role,
-            active=tech_active,
-        )
-        st.success("Technician saved")
-        st.rerun()
-    tech_df = get_technicians_df(active_only=False)
-    if not tech_df.empty:
-        for _, row in tech_df.iterrows():
-            cols = st.columns([3, 2, 2])
-        cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
-        new_status = cols[1].selectbox(
-            "Status",
-            ["available", "assigned", "enroute", "onsite", "completed"],
-            index=["available","assigned","enroute","onsite","completed"].index(
-            row.get("status", "available")
-            ),
-            key=f"status_{row['username']}",
-        )
-        if cols[2].button("Update", key=f"upd_{row['username']}"):
-            update_technician_status(row["username"], new_status)
-            st.success("Status updated")
-            st.rerun()
-    st.markdown("---")
-    # ======================================================
-    # CHANGE PASSWORD
-    # ======================================================
-    st.markdown("## Change Password")
-    with st.form("change_password_form"):
-        current_password = st.text_input("Current Password", type="password")
-        new_password = st.text_input("New Password", type="password")
-        confirm_password = st.text_input("Confirm New Password", type="password")
-        if st.form_submit_button("Update Password"):
-            if new_password != confirm_password:
-                st.error("Passwords do not match")
-            st.stop()
-        user = get_current_user()
-        with SessionLocal() as s:
-            db_user = s.query(User).filter(User.id == user.id).first()
-            if not pwd_context.verify(current_password, db_user.password_hash):
-                st.error("Current password incorrect")
-            st.stop()
-            db_user.password_hash = pwd_context.hash(new_password)
-            s.commit()
-        st.success("Password updated")
-        st.rerun()
-    st.markdown("---")
-    def page_technician_mobile():
-        st.markdown("## Technician Mobile")
-        techs = get_technicians_df(active_only=True)
-        if techs.empty:
-            st.warning("No active technicians found.")
-            return
-
-        tech = st.selectbox("Select Technician", techs["username"].tolist())
-        st.markdown("### My Tasks")
-        tasks = get_tasks_for_user(tech)
-        if tasks.empty:
-            st.info(
-                "No task assigned to a Technician yet! To assign job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT"
-            )
-        else:
-            for _, t in tasks.iterrows():
-                st.checkbox(
-                    f"{t['title']} (Lead: {t['lead_id']})",
-                    value=(t["status"] == "done"),
-                    key=f"task_{t['id']}",
-                )
-
-        st.markdown("### Send Location Ping")
-        lat = st.number_input("Latitude", format="%.6f")
-        lon = st.number_input("Longitude", format="%.6f")
-        if st.button("Send Location Ping"):
-            persist_location_ping(tech, lat, lon)
-            st.success("Location sent")
-
-    # ---------- BEGIN BLOCK D: SETTINGS UI - TECHNICIANS MANAGEMENT ----------
-    st.markdown("---")
-    st.subheader("Technicians (Field Users)")
-    tech_df = get_technicians_df(active_only=False)
-    with st.form("add_technician_form"):
-        t_uname = st.text_input("Technician username (unique)")
-        t_name = st.text_input("Full name")
-        t_phone = st.text_input("Phone")
-        t_role_sel = st.selectbox("Specialization", ["Tech", "Estimator", "Adjuster", "Driver"],
-    index=0)
-        t_active = st.checkbox("Active", value=True)
-        if st.form_submit_button("Add / Update Technician"):
-            if not t_uname:
-                st.error("Technician username required")
-        else:
-            try:
-                add_technician(
-            username=tech_username.strip(),
-            full_name=tech_name.strip(),
-            phone=tech_phone.strip(),
-            specialization=tech_role,
-            active=tech_active
-            )
-            except Exception as e:
-                st.error("Failed to save technician: " + str(e))
-    if tech_df is not None and not tech_df.empty:
-        st.dataframe(tech_df)
-    else:
-        st.info("No technicians yet.")
-    # ---------- END BLOCK D ----------
-    st.subheader("Priority weight tuning (internal)")
-    wscore = st.slider("Model score weight", 0.0, 1.0, 0.6, 0.05)
-    wvalue = st.slider("Estimate value weight", 0.0, 1.0, 0.3, 0.05)
-    wsla = st.slider("SLA urgency weight", 0.0, 1.0, 0.1, 0.05)
-    baseline = st.number_input("Value baseline (for normalization)", value=5000.0)
-    if st.button("Save weights"):
-        st.session_state.weights = {"score_w": wscore, "value_w": wvalue, "sla_w": wsla,
-    "value_baseline": baseline}
-        st.success("Weights updated (in session)")
-    st.markdown("---")
-    st.subheader("Audit Trail")
-    s = get_session()
-    try:
-        hist = s.query(LeadHistory).order_by(LeadHistory.timestamp.desc()).limit(200).all()
-        if hist:
-
-            pd.DataFrame([{"lead_id":h.lead_id,"changed_by":h.changed_by,"field":h.field,"old":h.old_value,
-    "new":h.new_value,"timestamp":h.timestamp} for h in hist])
-        st.dataframe(hist_df)
-
-        st.info("No audit entries yet.")
-    finally:
-        s.close()
-    #---------------------------Exports page--------------------------------------------
-    def page_exports():
-        require_role_access("exports")
-    st.markdown("<div class='header'> Exports & Imports</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>",
-        unsafe_allow_html=True
-    )
-    # =========================================================
-    # EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
-    # =========================================================
-    df = leads_to_df(None, None)
-    if not df.empty:
-        towrite = io.BytesIO()
-        try:
-            # Preferred: Excel export
-            df.to_excel(towrite, index=False, engine="openpyxl")
-            file_type = "xlsx"
-        except ModuleNotFoundError:
-        # Fallback: CSV export
-            towrite = io.StringIO()
-        df.to_csv(towrite, index=False)
-        file_type = "csv"
-        st.download_button(
-        label=f" Download leads ({file_type.upper()})",
-        data=towrite.getvalue(),
-        file_name=f"leads_export.{file_type}",
-        mime="application/octet-stream"
-        )
-    else:
-        st.info("No leads available to export.")
-    st.divider()
-    # =========================================================
-    # IMPORT / UPSERT LEADS
-    # =========================================================
-    uploaded = st.file_uploader(
-        "Upload leads (CSV/XLSX) for import/upsert",
-        type=["csv", "xlsx"]
-    )
-    if uploaded:
-        try:
-            if uploaded.name.lower().endswith(".csv"):
-                df_in = pd.read_csv(uploaded)
-            else:
-                df_in = pd.read_excel(uploaded)
-
-            if "lead_id" not in df_in.columns:
-                st.error(" File must include a lead_id column")
-            else:
-                count = 0
-                for _, r in df_in.iterrows():
-                    try:
-                        upsert_lead_record(
-                            {
-                                "lead_id": str(r["lead_id"]),
-                                "created_at": (
-                                    pd.to_datetime(r.get("created_at"))
-                                    if r.get("created_at") is not None
-                                    else pd.Timestamp.utcnow()
-                                ),
-                                "source": r.get("source"),
-                                "contact_name": r.get("contact_name"),
-                                "contact_phone": r.get("contact_phone"),
-                                "contact_email": r.get("contact_email"),
-                                "property_address": r.get("property_address"),
-                                "damage_type": r.get("damage_type"),
-                                "assigned_to": r.get("assigned_to"),
-                                "notes": r.get("notes"),
-                                "estimated_value": float(r.get("estimated_value") or 0.0),
-                                "ad_cost": float(r.get("ad_cost") or 0.0),
-                                "stage": r.get("stage") or "New",
-                                "converted": bool(r.get("converted") or False),
-                            },
-                            actor="admin",
-                        )
-                        count += 1
-                    except Exception:
-                        continue
-
-        except Exception as e:
-            st.error(" Failed to import: " + str(e))
-    # ---------- BEGIN BLOCK F: FLASK API FOR LOCATION PINGS (optional but ready) ----------
-    try:
-        from flask import Flask, request, jsonify
-        import threading
-        flask_app = Flask("recapture_pro_api")
-
-        @flask_app.route("/api/ping_location", methods=["POST"])
-        def api_ping_location():
-            try:
-                payload = request.get_json(force=True)
-                tech = payload.get("tech_username") or payload.get("username")
-                lat = payload.get("latitude") or payload.get("lat")
-                lon = payload.get("longitude") or payload.get("lon")
-                lead_id = payload.get("lead_id")
-                accuracy = payload.get("accuracy")
-                ts = payload.get("timestamp")
-                ts_parsed = None
-                if ts:
-                    try:
-                        ts_parsed = datetime.fromisoformat(ts)
-                    except Exception:
-                        ts_parsed = None
-                if not tech or lat is None or lon is None:
-                    return jsonify({"error": "missing fields (tech_username, latitude, longitude)"}), 400
-                pid = persist_location_ping(
-                    tech_username=str(tech), latitude=float(lat),
-                    longitude=float(lon), lead_id=lead_id,
-                    accuracy=accuracy, timestamp=ts_parsed
-                )
-                return jsonify({"ok": True, "ping_id": pid}), 200
-            except Exception as e:
-                return jsonify({"error": str(e)}), 500
-
-        def run_flask():
-            try:
-                # choose port 5001 to avoid Streamlit port conflicts
-                flask_app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
-            except Exception:
-                pass
-
-        # start flask in background daemon thread (only if not already started)
-        t = threading.Thread(target=run_flask, daemon=True)
-        t.start()
-    except Exception:
-        # if Flask isn't available (not installed) the API simply won't start — harmless
-        pass
-    # ---------- END BLOCK F ----------
-    demand = {}
-    season_score = 0.5
-    def add_time_windows(hist_df):
-        """
-    Adds rolling time windows (3, 6, 12 months) for seasonal comparison
-    """
-        if hist_df.empty:
-            return {}
-
-        df = hist_df.copy()
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date")
-        latest_date = df["date"].max()
-        windows = {
-            "3_months": df[df["date"] >= latest_date - pd.DateOffset(months=3)],
-            "6_months": df[df["date"] >= latest_date - pd.DateOffset(months=6)],
-            "12_months": df[df["date"] >= latest_date - pd.DateOffset(months=12)],
-        }
-        return windows
-    # -------------------------------------------------------------
-    # SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
-    # -------------------------------------------------------------
-    def page_seasonal_trends():
-        require_role_access("business_intelligence")
-
-        st.markdown("## Seasonal Trends & Weather-Based Damage Insights")
-        st.caption("Location-based risk forecasting with business impact intelligence")
-        st.divider()
-
-        countries = get_all_countries()
-        country = st.selectbox("Country", [c["name"] for c in countries])
-        country_code = next(c["code"] for c in countries if c["name"] == country)
-
-        city_query = st.text_input("City", placeholder="Type at least 3 letters")
-        if len(city_query) < 3:
-            st.info("Start typing a city name (3+ characters)")
-            return
-
-        matches = search_cities(country_code, city_query)
-        if not matches:
-            st.warning("No cities found")
-            return
-
-        labels = [f"{m['name']}, {m.get('admin1', '')}" for m in matches]
-        selected = st.selectbox("Select City", labels)
-        chosen = matches[labels.index(selected)]
-
-        hist_range = st.selectbox("Historical Window", ["3 months", "6 months", "12 months"], index=1)
-        months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-
-        if not st.button("Generate Insights", use_container_width=True):
-            return
-
-        with st.spinner("Generating insights..."):
-            hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
-
-        if hist_df is None or hist_df.empty:
-            st.error("No historical data available")
-            return
-
-        hist_df = hist_df.copy()
-        hist_df["date"] = pd.to_datetime(hist_df["date"], errors="coerce")
-        hist_df = hist_df.dropna(subset=["date"]).sort_values("date")
-
-        st.line_chart(hist_df.set_index("date")[["rainfall_mm", "temperature_c"]])
-
-    def page_competitor_intelligence():
-        st.title(" Competitor Intelligence")
-
-        st.subheader(" Competitive Alerts")
-        s = get_session()
-        try:
-            alerts = (
-                s.query(CompetitorAlert)
-                .order_by(CompetitorAlert.created_at.desc())
-                .limit(5)
-                .all()
-            )
-        finally:
-            s.close()
-
-        if not alerts:
-            st.success("No competitive threats detected.")
-        else:
-            for a in alerts:
-                if a.severity == "high":
-                    st.error(a.message)
-                else:
-                    st.warning(a.message)
-
-        st.divider()
-
-        with st.expander(" Discover Competitors"):
-            lat = st.number_input("Latitude", value=39.9612, key="comp_lat")
-            lon = st.number_input("Longitude", value=-82.9988, key="comp_lon")
-            keyword = st.text_input("Search keyword", "water damage restoration", key="comp_keyword")
-            if st.button("Run Competitor Scan", key="run_comp_scan"):
-                ingest_competitors_openstreetmap(lat, lon, keyword)
-                st.success("Competitor scan completed.")
-
-        s = get_session()
-        try:
-            competitors = s.query(Competitor).all()
-        finally:
-            s.close()
-
-        if not competitors:
-            st.info("No competitors tracked yet.")
-            return
-
-        rows = []
-        hq_lat = st.session_state.get("hq_lat")
-        hq_lon = st.session_state.get("hq_lon")
-        for c in competitors:
-            distance = 10
-            if hq_lat and hq_lon and c.latitude and c.longitude:
-                distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
-            score = calculate_competitor_score(c.rating or 0, c.total_reviews or 0, distance)
-            rows.append(
-                {
-                    "Name": c.name,
-                    "Rating": c.rating,
-                    "Reviews": c.total_reviews,
-                    "Category": c.primary_category,
-                    "Distance (km)": round(distance, 2),
-                    "Strength Score": score,
-                    "Velocity (7d)": review_velocity(c.id, 7),
-                    "Velocity (30d)": review_velocity(c.id, 30),
-                }
-            )
-
-        df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
-        st.subheader("Top Competitors")
-        st.dataframe(df, use_container_width=True, key="competitor_table")
-
-    def save_review_link_for_user(user, review_link):
-        if not user or not review_link:
-            return
-    with SessionLocal() as s:
-        existing = s.query(ReviewSettings).filter(
-        ReviewSettings.user_id == user.id
-        ).first()
-        if existing:
-            existing.review_link = review_link
-        else:
-            settings = ReviewSettings(
-            user_id=user.id,
-            review_link=review_link
-        )
-        s.add(settings)
-        s.commit()
-    def page_google_reviews():
-        st.subheader(" Google Reviews")
-        st.caption("Request Google reviews from completed jobs to boost reputation and local SEO.")
-
-        st.subheader(" Google Review Link")
-        review_link = st.text_input(
-            "Paste your Google Review link",
-            placeholder="https://g.page/your-business/review",
-        )
-        if st.button(" Save Review Link"):
-            if not review_link:
-                st.error("Review link is required")
-            else:
-                save_review_link_for_user(get_current_user(), review_link)
-                st.success("Review link saved")
-
-        st.divider()
-        st.subheader(" Select Customer")
-        contacts = get_completed_job_contacts(get_current_user())
-        if not contacts:
-            st.info("No completed job contacts yet.")
-            return
-
-        contact = st.selectbox(
-            "Choose a customer",
-            contacts,
-            format_func=lambda c: f"{c['name']} ({c['email']})",
-        )
-
-        st.divider()
-        st.subheader(" Send Review Request")
-        if st.button("Send Google Review Request"):
-            send_google_review_request(
-                to_email=contact["email"],
-                customer_name=contact["name"],
-                review_link=review_link,
-                job_name=contact.get("job_title", ""),
-            )
-            st.success("Review request sent")
-
-    def send_google_review_request(
-    to_email: str,
-    customer_name: str,
-    review_link: str,
-    job_name: str = ""
-    ):
-        subject = "We’d love your Google review "
-    job_line = f" regarding your recent {job_name}" if job_name else ""
-    body = f"""
-    Hi {customer_name},
-    Thank you for choosing us{job_line}.
-    If you have a moment, we’d truly appreciate a quick Google review.
-    Your feedback helps us improve and helps others find our services.
-    Leave a review here:
-    {review_link}
-    Thank you again for your trust.
-    Best regards,
-    The Team
-    """
-    send_email(
-        to_email=to_email,
-        subject=subject,
-        body=body
-    )
-    # ---------- END SETTINGS AND EMAIL INVITES ----------
-    def page_request_review_settings():
-        require_role_access("settings")
-    st.markdown("## Request Review Settings")
-    st.caption("Configure how you collect Google reviews")
-    st.markdown("---")
-    # Load existing settings so saved link persists
-    settings = get_user_settings_safe()
-    existing_review_link = settings.get("google_review_url", "")
-    review_link = st.text_input(
-        "Google Review Link",
-        value=existing_review_link,
-        placeholder="https://g.page/your-business/review"
-    )
-    st.markdown(
-        """
-        ℹ
-            This link will be used for:
-        - NFC tap cards
-        - QR codes
-        - Manual review requests
-        """
-    )
-    if st.button(" Save Review Link"):
-        settings = get_user_settings_safe()
-        settings["google_review_url"] = review_link
-        st.success(" Review link saved successfully.")
-    st.markdown("---")
-    st.markdown("### NFC & QR Review Tools")
-    st.info(
-        "NFC tap cards and QR codes will redirect customers "
-        "to your saved Google review link.\n\n"
-        "No paid API required."
-    )
-    def page_request_review():
-        require_role_access("overview")
-        st.markdown("## Request Google Review")
-        st.caption("Instant on-site review request via Tap or QR")
-
-        settings = get_user_settings_safe()
-        review_url = settings.get("google_review_url")
-        if not review_url:
-            st.warning("Google Review link not set. Add it in Settings.")
-            return
-
-        lead_id = st.session_state.get("active_lead_id")
-        token = generate_review_token()
-        base_url = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
-        review_request_url = f"{base_url}/?page=review_redirect&token={token}"
-
-        try:
-            log_event(
-                event_type="review_requested",
-                entity_type="lead" if lead_id else "session",
-                entity_id=lead_id,
-                metadata={"method": "manual"},
-            )
-        except Exception:
-            pass
-
-        st.write("Share this review link with your customer:")
-        st.code(review_request_url)
-
-    def page_review_redirect():
-        token = st.query_params.get("token")
-        settings = get_user_settings_safe()
-        review_url = settings.get("google_review_url")
-        if not review_url:
-            st.error("Review link not configured.")
-            return
-
-        try:
-            log_event(
-                event_type="review_tap",
-                entity_type="review",
-                entity_id=token,
-                metadata={"source": "nfc_or_qr"},
-            )
-        except Exception:
-            pass
-
-        st.markdown("Redirecting to review page…")
-        st.markdown(
-            f"<meta http-equiv='refresh' content='1;url={review_url}'>",
-            unsafe_allow_html=True,
-        )
-
-    #-----------------------START OF COMMAND CENTER---------------------
-    def page_command_center():
-        require_role_access("overview")
-    # =========================================================
-    # LOAD DATA SAFELY
-    # =========================================================
-    try:
-        df = get_leads_df()
-    except Exception:
-        df = pd.DataFrame()
-    # =========================================================
-    # HEADER
-    # =========================================================
-    st.markdown("## Command Center")
-    st.caption("Real-time business health & priorities")
-    st.divider()
-    # =========================================================
-    # EMPTY STATE
-    # =========================================================
-    if df.empty:
-        st.info(
-        "No activity yet.\n\n"
-        "Once you start capturing leads, this dashboard will show:\n"
-        "• Revenue at risk & recovered\n"
-        "• Follow-ups due\n"
-        "• Daily priorities\n"
-        "• Business insights\n"
-        "• Activity timeline"
-        )
-        if st.button(" Capture your first lead", use_container_width=True):
-            st.session_state.page = "Lead Capture"
-        st.rerun()
-        st.stop()
-    # =========================================================
-    # NORMALIZATION
-    # =========================================================
-    df = df.copy()
-    df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
-    df["stage"] = df.get("stage", "New").fillna("New")
-    df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-    df["updated_at"] = pd.to_datetime(
-        df.get("updated_at", df["created_at"]), errors="coerce"
-    )
-    df["sla_hours"] = df.get("sla_hours", 24)
-    now = pd.Timestamp.utcnow()
-    today = now.date()
-    yesterday = today - timedelta(days=1)
-    df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
-    # =========================================================
-    # KPI CALCULATIONS
-    # =========================================================
-    inspection_count = len(df[df["stage"] == "Inspection"])
-    won_count = len(df[df["stage"] == "Won"])
-    inspection_conversion = (
-        (won_count / inspection_count) * 100 if inspection_count else 0
-    )
-    follow_up_24h = df[
-        (df["stage"].isin(["New", "Contacted"])) &
-        (df["lead_age_hours"] >= 24)
-    ]
-    stalled_revenue = df[
-        (df["stage"].isin(["Inspection", "Estimate Sent"])) &
-        (df["lead_age_hours"] > df["sla_hours"])
-    ]["estimated_value"].sum()
-    recovered_today = df[
-        (df["stage"] == "Won") &
-        (df["updated_at"].dt.date == today)
-    ]["estimated_value"].sum()
-    recovered_yesterday = df[
-        (df["stage"] == "Won") &
-        (df["updated_at"].dt.date == yesterday)
-    ]["estimated_value"].sum()
-    recovered_delta = recovered_today - recovered_yesterday
-    avg_response = df["lead_age_hours"].mean()
-    # =========================================================
-    # AI SUMMARY SENTENCE
-    # =========================================================
-    signals = []
-    if stalled_revenue > 0:
-        signals.append(f"${stalled_revenue:,.0f} stalled")
-    if len(follow_up_24h) > 0:
-        signals.append(f"{len(follow_up_24h)} follow-ups due")
-    if inspection_conversion < 30:
-        signals.append("low inspection conversion")
-    summary = (
-        "Everything is operating smoothly."
-        if not signals
-        else "Attention needed: " + ", ".join(signals)
-    )
-    st.markdown(
-        f"""
-        <div style="background:#f8fafc;
-        border-left:4px solid #2563eb;
-        padding:14px 18px;
-        border-radius:10px;
-        font-size:0.95rem;
-        ">🤖
-            <strong>Executive Insight:</strong> {summary}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    st.divider()
-    # =========================================================
-    # KPI OVERVIEW (TOP ROW)
-    # =========================================================
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Stalled Revenue", f"${stalled_revenue:,.0f}")
-    k2.metric(
-        "Revenue Recovered Today",
-        f"${recovered_today:,.0f}",
-        f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}"
-    )
-    k3.metric("Follow-ups Due", len(follow_up_24h))
-    k4.metric("Avg Response Time", f"{avg_response:.1f}h")
-    st.divider()
-    # =========================================================
-    # TODAY’S PRIORITIES
-    # =========================================================
-    st.subheader(" Today’s Priorities")
-    priorities = follow_up_24h.sort_values("created_at").head(5)
-    if priorities.empty:
-        st.success(" No urgent actions required today")
-    else:
-        for _, lead in priorities.iterrows():
-            st.markdown(
-            f"""
-            **Follow up with Lead #{lead['lead_id']}**
-            _Overdue {int(lead['lead_age_hours'])} hours_
-            """
-        )
-    st.divider()
-    # =========================================================
-    # BUSINESS INSIGHTS
-    # =========================================================
-    st.subheader(" Business Insights")
-    if stalled_revenue > 0:
-        st.warning(
-        f" {inspection_count} inspections or estimates stalled "
-        f"with ${stalled_revenue:,.0f} at risk."
-        )
-    else:
-        st.success("No operational bottlenecks detected.")
-    if inspection_conversion < 30:
-        st.info(
-        " Inspection → Won conversion is below target. "
-        "Review recent inspections."
-        )
-    st.divider()
-    # =========================================================
-    # TODAY vs YESTERDAY
-    # =========================================================
-    st.subheader(" Today vs Yesterday")
-    st.markdown(
-        f"""
-        • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f}
-    yesterday
-        • **Follow-ups due:** {len(follow_up_24h)} today
-        • **Pipeline health:** {' Stable' if stalled_revenue == 0 else ' Needs attention'}
-        """
-    )
-    st.divider()
-    # =========================================================
-    # RECENT ACTIVITY
-    # =========================================================
-    st.subheader(" Recent Activity")
-    st.caption("Latest movements across your pipeline")
-    timeline_df = (
-        df[["lead_id", "stage", "updated_at"]]
-        .dropna()
-        .sort_values("updated_at", ascending=False)
-        .head(8)
-    )
-    for _, row in timeline_df.iterrows():
-        st.markdown(
-        f"• **Lead #{row['lead_id']}** → **{row['stage']}** \n"
-        f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
-        )
-# ----------------------
-# AUTH FLOW (SUPABASE)
-# ----------------------
-FREE_EMAIL_DOMAINS = {
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com"
-}
-
-
-def is_company_email(email: str) -> bool:
-    try:
-        domain = email.split("@", 1)[1].lower().strip()
-    except Exception:
-        return False
-    return domain not in FREE_EMAIL_DOMAINS
-
-
-def upsert_profile_from_auth(user_obj):
-    if not user_obj:
-        return
-    try:
-        full_name = ""
-        if getattr(user_obj, "user_metadata", None):
-            full_name = user_obj.user_metadata.get("full_name", "")
-        supabase.table("profiles").upsert(
-            {
-                "id": user_obj.id,
-                "email": user_obj.email,
-                "full_name": full_name,
-            },
-            on_conflict="id",
-        ).execute()
-    except Exception:
-        # If DB trigger is configured this is not required; keep as safe fallback.
-        pass
-
-
-def set_auth_session(user_obj):
-    st.session_state["authenticated"] = True
-    st.session_state["supabase_user_id"] = user_obj.id
-    st.session_state["user_email"] = user_obj.email
-    st.session_state["page"] = "command_center"
-
-    profile_payload = {
-        "id": user_obj.id,
-        "email": user_obj.email,
-        "full_name": "",
-        "role": "Technician",
-        "company_id": None,
-    }
-    try:
-        profile_res = (
-            supabase.table("profiles")
-            .select("id,email,full_name,role,company_id")
-            .eq("id", user_obj.id)
-            .limit(1)
-            .execute()
-        )
-        if profile_res.data:
-            profile_payload.update(profile_res.data[0])
-    except Exception:
-        pass
-
-    st.session_state["user"] = {
-        "id": profile_payload.get("id") or user_obj.id,
-        "email": profile_payload.get("email") or user_obj.email,
-        "full_name": profile_payload.get("full_name") or "",
-        "role": profile_payload.get("role") or "Technician",
-        "company_id": profile_payload.get("company_id"),
-    }
-
-
-def page_auth():
-    st.title("Welcome to ReCapture Pro")
-    st.caption("Login or create an account with your company email.")
-
-    tab_login, tab_signup = st.tabs(["Login", "Sign up"])
-
-    with tab_login:
-        login_email = st.text_input("Email", key="auth_login_email")
-        login_pw = st.text_input("Password", type="password", key="auth_login_pw")
-        if st.button("Log in", key="auth_login_btn"):
-            try:
-                result = supabase.auth.sign_in_with_password(
-                    {"email": login_email.strip().lower(), "password": login_pw}
-                )
-                if result and result.user:
-                    set_auth_session(result.user)
-                    st.success("Logged in successfully")
-                    st.rerun()
-                else:
-                    st.error("Login failed")
-            except Exception as e:
-                st.error(f"Login failed: {e}")
-
-    with tab_signup:
-        signup_name = st.text_input("Full Name", key="auth_signup_name")
-        signup_email = st.text_input("Company Email", key="auth_signup_email")
-        signup_pw = st.text_input("Create Password", type="password", key="auth_signup_pw")
-        if st.button("Create account", key="auth_signup_btn"):
-            email_norm = signup_email.strip().lower()
-            if not is_valid_email(email_norm):
-                st.error("Please enter a valid email address.")
-                return
-            if not is_company_email(email_norm):
-                st.error("Please use your company email (personal domains are not allowed).")
-                return
-            if len(signup_pw) < 8:
-                st.error("Password must be at least 8 characters.")
-                return
-
-            try:
-                result = supabase.auth.sign_up(
-                    {
-                        "email": email_norm,
-                        "password": signup_pw,
-                        "options": {"data": {"full_name": signup_name}},
-                    }
-                )
-                if result and result.user:
-                    upsert_profile_from_auth(result.user)
-                    set_auth_session(result.user)
-                    st.success("Signup successful. Check your email to confirm your account.")
-                    st.rerun()
-                else:
-                    st.info("Signup request submitted. Check your email for confirmation.")
-            except Exception as e:
-                st.error(f"Signup failed: {e}")
-
-
-# Prefer existing Supabase session when available
-try:
-    sess = supabase.auth.get_session()
-    user_obj = sess.session.user if sess and sess.session else None
-    if user_obj and "authenticated" not in st.session_state:
-        set_auth_session(user_obj)
-except Exception:
-    pass
-
-# Keep WordPress token bridge compatibility when token is explicitly present
-if "token" in st.query_params and not st.session_state.get("authenticated"):
-    wp_auth_bridge()
-    st.stop()
-
-if not st.session_state.get("authenticated"):
-    page_auth()
-    st.stop()
-
-user = get_current_user()
-
 
 
 def get_user_settings_safe():
@@ -3970,62 +2856,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # ----------------------
 # WORDPRESS AUTH
 # ----------------------
-def wp_auth_bridge():
-    st.title("Authenticating...")
-
-    token = st.query_params.get("token")
-    if not token:
-        st.error("Missing authentication token")
-        st.stop()
-
-    payload = decode_wp_token(token)
-    if not payload:
-        st.error("Invalid or expired token")
-        st.stop()
-
-    email = payload.get("email")
-    name = payload.get("name", "")
-    role = payload.get("role", "Viewer")
-    if not email:
-        st.error("Invalid token payload")
-        st.stop()
-
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email).first()
-
-        if not user:
-            user = User(
-                email=email.lower(),
-                username=email.split("@")[0],
-                full_name=name,
-                role=role,
-                plan="starter",
-                subscription_status="trial",
-                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                email_verified=True,
-                is_active=True,
-            )
-            s.add(user)
-            s.commit()
-            s.refresh(user)
-
-        if not user.is_active:
-            st.error("Your account has been deactivated.")
-            st.stop()
-        if not user.email_verified:
-            st.error("Please verify your email address before accessing the app.")
-            st.stop()
-
-        st.session_state["user_id"] = user.id
-        st.session_state["authenticated"] = True
-        st.session_state["user_email"] = user.email
-        st.session_state["role"] = user.role
-        st.session_state["plan"] = user.plan
-
-    st.success("Authentication successful")
-    st.query_params.clear()
-    st.rerun()
-
 def reset_password_with_token(token: str, new_password: str):
     with SessionLocal() as s:
         user = s.query(User).filter(
@@ -4125,24 +2955,6 @@ def authenticate_user(email: str, password: str):
     # Mark user as pending OTP
     st.session_state["otp_user_id"] = user.id
     return "OTP_REQUIRED"
-def page_login():
-    st.markdown("## Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        result = authenticate_user(email, password)
-        if result == "OTP_REQUIRED":
-            st.info("OTP sent to your email.")
-            st.rerun()
-        elif not result:
-            st.error("Invalid credentials or inactive account")
-        else:
-            set_logged_in_user(result)
-            st.success("Logged in successfully")
-            st.rerun()
-
-
 def request_password_reset(email: str):
     token = generate_reset_token()
     with SessionLocal() as s:
@@ -4192,234 +3004,6 @@ def get_users_df():
     return pd.DataFrame(data)
 
 
-def page_settings():
-    require_role_access("settings")
-    if st.session_state.get("user") is None:
-        st.session_state.page = "auth"
-        st.warning("Please log in to access Settings.")
-        st.rerun()
-
-    session_user = st.session_state.get("user", {})
-    user_role = session_user.get("role")
-    company_id = session_user.get("company_id")
-
-    st.markdown(
-        "<div class='header'> Settings & User Management</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<em>Manage team members, invitations, and role permissions.</em>",
-        unsafe_allow_html=True,
-    )
-
-    tab_team, tab_invite, tab_roles = st.tabs(
-        ["👥 Team Members", "✉️ Invite", "🔐 Roles & Permissions"]
-    )
-
-    with tab_team:
-        if user_role != "Admin":
-            st.warning("Only Admin users can access Team Members.")
-        else:
-            response = (
-                supabase.table("profiles")
-                .select("id,full_name,email,role,is_active,last_login_at,company_id")
-                .eq("company_id", company_id)
-                .order("full_name")
-                .execute()
-            )
-            team_rows = response.data or []
-            if not team_rows:
-                st.info("No team members found for your company.")
-            else:
-                header = st.columns([2, 2, 1.4, 1.2, 1.5])
-                header[0].markdown("**Full Name**")
-                header[1].markdown("**Email**")
-                header[2].markdown("**Role**")
-                header[3].markdown("**Status**")
-                header[4].markdown("**Last Login**")
-
-                for member in team_rows:
-                    cols = st.columns([2, 2, 1.4, 1.2, 1.5])
-                    cols[0].write(member.get("full_name") or "—")
-                    cols[1].write(member.get("email") or "—")
-
-                    role_value = cols[2].selectbox(
-                        "Role",
-                        ["Admin", "Manager", "Technician"],
-                        index=["Admin", "Manager", "Technician"].index(
-                            member.get("role") if member.get("role") in ["Admin", "Manager", "Technician"] else "Technician"
-                        ),
-                        key=f"team_role_{member['id']}",
-                        label_visibility="collapsed",
-                    )
-
-                    active_value = cols[3].toggle(
-                        "Active",
-                        value=bool(member.get("is_active", True)),
-                        key=f"team_active_{member['id']}",
-                        label_visibility="collapsed",
-                    )
-
-                    last_login_raw = member.get("last_login_at")
-                    cols[4].write(last_login_raw or "—")
-
-                    if role_value != (member.get("role") or "Technician"):
-                        supabase.table("profiles").update({"role": role_value}).eq("id", member["id"]).execute()
-                        st.rerun()
-
-                    if active_value != bool(member.get("is_active", True)):
-                        supabase.table("profiles").update({"is_active": active_value}).eq("id", member["id"]).execute()
-                        st.rerun()
-
-    with tab_invite:
-        if user_role not in ["Admin", "Manager"]:
-            st.warning("Only Admin and Manager users can access Invite.")
-        else:
-            with st.form("settings_invite_form"):
-                invite_email = st.text_input("Email")
-                invite_role = st.selectbox("Role", ["Admin", "Manager", "Technician"])
-                send_invite = st.form_submit_button("Send Invite")
-
-            if send_invite:
-                if not invite_email or not is_valid_email(invite_email):
-                    st.error("A valid email is required.")
-                else:
-                    invite_token = secrets.token_urlsafe(32)
-                    expires_at = (datetime.utcnow() + timedelta(hours=48)).isoformat()
-                    supabase.table("invitations").insert(
-                        {
-                            "email": invite_email.strip().lower(),
-                            "role": invite_role,
-                            "company_id": company_id,
-                            "token": invite_token,
-                            "expires_at": expires_at,
-                            "used": False,
-                        }
-                    ).execute()
-                    supabase.auth.invite_user_by_email(invite_email.strip().lower())
-                    st.success("Invite sent successfully.")
-                    st.rerun()
-
-            st.markdown("### Pending Invites")
-            pending_res = (
-                supabase.table("invitations")
-                .select("id,email,role,expires_at")
-                .eq("company_id", company_id)
-                .eq("used", False)
-                .order("expires_at")
-                .execute()
-            )
-            pending_invites = pending_res.data or []
-
-            if not pending_invites:
-                st.info("No pending invites.")
-            else:
-                for inv in pending_invites:
-                    cols = st.columns([2, 1.2, 1.5, 1])
-                    cols[0].write(inv.get("email"))
-                    cols[1].write(inv.get("role"))
-                    cols[2].write(inv.get("expires_at"))
-                    if cols[3].button("Cancel", key=f"cancel_invite_{inv['id']}"):
-                        supabase.table("invitations").delete().eq("id", inv["id"]).execute()
-                        st.success("Invite cancelled.")
-                        st.rerun()
-
-    with tab_roles:
-        permissions_df = pd.DataFrame(
-            [
-                {"Feature": "View all jobs", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
-                {"Feature": "Manage team", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
-                {"Feature": "Assign jobs", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
-                {"Feature": "View own jobs", "Admin": "✅", "Manager": "✅", "Technician": "✅"},
-                {"Feature": "Update job status", "Admin": "✅", "Manager": "✅", "Technician": "✅"},
-                {"Feature": "Access billing", "Admin": "✅", "Manager": "❌", "Technician": "❌"},
-                {"Feature": "Access settings", "Admin": "✅", "Manager": "❌", "Technician": "❌"},
-            ]
-        )
-        st.table(permissions_df)
-        st.caption("To request a role change, contact your account Admin.")
-
-    st.markdown("---")
-# ======================================================
-# ADMIN — TRIAL REMINDERS
-# ======================================================
-user = get_current_user()
-if user.role == "Admin":
-    st.markdown("### Trial Management")
-    if st.button(" Send Trial Reminder Emails (Admin)"):
-        try:
-            send_trial_expiry_reminders()
-            st.success("Trial reminders sent")
-        except Exception as e:
-            if DEV_MODE:
-                st.warning(f"Trial reminder skipped (dev): {e}")
-        else:
-            raise
-st.markdown("---")
-# ======================================================
-# TECHNICIAN MANAGEMENT
-# ======================================================
-st.markdown("## Technician Management")
-with st.expander(" Add Technician"):
-    tech_username = st.text_input("Username")
-    tech_name = st.text_input("Full Name")
-    tech_phone = st.text_input("Phone Number")
-    tech_role = st.selectbox(
-    "Specialization",
-    ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
-    )
-    tech_active = st.checkbox("Active", True)
-    if st.button("Save Technician"):
-        add_technician(
-        tech_username.strip(),
-        full_name=tech_name.strip(),
-        phone=tech_phone.strip(),
-        specialization=tech_role,
-        active=tech_active,
-    )
-    st.success("Technician saved")
-    st.rerun()
-tech_df = get_technicians_df(active_only=False)
-if not tech_df.empty:
-    for _, row in tech_df.iterrows():
-        cols = st.columns([3, 2, 2])
-    cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
-    new_status = cols[1].selectbox(
-        "Status",
-        ["available", "assigned", "enroute", "onsite", "completed"],
-        index=["available","assigned","enroute","onsite","completed"].index(
-        row.get("status", "available")
-        ),
-        key=f"status_{row['username']}",
-    )
-    if cols[2].button("Update", key=f"upd_{row['username']}"):
-        update_technician_status(row["username"], new_status)
-        st.success("Status updated")
-        st.rerun()
-st.markdown("---")
-# ======================================================
-# CHANGE PASSWORD
-# ======================================================
-st.markdown("## Change Password")
-with st.form("change_password_form"):
-    current_password = st.text_input("Current Password", type="password")
-    new_password = st.text_input("New Password", type="password")
-    confirm_password = st.text_input("Confirm New Password", type="password")
-    if st.form_submit_button("Update Password"):
-        if new_password != confirm_password:
-            st.error("Passwords do not match")
-        st.stop()
-    user = get_current_user()
-    with SessionLocal() as s:
-        db_user = s.query(User).filter(User.id == user.id).first()
-        if not pwd_context.verify(current_password, db_user.password_hash):
-            st.error("Current password incorrect")
-        st.stop()
-        db_user.password_hash = pwd_context.hash(new_password)
-        s.commit()
-    st.success("Password updated")
-    st.rerun()
-st.markdown("---")
 def page_technician_mobile():
     st.markdown("## Technician Mobile")
     techs = get_technicians_df(active_only=True)
@@ -4449,189 +3033,8 @@ def page_technician_mobile():
         persist_location_ping(tech, lat, lon)
         st.success("Location sent")
 
-# ---------- BEGIN BLOCK D: SETTINGS UI - TECHNICIANS MANAGEMENT ----------
-st.markdown("---")
-st.subheader("Technicians (Field Users)")
-tech_df = get_technicians_df(active_only=False)
-with st.form("add_technician_form"):
-    t_uname = st.text_input("Technician username (unique)")
-    t_name = st.text_input("Full name")
-    t_phone = st.text_input("Phone")
-    t_role_sel = st.selectbox("Specialization", ["Tech", "Estimator", "Adjuster", "Driver"],
-index=0)
-    t_active = st.checkbox("Active", value=True)
-    if st.form_submit_button("Add / Update Technician"):
-        if not t_uname:
-            st.error("Technician username required")
-    else:
-        try:
-            add_technician(
-        username=tech_username.strip(),
-        full_name=tech_name.strip(),
-        phone=tech_phone.strip(),
-        specialization=tech_role,
-        active=tech_active
-        )
-        except Exception as e:
-            st.error("Failed to save technician: " + str(e))
-if tech_df is not None and not tech_df.empty:
-    st.dataframe(tech_df)
-else:
-    st.info("No technicians yet.")
-# ---------- END BLOCK D ----------
-st.subheader("Priority weight tuning (internal)")
-wscore = st.slider("Model score weight", 0.0, 1.0, 0.6, 0.05)
-wvalue = st.slider("Estimate value weight", 0.0, 1.0, 0.3, 0.05)
-wsla = st.slider("SLA urgency weight", 0.0, 1.0, 0.1, 0.05)
-baseline = st.number_input("Value baseline (for normalization)", value=5000.0)
-if st.button("Save weights"):
-    st.session_state.weights = {"score_w": wscore, "value_w": wvalue, "sla_w": wsla,
-"value_baseline": baseline}
-    st.success("Weights updated (in session)")
-st.markdown("---")
-st.subheader("Audit Trail")
-s = get_session()
-try:
-    hist = s.query(LeadHistory).order_by(LeadHistory.timestamp.desc()).limit(200).all()
-    if hist:
-
-        pd.DataFrame([{"lead_id":h.lead_id,"changed_by":h.changed_by,"field":h.field,"old":h.old_value,
-"new":h.new_value,"timestamp":h.timestamp} for h in hist])
-    st.dataframe(hist_df)
-
-    st.info("No audit entries yet.")
-finally:
-    s.close()
+# (loose technician block removed - managed inside page_settings)
 #---------------------------Exports page--------------------------------------------
-def page_exports():
-    require_role_access("exports")
-st.markdown("<div class='header'> Exports & Imports</div>", unsafe_allow_html=True)
-st.markdown(
-    "<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>",
-    unsafe_allow_html=True
-)
-# =========================================================
-# EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
-# =========================================================
-df = leads_to_df(None, None)
-if not df.empty:
-    towrite = io.BytesIO()
-    try:
-        # Preferred: Excel export
-        df.to_excel(towrite, index=False, engine="openpyxl")
-        file_type = "xlsx"
-    except ModuleNotFoundError:
-    # Fallback: CSV export
-        towrite = io.StringIO()
-    df.to_csv(towrite, index=False)
-    file_type = "csv"
-    st.download_button(
-    label=f" Download leads ({file_type.upper()})",
-    data=towrite.getvalue(),
-    file_name=f"leads_export.{file_type}",
-    mime="application/octet-stream"
-    )
-else:
-    st.info("No leads available to export.")
-st.divider()
-# =========================================================
-# IMPORT / UPSERT LEADS
-# =========================================================
-uploaded = st.file_uploader(
-    "Upload leads (CSV/XLSX) for import/upsert",
-    type=["csv", "xlsx"]
-)
-if uploaded:
-    try:
-        if uploaded.name.lower().endswith(".csv"):
-            df_in = pd.read_csv(uploaded)
-        else:
-            df_in = pd.read_excel(uploaded)
-
-        if "lead_id" not in df_in.columns:
-            st.error(" File must include a lead_id column")
-        else:
-            count = 0
-            for _, r in df_in.iterrows():
-                try:
-                    upsert_lead_record(
-                        {
-                            "lead_id": str(r["lead_id"]),
-                            "created_at": (
-                                pd.to_datetime(r.get("created_at"))
-                                if r.get("created_at") is not None
-                                else pd.Timestamp.utcnow()
-                            ),
-                            "source": r.get("source"),
-                            "contact_name": r.get("contact_name"),
-                            "contact_phone": r.get("contact_phone"),
-                            "contact_email": r.get("contact_email"),
-                            "property_address": r.get("property_address"),
-                            "damage_type": r.get("damage_type"),
-                            "assigned_to": r.get("assigned_to"),
-                            "notes": r.get("notes"),
-                            "estimated_value": float(r.get("estimated_value") or 0.0),
-                            "ad_cost": float(r.get("ad_cost") or 0.0),
-                            "stage": r.get("stage") or "New",
-                            "converted": bool(r.get("converted") or False),
-                        },
-                        actor="admin",
-                    )
-                    count += 1
-                except Exception:
-                    continue
-
-    except Exception as e:
-        st.error(" Failed to import: " + str(e))
-# ---------- BEGIN BLOCK F: FLASK API FOR LOCATION PINGS (optional but ready) ----------
-try:
-    from flask import Flask, request, jsonify
-    import threading
-    flask_app = Flask("recapture_pro_api")
-
-    @flask_app.route("/api/ping_location", methods=["POST"])
-    def api_ping_location():
-        try:
-            payload = request.get_json(force=True)
-            tech = payload.get("tech_username") or payload.get("username")
-            lat = payload.get("latitude") or payload.get("lat")
-            lon = payload.get("longitude") or payload.get("lon")
-            lead_id = payload.get("lead_id")
-            accuracy = payload.get("accuracy")
-            ts = payload.get("timestamp")
-            ts_parsed = None
-            if ts:
-                try:
-                    ts_parsed = datetime.fromisoformat(ts)
-                except Exception:
-                    ts_parsed = None
-            if not tech or lat is None or lon is None:
-                return jsonify({"error": "missing fields (tech_username, latitude, longitude)"}), 400
-            pid = persist_location_ping(
-                tech_username=str(tech), latitude=float(lat),
-                longitude=float(lon), lead_id=lead_id,
-                accuracy=accuracy, timestamp=ts_parsed
-            )
-            return jsonify({"ok": True, "ping_id": pid}), 200
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    def run_flask():
-        try:
-            # choose port 5001 to avoid Streamlit port conflicts
-            flask_app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
-        except Exception:
-            pass
-
-    # start flask in background daemon thread (only if not already started)
-    t = threading.Thread(target=run_flask, daemon=True)
-    t.start()
-except Exception:
-    # if Flask isn't available (not installed) the API simply won't start — harmless
-    pass
-# ---------- END BLOCK F ----------
-demand = {}
-season_score = 0.5
 def add_time_windows(hist_df):
     """
 Adds rolling time windows (3, 6, 12 months) for seasonal comparison
@@ -4846,39 +3249,6 @@ send_email(
     body=body
 )
 # ---------- END SETTINGS AND EMAIL INVITES ----------
-def page_request_review_settings():
-    require_role_access("settings")
-st.markdown("## Request Review Settings")
-st.caption("Configure how you collect Google reviews")
-st.markdown("---")
-# Load existing settings so saved link persists
-settings = get_user_settings_safe()
-existing_review_link = settings.get("google_review_url", "")
-review_link = st.text_input(
-    "Google Review Link",
-    value=existing_review_link,
-    placeholder="https://g.page/your-business/review"
-)
-st.markdown(
-    """
-    ℹ
-        This link will be used for:
-    - NFC tap cards
-    - QR codes
-    - Manual review requests
-    """
-)
-if st.button(" Save Review Link"):
-    settings = get_user_settings_safe()
-    settings["google_review_url"] = review_link
-    st.success(" Review link saved successfully.")
-st.markdown("---")
-st.markdown("### NFC & QR Review Tools")
-st.info(
-    "NFC tap cards and QR codes will redirect customers "
-    "to your saved Google review link.\n\n"
-    "No paid API required."
-)
 def page_request_review():
     require_role_access("overview")
     st.markdown("## Request Google Review")
@@ -4933,244 +3303,6 @@ def page_review_redirect():
     )
 
 #-----------------------START OF COMMAND CENTER---------------------
-def page_command_center():
-    require_role_access("overview")
-# =========================================================
-# LOAD DATA SAFELY
-# =========================================================
-try:
-    df = get_leads_df()
-except Exception:
-    df = pd.DataFrame()
-# =========================================================
-# HEADER
-# =========================================================
-st.markdown("## Command Center")
-st.caption("Real-time business health & priorities")
-st.divider()
-# =========================================================
-# EMPTY STATE
-# =========================================================
-if df.empty:
-    st.info(
-    "No activity yet.\n\n"
-    "Once you start capturing leads, this dashboard will show:\n"
-    "• Revenue at risk & recovered\n"
-    "• Follow-ups due\n"
-    "• Daily priorities\n"
-    "• Business insights\n"
-    "• Activity timeline"
-    )
-    if st.button(" Capture your first lead", use_container_width=True):
-        st.session_state.page = "Lead Capture"
-    st.rerun()
-    st.stop()
-# =========================================================
-# NORMALIZATION
-# =========================================================
-df = df.copy()
-df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
-df["stage"] = df.get("stage", "New").fillna("New")
-df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-df["updated_at"] = pd.to_datetime(
-    df.get("updated_at", df["created_at"]), errors="coerce"
-)
-df["sla_hours"] = df.get("sla_hours", 24)
-now = pd.Timestamp.utcnow()
-today = now.date()
-yesterday = today - timedelta(days=1)
-df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
-# =========================================================
-# KPI CALCULATIONS
-# =========================================================
-inspection_count = len(df[df["stage"] == "Inspection"])
-won_count = len(df[df["stage"] == "Won"])
-inspection_conversion = (
-    (won_count / inspection_count) * 100 if inspection_count else 0
-)
-follow_up_24h = df[
-    (df["stage"].isin(["New", "Contacted"])) &
-    (df["lead_age_hours"] >= 24)
-]
-stalled_revenue = df[
-    (df["stage"].isin(["Inspection", "Estimate Sent"])) &
-    (df["lead_age_hours"] > df["sla_hours"])
-]["estimated_value"].sum()
-recovered_today = df[
-    (df["stage"] == "Won") &
-    (df["updated_at"].dt.date == today)
-]["estimated_value"].sum()
-recovered_yesterday = df[
-    (df["stage"] == "Won") &
-    (df["updated_at"].dt.date == yesterday)
-]["estimated_value"].sum()
-recovered_delta = recovered_today - recovered_yesterday
-avg_response = df["lead_age_hours"].mean()
-# =========================================================
-# AI SUMMARY SENTENCE
-# =========================================================
-signals = []
-if stalled_revenue > 0:
-    signals.append(f"${stalled_revenue:,.0f} stalled")
-if len(follow_up_24h) > 0:
-    signals.append(f"{len(follow_up_24h)} follow-ups due")
-if inspection_conversion < 30:
-    signals.append("low inspection conversion")
-summary = (
-    "Everything is operating smoothly."
-    if not signals
-    else "Attention needed: " + ", ".join(signals)
-)
-st.markdown(
-    f"""
-    <div style="background:#f8fafc;
-    border-left:4px solid #2563eb;
-    padding:14px 18px;
-    border-radius:10px;
-    font-size:0.95rem;
-    ">🤖
-        <strong>Executive Insight:</strong> {summary}
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-st.divider()
-# =========================================================
-# KPI OVERVIEW (TOP ROW)
-# =========================================================
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Stalled Revenue", f"${stalled_revenue:,.0f}")
-k2.metric(
-    "Revenue Recovered Today",
-    f"${recovered_today:,.0f}",
-    f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}"
-)
-k3.metric("Follow-ups Due", len(follow_up_24h))
-k4.metric("Avg Response Time", f"{avg_response:.1f}h")
-st.divider()
-# =========================================================
-# TODAY’S PRIORITIES
-# =========================================================
-st.subheader(" Today’s Priorities")
-priorities = follow_up_24h.sort_values("created_at").head(5)
-if priorities.empty:
-    st.success(" No urgent actions required today")
-else:
-    for _, lead in priorities.iterrows():
-        st.markdown(
-        f"""
-        **Follow up with Lead #{lead['lead_id']}**
-        _Overdue {int(lead['lead_age_hours'])} hours_
-        """
-    )
-st.divider()
-# =========================================================
-# BUSINESS INSIGHTS
-# =========================================================
-st.subheader(" Business Insights")
-if stalled_revenue > 0:
-    st.warning(
-    f" {inspection_count} inspections or estimates stalled "
-    f"with ${stalled_revenue:,.0f} at risk."
-    )
-else:
-    st.success("No operational bottlenecks detected.")
-if inspection_conversion < 30:
-    st.info(
-    " Inspection → Won conversion is below target. "
-    "Review recent inspections."
-    )
-st.divider()
-# =========================================================
-# TODAY vs YESTERDAY
-# =========================================================
-st.subheader(" Today vs Yesterday")
-st.markdown(
-    f"""
-    • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f}
-yesterday
-    • **Follow-ups due:** {len(follow_up_24h)} today
-    • **Pipeline health:** {' Stable' if stalled_revenue == 0 else ' Needs attention'}
-    """
-)
-st.divider()
-# =========================================================
-# RECENT ACTIVITY
-# =========================================================
-st.subheader(" Recent Activity")
-st.caption("Latest movements across your pipeline")
-timeline_df = (
-    df[["lead_id", "stage", "updated_at"]]
-    .dropna()
-    .sort_values("updated_at", ascending=False)
-    .head(8)
-)
-for _, row in timeline_df.iterrows():
-    st.markdown(
-    f"• **Lead #{row['lead_id']}** → **{row['stage']}** \n"
-    f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
-    )
-# ----------------------
-# AUTH GUARD / REDIRECTS
-# ----------------------
-requested_page = str(st.query_params.get("page", "")).strip().lower()
-
-# Optional WordPress bridge when token is explicitly present
-if "token" in st.query_params and not st.session_state.get("authenticated"):
-    if st.query_params.get("reset") == "1":
-        page_reset_password()
-        st.stop()
-    wp_auth_bridge()
-    st.stop()
-
-# Logged-out users are always sent to login/signup page
-if not st.session_state.get("authenticated"):
-    page_auth()
-    st.stop()
-
-# Logged-in users hitting login page are redirected to command center
-if requested_page in {"login", "signup", "auth"} or str(st.session_state.get("page", "")).lower() in {"login", "signup", "auth"}:
-    st.session_state["page"] = "command_center"
-    st.query_params.clear()
-    st.rerun()
-
-# OTP step-up flow, only when explicitly pending
-if "otp_user_id" in st.session_state:
-    st.markdown("## Verify Your Login")
-    otp_input = st.text_input("Enter the 6-digit code sent to your email")
-    if st.button("Verify Code"):
-        with SessionLocal() as s:
-            user = s.query(User).filter(User.id == st.session_state["otp_user_id"]).first()
-        if not user:
-            st.error("Session expired")
-            st.session_state.clear()
-            st.stop()
-        if user.otp_expires_at < pd.Timestamp.utcnow():
-            st.error("Code expired. Please log in again.")
-            st.session_state.clear()
-            st.stop()
-        if otp_input != user.otp_code:
-            st.error("Invalid verification code")
-            st.stop()
-
-        user.otp_code = None
-        user.otp_expires_at = None
-        user.otp_required = False
-        with SessionLocal() as s:
-            s.merge(user)
-            s.commit()
-
-        st.session_state["user_id"] = user.id
-        del st.session_state["otp_user_id"]
-        st.session_state["page"] = "command_center"
-        st.success("Login verified")
-        st.rerun()
-    st.stop()
-
-user = get_current_user()
-
-
-
 def get_user_settings_safe():
     """
 Safe wrapper to prevent Request Review page crashes
@@ -5501,62 +3633,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 # ----------------------
 # WORDPRESS AUTH
 # ----------------------
-def wp_auth_bridge():
-    st.title("Authenticating...")
-
-    token = st.query_params.get("token")
-    if not token:
-        st.error("Missing authentication token")
-        st.stop()
-
-    payload = decode_wp_token(token)
-    if not payload:
-        st.error("Invalid or expired token")
-        st.stop()
-
-    email = payload.get("email")
-    name = payload.get("name", "")
-    role = payload.get("role", "Viewer")
-    if not email:
-        st.error("Invalid token payload")
-        st.stop()
-
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.email == email).first()
-
-        if not user:
-            user = User(
-                email=email.lower(),
-                username=email.split("@")[0],
-                full_name=name,
-                role=role,
-                plan="starter",
-                subscription_status="trial",
-                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                email_verified=True,
-                is_active=True,
-            )
-            s.add(user)
-            s.commit()
-            s.refresh(user)
-
-        if not user.is_active:
-            st.error("Your account has been deactivated.")
-            st.stop()
-        if not user.email_verified:
-            st.error("Please verify your email address before accessing the app.")
-            st.stop()
-
-        st.session_state["user_id"] = user.id
-        st.session_state["authenticated"] = True
-        st.session_state["user_email"] = user.email
-        st.session_state["role"] = user.role
-        st.session_state["plan"] = user.plan
-
-    st.success("Authentication successful")
-    st.query_params.clear()
-    st.rerun()
-
 def reset_password_with_token(token: str, new_password: str):
     with SessionLocal() as s:
         user = s.query(User).filter(
@@ -5656,24 +3732,6 @@ def authenticate_user(email: str, password: str):
     # Mark user as pending OTP
     st.session_state["otp_user_id"] = user.id
     return "OTP_REQUIRED"
-def page_login():
-    st.markdown("## Login")
-    email = st.text_input("Email")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        result = authenticate_user(email, password)
-        if result == "OTP_REQUIRED":
-            st.info("OTP sent to your email.")
-            st.rerun()
-        elif not result:
-            st.error("Invalid credentials or inactive account")
-        else:
-            set_logged_in_user(result)
-            st.success("Logged in successfully")
-            st.rerun()
-
-
 def request_password_reset(email: str):
     token = generate_reset_token()
     with SessionLocal() as s:
@@ -5721,897 +3779,6 @@ def get_users_df():
         for u in rows
     ]
     return pd.DataFrame(data)
-
-
-def page_settings():
-    require_role_access("settings")
-if False:
-    st.markdown(
-        "<div class='header'> Settings & User Management</div>",
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
-        unsafe_allow_html=True
-    )
-    # ======================================================
-    # INVITE USER
-    # ======================================================
-    st.markdown("### Invite User")
-    with st.form("invite_user_form"):
-        invite_email = st.text_input("Email (required)")
-        invite_role = st.selectbox("Role", ["Admin", "Manager", "Staff"], key="invite_role")
-        submitted_invite = st.form_submit_button("Send Invite")
-
-        if submitted_invite:
-            # ORG SEAT LIMIT ENFORCEMENT
-            current_user = get_current_user()
-            enforce_org_seat_limit(current_user)
-
-            if not invite_email:
-                st.error("Email is required")
-                st.stop()
-            if not is_valid_email(invite_email):
-                st.error("Enter a valid email address")
-                st.stop()
-
-            with SessionLocal() as s:
-                exists = s.query(User).filter(User.email == invite_email.lower()).first()
-                if exists:
-                    st.error("User already exists")
-                    st.stop()
-
-                token = generate_activation_token()
-                user = User(
-                    username=invite_email,
-                    email=invite_email.lower(),
-                    role=invite_role,
-                    organization_id=current_user.organization_id,
-                    plan=current_user.plan,
-                    subscription_status="trial",
-                    trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                    activation_token=token,
-                    activation_expires_at=pd.Timestamp.utcnow() + timedelta(hours=48),
-                    is_active=False,
-                )
-                s.add(user)
-                s.commit()
-
-            invite_link = f"{FRONTEND_URL.rstrip('/')}/activate?token={token}"
-            st.write("Invite link:", invite_link)
-            try:
-                send_invite_email(invite_email, invite_link)
-                st.success("Invitation email sent successfully")
-            except Exception as e:
-                if DEV_MODE:
-                    st.warning(f"Invite created, email skipped (dev): {e}")
-                else:
-                    st.warning("Invite created, but email failed to send")
-            st.rerun()
-
-    st.markdown("---")
-    # ======================================================
-    # ADD USER (ADMIN)
-    # ======================================================
-    st.markdown("### Add User")
-    with st.form("create_user_form"):
-        email = st.text_input("Email (required)")
-        username = st.text_input("Username (optional)")
-        full_name = st.text_input("Full Name")
-        role = st.selectbox(
-        "Role",
-        ["Admin", "Manager", "Staff"],
-        key="create_role"
-        )
-        submitted_create = st.form_submit_button("Create User")
-        if submitted_create:
-            # ORG SEAT LIMIT ENFORCEMENT
-            current_user = get_current_user()
-            enforce_org_seat_limit(current_user)
-
-            if not email:
-                st.error("Email is required")
-                st.stop()
-            if not is_valid_email(email):
-                st.error("Invalid email")
-                st.stop()
-
-            add_user(
-                email=email.lower(),
-                username=username.strip() if username else email.lower(),
-                full_name=full_name.strip(),
-                role=role,
-                is_active=True,
-                email_verified=True,
-            )
-            st.success("User created successfully")
-            st.rerun()
-    # ======================================================
-    # USERS TABLE
-    # ======================================================
-    st.markdown("### Existing Users")
-    users_df = get_users_df()
-    if users_df.empty:
-        st.info("No users yet.")
-    else:
-        st.dataframe(users_df, use_container_width=True)
-    st.markdown("---")
-    # ======================================================
-    # ADMIN — TRIAL REMINDERS
-    # ======================================================
-    user = get_current_user()
-    if user.role == "Admin":
-        st.markdown("### Trial Management")
-        if st.button(" Send Trial Reminder Emails (Admin)"):
-            try:
-                send_trial_expiry_reminders()
-                st.success("Trial reminders sent")
-            except Exception as e:
-                if DEV_MODE:
-                    st.warning(f"Trial reminder skipped (dev): {e}")
-            else:
-                raise
-    st.markdown("---")
-    # ======================================================
-    # TECHNICIAN MANAGEMENT
-    # ======================================================
-    st.markdown("## Technician Management")
-    with st.expander(" Add Technician"):
-        tech_username = st.text_input("Username")
-        tech_name = st.text_input("Full Name")
-        tech_phone = st.text_input("Phone Number")
-        tech_role = st.selectbox(
-        "Specialization",
-        ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
-        )
-        tech_active = st.checkbox("Active", True)
-        if st.button("Save Technician"):
-            add_technician(
-            tech_username.strip(),
-            full_name=tech_name.strip(),
-            phone=tech_phone.strip(),
-            specialization=tech_role,
-            active=tech_active,
-        )
-        st.success("Technician saved")
-        st.rerun()
-    tech_df = get_technicians_df(active_only=False)
-    if not tech_df.empty:
-        for _, row in tech_df.iterrows():
-            cols = st.columns([3, 2, 2])
-        cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
-        new_status = cols[1].selectbox(
-            "Status",
-            ["available", "assigned", "enroute", "onsite", "completed"],
-            index=["available","assigned","enroute","onsite","completed"].index(
-            row.get("status", "available")
-            ),
-            key=f"status_{row['username']}",
-        )
-        if cols[2].button("Update", key=f"upd_{row['username']}"):
-            update_technician_status(row["username"], new_status)
-            st.success("Status updated")
-            st.rerun()
-    st.markdown("---")
-    # ======================================================
-    # CHANGE PASSWORD
-    # ======================================================
-    st.markdown("## Change Password")
-    with st.form("change_password_form"):
-        current_password = st.text_input("Current Password", type="password")
-        new_password = st.text_input("New Password", type="password")
-        confirm_password = st.text_input("Confirm New Password", type="password")
-        if st.form_submit_button("Update Password"):
-            if new_password != confirm_password:
-                st.error("Passwords do not match")
-            st.stop()
-        user = get_current_user()
-        with SessionLocal() as s:
-            db_user = s.query(User).filter(User.id == user.id).first()
-            if not pwd_context.verify(current_password, db_user.password_hash):
-                st.error("Current password incorrect")
-            st.stop()
-            db_user.password_hash = pwd_context.hash(new_password)
-            s.commit()
-        st.success("Password updated")
-        st.rerun()
-    st.markdown("---")
-    def page_technician_mobile():
-        st.markdown("## Technician Mobile")
-        techs = get_technicians_df(active_only=True)
-        if techs.empty:
-            st.warning("No active technicians found.")
-            return
-
-        tech = st.selectbox("Select Technician", techs["username"].tolist())
-        st.markdown("### My Tasks")
-        tasks = get_tasks_for_user(tech)
-        if tasks.empty:
-            st.info(
-                "No task assigned to a Technician yet! To assign job task to a technician, go to:SETTINGS at the Navigation Menu, then click on the TECHNICIAN MANAGEMENT"
-            )
-        else:
-            for _, t in tasks.iterrows():
-                st.checkbox(
-                    f"{t['title']} (Lead: {t['lead_id']})",
-                    value=(t["status"] == "done"),
-                    key=f"task_{t['id']}",
-                )
-
-        st.markdown("### Send Location Ping")
-        lat = st.number_input("Latitude", format="%.6f")
-        lon = st.number_input("Longitude", format="%.6f")
-        if st.button("Send Location Ping"):
-            persist_location_ping(tech, lat, lon)
-            st.success("Location sent")
-
-    # ---------- BEGIN BLOCK D: SETTINGS UI - TECHNICIANS MANAGEMENT ----------
-    st.markdown("---")
-    st.subheader("Technicians (Field Users)")
-    tech_df = get_technicians_df(active_only=False)
-    with st.form("add_technician_form"):
-        t_uname = st.text_input("Technician username (unique)")
-        t_name = st.text_input("Full name")
-        t_phone = st.text_input("Phone")
-        t_role_sel = st.selectbox("Specialization", ["Tech", "Estimator", "Adjuster", "Driver"],
-    index=0)
-        t_active = st.checkbox("Active", value=True)
-        if st.form_submit_button("Add / Update Technician"):
-            if not t_uname:
-                st.error("Technician username required")
-        else:
-            try:
-                add_technician(
-            username=tech_username.strip(),
-            full_name=tech_name.strip(),
-            phone=tech_phone.strip(),
-            specialization=tech_role,
-            active=tech_active
-            )
-            except Exception as e:
-                st.error("Failed to save technician: " + str(e))
-    if tech_df is not None and not tech_df.empty:
-        st.dataframe(tech_df)
-    else:
-        st.info("No technicians yet.")
-    # ---------- END BLOCK D ----------
-    st.subheader("Priority weight tuning (internal)")
-    wscore = st.slider("Model score weight", 0.0, 1.0, 0.6, 0.05)
-    wvalue = st.slider("Estimate value weight", 0.0, 1.0, 0.3, 0.05)
-    wsla = st.slider("SLA urgency weight", 0.0, 1.0, 0.1, 0.05)
-    baseline = st.number_input("Value baseline (for normalization)", value=5000.0)
-    if st.button("Save weights"):
-        st.session_state.weights = {"score_w": wscore, "value_w": wvalue, "sla_w": wsla,
-    "value_baseline": baseline}
-        st.success("Weights updated (in session)")
-    st.markdown("---")
-    st.subheader("Audit Trail")
-    s = get_session()
-    try:
-        hist = s.query(LeadHistory).order_by(LeadHistory.timestamp.desc()).limit(200).all()
-        if hist:
-
-            pd.DataFrame([{"lead_id":h.lead_id,"changed_by":h.changed_by,"field":h.field,"old":h.old_value,
-    "new":h.new_value,"timestamp":h.timestamp} for h in hist])
-        st.dataframe(hist_df)
-
-        st.info("No audit entries yet.")
-    finally:
-        s.close()
-    #---------------------------Exports page--------------------------------------------
-    def page_exports():
-        require_role_access("exports")
-    st.markdown("<div class='header'> Exports & Imports</div>", unsafe_allow_html=True)
-    st.markdown(
-        "<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>",
-        unsafe_allow_html=True
-    )
-    # =========================================================
-    # EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
-    # =========================================================
-    df = leads_to_df(None, None)
-    if not df.empty:
-        towrite = io.BytesIO()
-        try:
-            # Preferred: Excel export
-            df.to_excel(towrite, index=False, engine="openpyxl")
-            file_type = "xlsx"
-        except ModuleNotFoundError:
-        # Fallback: CSV export
-            towrite = io.StringIO()
-        df.to_csv(towrite, index=False)
-        file_type = "csv"
-        st.download_button(
-        label=f" Download leads ({file_type.upper()})",
-        data=towrite.getvalue(),
-        file_name=f"leads_export.{file_type}",
-        mime="application/octet-stream"
-        )
-    else:
-        st.info("No leads available to export.")
-    st.divider()
-    # =========================================================
-    # IMPORT / UPSERT LEADS
-    # =========================================================
-    uploaded = st.file_uploader(
-        "Upload leads (CSV/XLSX) for import/upsert",
-        type=["csv", "xlsx"]
-    )
-    if uploaded:
-        try:
-            if uploaded.name.lower().endswith(".csv"):
-                df_in = pd.read_csv(uploaded)
-            else:
-                df_in = pd.read_excel(uploaded)
-
-            if "lead_id" not in df_in.columns:
-                st.error(" File must include a lead_id column")
-            else:
-                count = 0
-                for _, r in df_in.iterrows():
-                    try:
-                        upsert_lead_record(
-                            {
-                                "lead_id": str(r["lead_id"]),
-                                "created_at": (
-                                    pd.to_datetime(r.get("created_at"))
-                                    if r.get("created_at") is not None
-                                    else pd.Timestamp.utcnow()
-                                ),
-                                "source": r.get("source"),
-                                "contact_name": r.get("contact_name"),
-                                "contact_phone": r.get("contact_phone"),
-                                "contact_email": r.get("contact_email"),
-                                "property_address": r.get("property_address"),
-                                "damage_type": r.get("damage_type"),
-                                "assigned_to": r.get("assigned_to"),
-                                "notes": r.get("notes"),
-                                "estimated_value": float(r.get("estimated_value") or 0.0),
-                                "ad_cost": float(r.get("ad_cost") or 0.0),
-                                "stage": r.get("stage") or "New",
-                                "converted": bool(r.get("converted") or False),
-                            },
-                            actor="admin",
-                        )
-                        count += 1
-                    except Exception:
-                        continue
-
-        except Exception as e:
-            st.error(" Failed to import: " + str(e))
-    # ---------- BEGIN BLOCK F: FLASK API FOR LOCATION PINGS (optional but ready) ----------
-    try:
-        from flask import Flask, request, jsonify
-        import threading
-        flask_app = Flask("recapture_pro_api")
-
-        @flask_app.route("/api/ping_location", methods=["POST"])
-        def api_ping_location():
-            try:
-                payload = request.get_json(force=True)
-                tech = payload.get("tech_username") or payload.get("username")
-                lat = payload.get("latitude") or payload.get("lat")
-                lon = payload.get("longitude") or payload.get("lon")
-                lead_id = payload.get("lead_id")
-                accuracy = payload.get("accuracy")
-                ts = payload.get("timestamp")
-                ts_parsed = None
-                if ts:
-                    try:
-                        ts_parsed = datetime.fromisoformat(ts)
-                    except Exception:
-                        ts_parsed = None
-                if not tech or lat is None or lon is None:
-                    return jsonify({"error": "missing fields (tech_username, latitude, longitude)"}), 400
-                pid = persist_location_ping(
-                    tech_username=str(tech), latitude=float(lat),
-                    longitude=float(lon), lead_id=lead_id,
-                    accuracy=accuracy, timestamp=ts_parsed
-                )
-                return jsonify({"ok": True, "ping_id": pid}), 200
-            except Exception as e:
-                return jsonify({"error": str(e)}), 500
-
-        def run_flask():
-            try:
-                # choose port 5001 to avoid Streamlit port conflicts
-                flask_app.run(host="0.0.0.0", port=5001, debug=False, use_reloader=False)
-            except Exception:
-                pass
-
-        # start flask in background daemon thread (only if not already started)
-        t = threading.Thread(target=run_flask, daemon=True)
-        t.start()
-    except Exception:
-        # if Flask isn't available (not installed) the API simply won't start — harmless
-        pass
-    # ---------- END BLOCK F ----------
-    demand = {}
-    season_score = 0.5
-    def add_time_windows(hist_df):
-        """
-    Adds rolling time windows (3, 6, 12 months) for seasonal comparison
-    """
-        if hist_df.empty:
-            return {}
-
-        df = hist_df.copy()
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.sort_values("date")
-        latest_date = df["date"].max()
-        windows = {
-            "3_months": df[df["date"] >= latest_date - pd.DateOffset(months=3)],
-            "6_months": df[df["date"] >= latest_date - pd.DateOffset(months=6)],
-            "12_months": df[df["date"] >= latest_date - pd.DateOffset(months=12)],
-        }
-        return windows
-    # -------------------------------------------------------------
-    # SEASONAL TRENDS PAGE — SINGLE SOURCE OF TRUTH
-    # -------------------------------------------------------------
-    def page_seasonal_trends():
-        require_role_access("business_intelligence")
-
-        st.markdown("## Seasonal Trends & Weather-Based Damage Insights")
-        st.caption("Location-based risk forecasting with business impact intelligence")
-        st.divider()
-
-        countries = get_all_countries()
-        country = st.selectbox("Country", [c["name"] for c in countries])
-        country_code = next(c["code"] for c in countries if c["name"] == country)
-
-        city_query = st.text_input("City", placeholder="Type at least 3 letters")
-        if len(city_query) < 3:
-            st.info("Start typing a city name (3+ characters)")
-            return
-
-        matches = search_cities(country_code, city_query)
-        if not matches:
-            st.warning("No cities found")
-            return
-
-        labels = [f"{m['name']}, {m.get('admin1', '')}" for m in matches]
-        selected = st.selectbox("Select City", labels)
-        chosen = matches[labels.index(selected)]
-
-        hist_range = st.selectbox("Historical Window", ["3 months", "6 months", "12 months"], index=1)
-        months = {"3 months": 3, "6 months": 6, "12 months": 12}[hist_range]
-
-        if not st.button("Generate Insights", use_container_width=True):
-            return
-
-        with st.spinner("Generating insights..."):
-            hist_df = fetch_weather(chosen["lat"], chosen["lon"], months)
-
-        if hist_df is None or hist_df.empty:
-            st.error("No historical data available")
-            return
-
-        hist_df = hist_df.copy()
-        hist_df["date"] = pd.to_datetime(hist_df["date"], errors="coerce")
-        hist_df = hist_df.dropna(subset=["date"]).sort_values("date")
-
-        st.line_chart(hist_df.set_index("date")[["rainfall_mm", "temperature_c"]])
-
-    def page_competitor_intelligence():
-        st.title(" Competitor Intelligence")
-
-        st.subheader(" Competitive Alerts")
-        s = get_session()
-        try:
-            alerts = (
-                s.query(CompetitorAlert)
-                .order_by(CompetitorAlert.created_at.desc())
-                .limit(5)
-                .all()
-            )
-        finally:
-            s.close()
-
-        if not alerts:
-            st.success("No competitive threats detected.")
-        else:
-            for a in alerts:
-                if a.severity == "high":
-                    st.error(a.message)
-                else:
-                    st.warning(a.message)
-
-        st.divider()
-
-        with st.expander(" Discover Competitors"):
-            lat = st.number_input("Latitude", value=39.9612, key="comp_lat")
-            lon = st.number_input("Longitude", value=-82.9988, key="comp_lon")
-            keyword = st.text_input("Search keyword", "water damage restoration", key="comp_keyword")
-            if st.button("Run Competitor Scan", key="run_comp_scan"):
-                ingest_competitors_openstreetmap(lat, lon, keyword)
-                st.success("Competitor scan completed.")
-
-        s = get_session()
-        try:
-            competitors = s.query(Competitor).all()
-        finally:
-            s.close()
-
-        if not competitors:
-            st.info("No competitors tracked yet.")
-            return
-
-        rows = []
-        hq_lat = st.session_state.get("hq_lat")
-        hq_lon = st.session_state.get("hq_lon")
-        for c in competitors:
-            distance = 10
-            if hq_lat and hq_lon and c.latitude and c.longitude:
-                distance = haversine_km(hq_lat, hq_lon, c.latitude, c.longitude)
-            score = calculate_competitor_score(c.rating or 0, c.total_reviews or 0, distance)
-            rows.append(
-                {
-                    "Name": c.name,
-                    "Rating": c.rating,
-                    "Reviews": c.total_reviews,
-                    "Category": c.primary_category,
-                    "Distance (km)": round(distance, 2),
-                    "Strength Score": score,
-                    "Velocity (7d)": review_velocity(c.id, 7),
-                    "Velocity (30d)": review_velocity(c.id, 30),
-                }
-            )
-
-        df = pd.DataFrame(rows).sort_values("Strength Score", ascending=False)
-        st.subheader("Top Competitors")
-        st.dataframe(df, use_container_width=True, key="competitor_table")
-
-    def save_review_link_for_user(user, review_link):
-        if not user or not review_link:
-            return
-    with SessionLocal() as s:
-        existing = s.query(ReviewSettings).filter(
-        ReviewSettings.user_id == user.id
-        ).first()
-        if existing:
-            existing.review_link = review_link
-        else:
-            settings = ReviewSettings(
-            user_id=user.id,
-            review_link=review_link
-        )
-        s.add(settings)
-        s.commit()
-    def page_google_reviews():
-        st.subheader(" Google Reviews")
-        st.caption("Request Google reviews from completed jobs to boost reputation and local SEO.")
-
-        st.subheader(" Google Review Link")
-        review_link = st.text_input(
-            "Paste your Google Review link",
-            placeholder="https://g.page/your-business/review",
-        )
-        if st.button(" Save Review Link"):
-            if not review_link:
-                st.error("Review link is required")
-            else:
-                save_review_link_for_user(get_current_user(), review_link)
-                st.success("Review link saved")
-
-        st.divider()
-        st.subheader(" Select Customer")
-        contacts = get_completed_job_contacts(get_current_user())
-        if not contacts:
-            st.info("No completed job contacts yet.")
-            return
-
-        contact = st.selectbox(
-            "Choose a customer",
-            contacts,
-            format_func=lambda c: f"{c['name']} ({c['email']})",
-        )
-
-        st.divider()
-        st.subheader(" Send Review Request")
-        if st.button("Send Google Review Request"):
-            send_google_review_request(
-                to_email=contact["email"],
-                customer_name=contact["name"],
-                review_link=review_link,
-                job_name=contact.get("job_title", ""),
-            )
-            st.success("Review request sent")
-
-    def send_google_review_request(
-    to_email: str,
-    customer_name: str,
-    review_link: str,
-    job_name: str = ""
-    ):
-        subject = "We’d love your Google review "
-    job_line = f" regarding your recent {job_name}" if job_name else ""
-    body = f"""
-    Hi {customer_name},
-    Thank you for choosing us{job_line}.
-    If you have a moment, we’d truly appreciate a quick Google review.
-    Your feedback helps us improve and helps others find our services.
-    Leave a review here:
-    {review_link}
-    Thank you again for your trust.
-    Best regards,
-    The Team
-    """
-    send_email(
-        to_email=to_email,
-        subject=subject,
-        body=body
-    )
-    # ---------- END SETTINGS AND EMAIL INVITES ----------
-    def page_request_review_settings():
-        require_role_access("settings")
-    st.markdown("## Request Review Settings")
-    st.caption("Configure how you collect Google reviews")
-    st.markdown("---")
-    # Load existing settings so saved link persists
-    settings = get_user_settings_safe()
-    existing_review_link = settings.get("google_review_url", "")
-    review_link = st.text_input(
-        "Google Review Link",
-        value=existing_review_link,
-        placeholder="https://g.page/your-business/review"
-    )
-    st.markdown(
-        """
-        ℹ
-            This link will be used for:
-        - NFC tap cards
-        - QR codes
-        - Manual review requests
-        """
-    )
-    if st.button(" Save Review Link"):
-        settings = get_user_settings_safe()
-        settings["google_review_url"] = review_link
-        st.success(" Review link saved successfully.")
-    st.markdown("---")
-    st.markdown("### NFC & QR Review Tools")
-    st.info(
-        "NFC tap cards and QR codes will redirect customers "
-        "to your saved Google review link.\n\n"
-        "No paid API required."
-    )
-    def page_request_review():
-        require_role_access("overview")
-        st.markdown("## Request Google Review")
-        st.caption("Instant on-site review request via Tap or QR")
-
-        settings = get_user_settings_safe()
-        review_url = settings.get("google_review_url")
-        if not review_url:
-            st.warning("Google Review link not set. Add it in Settings.")
-            return
-
-        lead_id = st.session_state.get("active_lead_id")
-        token = generate_review_token()
-        base_url = st.secrets.get("APP_BASE_URL", "http://localhost:8501")
-        review_request_url = f"{base_url}/?page=review_redirect&token={token}"
-
-        try:
-            log_event(
-                event_type="review_requested",
-                entity_type="lead" if lead_id else "session",
-                entity_id=lead_id,
-                metadata={"method": "manual"},
-            )
-        except Exception:
-            pass
-
-        st.write("Share this review link with your customer:")
-        st.code(review_request_url)
-
-    def page_review_redirect():
-        token = st.query_params.get("token")
-        settings = get_user_settings_safe()
-        review_url = settings.get("google_review_url")
-        if not review_url:
-            st.error("Review link not configured.")
-            return
-
-        try:
-            log_event(
-                event_type="review_tap",
-                entity_type="review",
-                entity_id=token,
-                metadata={"source": "nfc_or_qr"},
-            )
-        except Exception:
-            pass
-
-        st.markdown("Redirecting to review page…")
-        st.markdown(
-            f"<meta http-equiv='refresh' content='1;url={review_url}'>",
-            unsafe_allow_html=True,
-        )
-
-    #-----------------------START OF COMMAND CENTER---------------------
-    def page_command_center():
-        require_role_access("overview")
-    # =========================================================
-    # LOAD DATA SAFELY
-    # =========================================================
-    try:
-        df = get_leads_df()
-    except Exception:
-        df = pd.DataFrame()
-    # =========================================================
-    # HEADER
-    # =========================================================
-    st.markdown("## Command Center")
-    st.caption("Real-time business health & priorities")
-    st.divider()
-    # =========================================================
-    # EMPTY STATE
-    # =========================================================
-    if df.empty:
-        st.info(
-        "No activity yet.\n\n"
-        "Once you start capturing leads, this dashboard will show:\n"
-        "• Revenue at risk & recovered\n"
-        "• Follow-ups due\n"
-        "• Daily priorities\n"
-        "• Business insights\n"
-        "• Activity timeline"
-        )
-        if st.button(" Capture your first lead", use_container_width=True):
-            st.session_state.page = "Lead Capture"
-        st.rerun()
-        st.stop()
-    # =========================================================
-    # NORMALIZATION
-    # =========================================================
-    df = df.copy()
-    df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
-    df["stage"] = df.get("stage", "New").fillna("New")
-    df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-    df["updated_at"] = pd.to_datetime(
-        df.get("updated_at", df["created_at"]), errors="coerce"
-    )
-    df["sla_hours"] = df.get("sla_hours", 24)
-    now = pd.Timestamp.utcnow()
-    today = now.date()
-    yesterday = today - timedelta(days=1)
-    df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
-    # =========================================================
-    # KPI CALCULATIONS
-    # =========================================================
-    inspection_count = len(df[df["stage"] == "Inspection"])
-    won_count = len(df[df["stage"] == "Won"])
-    inspection_conversion = (
-        (won_count / inspection_count) * 100 if inspection_count else 0
-    )
-    follow_up_24h = df[
-        (df["stage"].isin(["New", "Contacted"])) &
-        (df["lead_age_hours"] >= 24)
-    ]
-    stalled_revenue = df[
-        (df["stage"].isin(["Inspection", "Estimate Sent"])) &
-        (df["lead_age_hours"] > df["sla_hours"])
-    ]["estimated_value"].sum()
-    recovered_today = df[
-        (df["stage"] == "Won") &
-        (df["updated_at"].dt.date == today)
-    ]["estimated_value"].sum()
-    recovered_yesterday = df[
-        (df["stage"] == "Won") &
-        (df["updated_at"].dt.date == yesterday)
-    ]["estimated_value"].sum()
-    recovered_delta = recovered_today - recovered_yesterday
-    avg_response = df["lead_age_hours"].mean()
-    # =========================================================
-    # AI SUMMARY SENTENCE
-    # =========================================================
-    signals = []
-    if stalled_revenue > 0:
-        signals.append(f"${stalled_revenue:,.0f} stalled")
-    if len(follow_up_24h) > 0:
-        signals.append(f"{len(follow_up_24h)} follow-ups due")
-    if inspection_conversion < 30:
-        signals.append("low inspection conversion")
-    summary = (
-        "Everything is operating smoothly."
-        if not signals
-        else "Attention needed: " + ", ".join(signals)
-    )
-    st.markdown(
-        f"""
-        <div style="background:#f8fafc;
-        border-left:4px solid #2563eb;
-        padding:14px 18px;
-        border-radius:10px;
-        font-size:0.95rem;
-        ">🤖
-            <strong>Executive Insight:</strong> {summary}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    st.divider()
-    # =========================================================
-    # KPI OVERVIEW (TOP ROW)
-    # =========================================================
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Stalled Revenue", f"${stalled_revenue:,.0f}")
-    k2.metric(
-        "Revenue Recovered Today",
-        f"${recovered_today:,.0f}",
-        f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}"
-    )
-    k3.metric("Follow-ups Due", len(follow_up_24h))
-    k4.metric("Avg Response Time", f"{avg_response:.1f}h")
-    st.divider()
-    # =========================================================
-    # TODAY’S PRIORITIES
-    # =========================================================
-    st.subheader(" Today’s Priorities")
-    priorities = follow_up_24h.sort_values("created_at").head(5)
-    if priorities.empty:
-        st.success(" No urgent actions required today")
-    else:
-        for _, lead in priorities.iterrows():
-            st.markdown(
-            f"""
-            **Follow up with Lead #{lead['lead_id']}**
-            _Overdue {int(lead['lead_age_hours'])} hours_
-            """
-        )
-    st.divider()
-    # =========================================================
-    # BUSINESS INSIGHTS
-    # =========================================================
-    st.subheader(" Business Insights")
-    if stalled_revenue > 0:
-        st.warning(
-        f" {inspection_count} inspections or estimates stalled "
-        f"with ${stalled_revenue:,.0f} at risk."
-        )
-    else:
-        st.success("No operational bottlenecks detected.")
-    if inspection_conversion < 30:
-        st.info(
-        " Inspection → Won conversion is below target. "
-        "Review recent inspections."
-        )
-    st.divider()
-    # =========================================================
-    # TODAY vs YESTERDAY
-    # =========================================================
-    st.subheader(" Today vs Yesterday")
-    st.markdown(
-        f"""
-        • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f}
-    yesterday
-        • **Follow-ups due:** {len(follow_up_24h)} today
-        • **Pipeline health:** {' Stable' if stalled_revenue == 0 else ' Needs attention'}
-        """
-    )
-    st.divider()
-    # =========================================================
-    # RECENT ACTIVITY
-    # =========================================================
-    st.subheader(" Recent Activity")
-    st.caption("Latest movements across your pipeline")
-    timeline_df = (
-        df[["lead_id", "stage", "updated_at"]]
-        .dropna()
-        .sort_values("updated_at", ascending=False)
-        .head(8)
-    )
-    for _, row in timeline_df.iterrows():
-        st.markdown(
-        f"• **Lead #{row['lead_id']}** → **{row['stage']}** \n"
-        f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
-        )
-# ----------------------
-# AUTH FLOW (SUPABASE)
-# ----------------------
-FREE_EMAIL_DOMAINS = {
-    "gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "icloud.com", "aol.com"
-}
 
 
 def is_company_email(email: str) -> bool:
@@ -7615,84 +4782,84 @@ finally:
 #---------------------------Exports page--------------------------------------------
 def page_exports():
     require_role_access("exports")
-st.markdown("<div class='header'> Exports & Imports</div>", unsafe_allow_html=True)
-st.markdown(
-    "<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>",
-    unsafe_allow_html=True
-)
-# =========================================================
-# EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
-# =========================================================
-df = leads_to_df(None, None)
-if not df.empty:
-    towrite = io.BytesIO()
-    try:
-        # Preferred: Excel export
-        df.to_excel(towrite, index=False, engine="openpyxl")
-        file_type = "xlsx"
-    except ModuleNotFoundError:
-    # Fallback: CSV export
-        towrite = io.StringIO()
-    df.to_csv(towrite, index=False)
-    file_type = "csv"
-    st.download_button(
-    label=f" Download leads ({file_type.upper()})",
-    data=towrite.getvalue(),
-    file_name=f"leads_export.{file_type}",
-    mime="application/octet-stream"
+    st.markdown("<div class='header'>Exports & Imports</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<em>Export leads, import CSV/XLSX. Imported rows upsert by lead_id.</em>",
+        unsafe_allow_html=True
     )
-else:
-    st.info("No leads available to export.")
-st.divider()
-# =========================================================
-# IMPORT / UPSERT LEADS
-# =========================================================
-uploaded = st.file_uploader(
-    "Upload leads (CSV/XLSX) for import/upsert",
-    type=["csv", "xlsx"]
-)
-if uploaded:
-    try:
-        if uploaded.name.lower().endswith(".csv"):
-            df_in = pd.read_csv(uploaded)
-        else:
-            df_in = pd.read_excel(uploaded)
+    # =========================================================
+    # EXPORT LEADS (AUTO-FALLBACK XLSX → CSV)
+    # =========================================================
+    df = leads_to_df(None, None)
+    if not df.empty:
+        towrite = io.BytesIO()
+        try:
+            # Preferred: Excel export
+            df.to_excel(towrite, index=False, engine="openpyxl")
+            file_type = "xlsx"
+        except ModuleNotFoundError:
+        # Fallback: CSV export
+            towrite = io.StringIO()
+        df.to_csv(towrite, index=False)
+        file_type = "csv"
+        st.download_button(
+        label=f" Download leads ({file_type.upper()})",
+        data=towrite.getvalue(),
+        file_name=f"leads_export.{file_type}",
+        mime="application/octet-stream"
+        )
+    else:
+        st.info("No leads available to export.")
+    st.divider()
+    # =========================================================
+    # IMPORT / UPSERT LEADS
+    # =========================================================
+    uploaded = st.file_uploader(
+        "Upload leads (CSV/XLSX) for import/upsert",
+        type=["csv", "xlsx"]
+    )
+    if uploaded:
+        try:
+            if uploaded.name.lower().endswith(".csv"):
+                df_in = pd.read_csv(uploaded)
+            else:
+                df_in = pd.read_excel(uploaded)
 
-        if "lead_id" not in df_in.columns:
-            st.error(" File must include a lead_id column")
-        else:
-            count = 0
-            for _, r in df_in.iterrows():
-                try:
-                    upsert_lead_record(
-                        {
-                            "lead_id": str(r["lead_id"]),
-                            "created_at": (
-                                pd.to_datetime(r.get("created_at"))
-                                if r.get("created_at") is not None
-                                else pd.Timestamp.utcnow()
-                            ),
-                            "source": r.get("source"),
-                            "contact_name": r.get("contact_name"),
-                            "contact_phone": r.get("contact_phone"),
-                            "contact_email": r.get("contact_email"),
-                            "property_address": r.get("property_address"),
-                            "damage_type": r.get("damage_type"),
-                            "assigned_to": r.get("assigned_to"),
-                            "notes": r.get("notes"),
-                            "estimated_value": float(r.get("estimated_value") or 0.0),
-                            "ad_cost": float(r.get("ad_cost") or 0.0),
-                            "stage": r.get("stage") or "New",
-                            "converted": bool(r.get("converted") or False),
-                        },
-                        actor="admin",
-                    )
-                    count += 1
-                except Exception:
-                    continue
+            if "lead_id" not in df_in.columns:
+                st.error(" File must include a lead_id column")
+            else:
+                count = 0
+                for _, r in df_in.iterrows():
+                    try:
+                        upsert_lead_record(
+                            {
+                                "lead_id": str(r["lead_id"]),
+                                "created_at": (
+                                    pd.to_datetime(r.get("created_at"))
+                                    if r.get("created_at") is not None
+                                    else pd.Timestamp.utcnow()
+                                ),
+                                "source": r.get("source"),
+                                "contact_name": r.get("contact_name"),
+                                "contact_phone": r.get("contact_phone"),
+                                "contact_email": r.get("contact_email"),
+                                "property_address": r.get("property_address"),
+                                "damage_type": r.get("damage_type"),
+                                "assigned_to": r.get("assigned_to"),
+                                "notes": r.get("notes"),
+                                "estimated_value": float(r.get("estimated_value") or 0.0),
+                                "ad_cost": float(r.get("ad_cost") or 0.0),
+                                "stage": r.get("stage") or "New",
+                                "converted": bool(r.get("converted") or False),
+                            },
+                            actor="admin",
+                        )
+                        count += 1
+                    except Exception:
+                        continue
 
-    except Exception as e:
-        st.error(" Failed to import: " + str(e))
+        except Exception as e:
+            st.error(" Failed to import: " + str(e))
 # ---------- BEGIN BLOCK F: FLASK API FOR LOCATION PINGS (optional but ready) ----------
 try:
     from flask import Flask, request, jsonify
@@ -7958,9 +5125,9 @@ send_email(
 # ---------- END SETTINGS AND EMAIL INVITES ----------
 def page_request_review_settings():
     require_role_access("settings")
-st.markdown("## Request Review Settings")
-st.caption("Configure how you collect Google reviews")
-st.markdown("---")
+    st.markdown("## Request Review Settings")
+    st.caption("Configure how you collect Google reviews")
+    st.markdown("---")
 # Load existing settings so saved link persists
 settings = get_user_settings_safe()
 existing_review_link = settings.get("google_review_url", "")
@@ -8045,260 +5212,203 @@ def page_review_redirect():
 #-----------------------START OF COMMAND CENTER---------------------
 def page_command_center():
     require_role_access("overview")
-# =========================================================
-# LOAD DATA SAFELY
-# =========================================================
-try:
-    df = get_leads_df()
-except Exception:
-    df = pd.DataFrame()
-# =========================================================
-# HEADER
-# =========================================================
-st.markdown("## Command Center")
-st.caption("Real-time business health & priorities")
-st.divider()
-# =========================================================
-# EMPTY STATE
-# =========================================================
-if df.empty:
-    st.info(
-    "No activity yet.\n\n"
-    "Once you start capturing leads, this dashboard will show:\n"
-    "• Revenue at risk & recovered\n"
-    "• Follow-ups due\n"
-    "• Daily priorities\n"
-    "• Business insights\n"
-    "• Activity timeline"
-    )
-    if st.button(" Capture your first lead", use_container_width=True):
-        st.session_state.page = "Lead Capture"
-    st.rerun()
-    st.stop()
-# =========================================================
-# NORMALIZATION
-# =========================================================
-df = df.copy()
-df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
-df["stage"] = df.get("stage", "New").fillna("New")
-df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
-df["updated_at"] = pd.to_datetime(
-    df.get("updated_at", df["created_at"]), errors="coerce"
-)
-df["sla_hours"] = df.get("sla_hours", 24)
-now = pd.Timestamp.utcnow()
-today = now.date()
-yesterday = today - timedelta(days=1)
-df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
-# =========================================================
-# KPI CALCULATIONS
-# =========================================================
-inspection_count = len(df[df["stage"] == "Inspection"])
-won_count = len(df[df["stage"] == "Won"])
-inspection_conversion = (
-    (won_count / inspection_count) * 100 if inspection_count else 0
-)
-follow_up_24h = df[
-    (df["stage"].isin(["New", "Contacted"])) &
-    (df["lead_age_hours"] >= 24)
-]
-stalled_revenue = df[
-    (df["stage"].isin(["Inspection", "Estimate Sent"])) &
-    (df["lead_age_hours"] > df["sla_hours"])
-]["estimated_value"].sum()
-recovered_today = df[
-    (df["stage"] == "Won") &
-    (df["updated_at"].dt.date == today)
-]["estimated_value"].sum()
-recovered_yesterday = df[
-    (df["stage"] == "Won") &
-    (df["updated_at"].dt.date == yesterday)
-]["estimated_value"].sum()
-recovered_delta = recovered_today - recovered_yesterday
-avg_response = df["lead_age_hours"].mean()
-# =========================================================
-# AI SUMMARY SENTENCE
-# =========================================================
-signals = []
-if stalled_revenue > 0:
-    signals.append(f"${stalled_revenue:,.0f} stalled")
-if len(follow_up_24h) > 0:
-    signals.append(f"{len(follow_up_24h)} follow-ups due")
-if inspection_conversion < 30:
-    signals.append("low inspection conversion")
-summary = (
-    "Everything is operating smoothly."
-    if not signals
-    else "Attention needed: " + ", ".join(signals)
-)
-st.markdown(
-    f"""
-    <div style="background:#f8fafc;
-    border-left:4px solid #2563eb;
-    padding:14px 18px;
-    border-radius:10px;
-    font-size:0.95rem;
-    ">🤖
-        <strong>Executive Insight:</strong> {summary}
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-st.divider()
-# =========================================================
-# KPI OVERVIEW (TOP ROW)
-# =========================================================
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Stalled Revenue", f"${stalled_revenue:,.0f}")
-k2.metric(
-    "Revenue Recovered Today",
-    f"${recovered_today:,.0f}",
-    f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}"
-)
-k3.metric("Follow-ups Due", len(follow_up_24h))
-k4.metric("Avg Response Time", f"{avg_response:.1f}h")
-st.divider()
-# =========================================================
-# TODAY’S PRIORITIES
-# =========================================================
-st.subheader(" Today’s Priorities")
-priorities = follow_up_24h.sort_values("created_at").head(5)
-if priorities.empty:
-    st.success(" No urgent actions required today")
-else:
-    for _, lead in priorities.iterrows():
-        st.markdown(
-        f"""
-        **Follow up with Lead #{lead['lead_id']}**
-        _Overdue {int(lead['lead_age_hours'])} hours_
-        """
-    )
-st.divider()
-# =========================================================
-# BUSINESS INSIGHTS
-# =========================================================
-st.subheader(" Business Insights")
-if stalled_revenue > 0:
-    st.warning(
-    f" {inspection_count} inspections or estimates stalled "
-    f"with ${stalled_revenue:,.0f} at risk."
-    )
-else:
-    st.success("No operational bottlenecks detected.")
-if inspection_conversion < 30:
-    st.info(
-    " Inspection → Won conversion is below target. "
-    "Review recent inspections."
-    )
-st.divider()
-# =========================================================
-# TODAY vs YESTERDAY
-# =========================================================
-st.subheader(" Today vs Yesterday")
-st.markdown(
-    f"""
-    • **Revenue recovered:** ${recovered_today:,.0f} today vs ${recovered_yesterday:,.0f}
-yesterday
-    • **Follow-ups due:** {len(follow_up_24h)} today
-    • **Pipeline health:** {' Stable' if stalled_revenue == 0 else ' Needs attention'}
-    """
-)
-st.divider()
-# =========================================================
-# RECENT ACTIVITY
-# =========================================================
-st.subheader(" Recent Activity")
-st.caption("Latest movements across your pipeline")
-timeline_df = (
-    df[["lead_id", "stage", "updated_at"]]
-    .dropna()
-    .sort_values("updated_at", ascending=False)
-    .head(8)
-)
-for _, row in timeline_df.iterrows():
+    # =========================================================
+    # LOAD DATA SAFELY
+    # =========================================================
+    try:
+        df = get_leads_df()
+    except Exception:
+        df = pd.DataFrame()
+    # =========================================================
+    # HEADER
+    # =========================================================
+    st.markdown("## Command Center")
+    st.caption("Real-time business health & priorities")
+    st.divider()
+    # =========================================================
+    # EMPTY STATE
+    # =========================================================
+    if df.empty:
+        st.info(
+            "No activity yet.\n\n"
+            "Once you start capturing leads, this dashboard will show:\n"
+            "• Revenue at risk & recovered\n"
+            "• Follow-ups due\n"
+            "• Daily priorities\n"
+            "• Business insights\n"
+            "• Activity timeline"
+        )
+        if st.button("Capture your first lead", use_container_width=True):
+            st.session_state.page = "Lead Capture"
+            st.rerun()
+        st.stop()
+    # =========================================================
+    # NORMALIZATION
+    # =========================================================
+    df = df.copy()
+    df["estimated_value"] = df.get("estimated_value", 0).fillna(0)
+    df["stage"] = df.get("stage", "New").fillna("New")
+    df["created_at"] = pd.to_datetime(df.get("created_at"), errors="coerce")
+    df["updated_at"] = pd.to_datetime(df.get("updated_at", df["created_at"]), errors="coerce")
+    df["sla_hours"] = df.get("sla_hours", 24)
+    now = pd.Timestamp.utcnow()
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    df["lead_age_hours"] = (now - df["created_at"]).dt.total_seconds() / 3600
+    # =========================================================
+    # KPI CALCULATIONS
+    # =========================================================
+    inspection_count = len(df[df["stage"] == "Inspection"])
+    won_count = len(df[df["stage"] == "Won"])
+    inspection_conversion = (won_count / inspection_count) * 100 if inspection_count else 0
+    follow_up_24h = df[
+        (df["stage"].isin(["New", "Contacted"])) &
+        (df["lead_age_hours"] >= 24)
+    ]
+    stalled_revenue = df[
+        (df["stage"].isin(["Inspection", "Estimate Sent"])) &
+        (df["lead_age_hours"] > df["sla_hours"])
+    ]["estimated_value"].sum()
+    recovered_today = df[(df["stage"] == "Won") & (df["updated_at"].dt.date == today)]["estimated_value"].sum()
+    recovered_yesterday = df[(df["stage"] == "Won") & (df["updated_at"].dt.date == yesterday)]["estimated_value"].sum()
+    recovered_delta = recovered_today - recovered_yesterday
+    avg_response = df["lead_age_hours"].mean()
+    # =========================================================
+    # AI SUMMARY
+    # =========================================================
+    signals = []
+    if stalled_revenue > 0:
+        signals.append(f"${stalled_revenue:,.0f} stalled")
+    if len(follow_up_24h) > 0:
+        signals.append(f"{len(follow_up_24h)} follow-ups due")
+    if inspection_conversion < 30:
+        signals.append("low inspection conversion")
+    summary = "Everything is operating smoothly." if not signals else "Attention needed: " + ", ".join(signals)
     st.markdown(
-    f"• **Lead #{row['lead_id']}** → **{row['stage']}** \n"
-    f"_{row['updated_at'].strftime('%b %d, %Y %H:%M')}_"
+        f'<div style="background:#f8fafc;border-left:4px solid #2563eb;padding:14px 18px;border-radius:10px;font-size:0.95rem;">'
+        f'🤖 <strong>Executive Insight:</strong> {summary}</div>',
+        unsafe_allow_html=True
     )
-# ----------------------
-# WORDPRESS AUTH BRIDGE (GLOBAL)
-# ----------------------
+    st.divider()
+    # =========================================================
+    # KPI OVERVIEW
+    # =========================================================
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Stalled Revenue", f"${stalled_revenue:,.0f}")
+    k2.metric("Revenue Recovered Today", f"${recovered_today:,.0f}", f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}")
+    k3.metric("Follow-ups Due", len(follow_up_24h))
+    k4.metric("Avg Response Time", f"{avg_response:.1f}h")
+    st.divider()
+    # =========================================================
+    # TODAY'S PRIORITIES
+    # =========================================================
+    st.subheader("Today's Priorities")
+    priorities = follow_up_24h.sort_values("created_at").head(5)
+    if priorities.empty:
+        st.success("No urgent actions required today")
+    else:
+        for _, lead in priorities.iterrows():
+            st.markdown(f"**Follow up with Lead #{lead['lead_id']}** — Overdue {int(lead['lead_age_hours'])} hours")
+    st.divider()
+    # =========================================================
+    # BUSINESS INSIGHTS
+    # =========================================================
+    st.subheader("Business Insights")
+    if stalled_revenue > 0:
+        st.warning(f"{inspection_count} inspections or estimates stalled with ${stalled_revenue:,.0f} at risk.")
+    else:
+        st.success("No operational bottlenecks detected.")
+    if inspection_conversion < 30:
+        st.info("Inspection → Won conversion is below target. Review recent inspections.")
+    st.divider()
+    # =========================================================
+    # TODAY vs YESTERDAY
+    # =========================================================
+    st.subheader("Today vs Yesterday")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Revenue Recovered", f"${recovered_today:,.0f}", f"{'+' if recovered_delta >= 0 else ''}${recovered_delta:,.0f}")
+    c2.metric("Follow-ups Due", len(follow_up_24h))
+    c3.metric("Pipeline Health", "Stable" if stalled_revenue == 0 else "Needs Attention")
+    st.divider()
+    # =========================================================
+    # RECENT ACTIVITY
+    # =========================================================
+    st.subheader("Recent Activity")
+    st.caption("Latest movements across your pipeline")
+    timeline_df = (
+        df[["lead_id", "stage", "updated_at"]]
+        .dropna()
+        .sort_values("updated_at", ascending=False)
+        .head(8)
+    )
+    for _, row in timeline_df.iterrows():
+        st.markdown(
+            f"• **Lead #{row['lead_id']}** → **{row['stage']}** — {row['updated_at'].strftime('%b %d, %Y %H:%M')}"
+        )
+
+# =============================================================
+# MAIN ENTRY POINT
+# =============================================================
+
+# Restore existing Supabase session if available
+try:
+    sess = supabase.auth.get_session()
+    user_obj = sess.session.user if sess and sess.session else None
+    if user_obj and not st.session_state.get("authenticated"):
+        set_auth_session(user_obj)
+except Exception:
+    pass
+
+# Handle WordPress token bridge and password reset links
 if "token" in st.query_params:
     if st.query_params.get("reset") == "1":
         page_reset_password()
+    else:
+        wp_auth_bridge()
     st.stop()
-else:
-    wp_auth_bridge()
+
+# Show login/signup if not authenticated
+if not st.session_state.get("authenticated"):
+    page_auth()
     st.stop()
-if "otp_user_id" in st.session_state:
-    st.markdown("## Verify Your Login")
-otp_input = st.text_input("Enter the 6-digit code sent to your email")
-if st.button("Verify Code"):
-    with SessionLocal() as s:
-        user = s.query(User).filter(
-        User.id == st.session_state["otp_user_id"]
-    ).first()
-    if not user:
-        st.error("Session expired")
-        st.session_state.clear()
-        st.stop()
-    if user.otp_expires_at < pd.Timestamp.utcnow():
-        st.error("Code expired. Please log in again.")
-        st.session_state.clear()
-        st.stop()
-    if otp_input != user.otp_code:
-        st.error("Invalid verification code")
-        st.stop()
-    # OTP success
-    user.otp_code = None
-    user.otp_expires_at = None
-    user.otp_required = False
-    s.commit()
-    st.session_state["user_id"] = user.id
-    del st.session_state["otp_user_id"]
-    st.success("Login verified")
-    st.rerun()
-st.stop()
+
+# ---- AUTHENTICATED AREA ----
+
 user = get_current_user()
-if (
-user
-and user.subscription_status == "trial"
-and user.trial_ends_at
-):
-    days_left = max(
-    0,
-    (user.trial_ends_at - pd.Timestamp.utcnow()).days
-)
-st.sidebar.warning(f" Trial ends in {days_left} days")
-#if DEV_MODE:
-#st.sidebar.markdown(" **Developer Mode**")
-#st.sidebar.markdown("All features unlocked")
-#st.sidebar.success("DEV MODE ACTIVE — ALL FEATURES UNLOCKED")
+
+# Trial banner
+if user and getattr(user, "subscription_status", None) == "trial" and getattr(user, "trial_ends_at", None):
+    try:
+        days_left = max(0, (user.trial_ends_at - pd.Timestamp.utcnow()).days)
+        st.sidebar.warning(f"Trial ends in {days_left} days")
+    except Exception:
+        pass
+
 # ----------------------
 # NAV ICONS
 # ----------------------
 NAV_ICONS = {
-"Command Center": " ",
-"Overview": " ",
-"Lead Capture": " ",
-"Pipeline Board": " ",
-"Analytics": " ",
-"CPA & ROI": " ",
-"Tasks": " ",
-"AI Recommendations": " ",
-"Seasonal Trends": " ",
-"Settings": " ",
-"Request Review": " ",
-"review_redirect": " ",
-#"Request Google Reviews": " ", 📤
-"Exports": " ",
+    "Command Center": "🏠",
+    "Overview": "📊",
+    "Lead Capture": "📥",
+    "Pipeline Board": "📋",
+    "Analytics": "📈",
+    "CPA & ROI": "💰",
+    "Tasks": "✅",
+    "AI Recommendations": "🤖",
+    "Seasonal Trends": "🌦",
+    "Settings": "⚙️",
+    "Request Review": "⭐",
+    "Exports": "📤",
 }
+
 # ----------------------
-# NAVIGATION (STABLE MODE) - SIDEBAR
+# SIDEBAR NAVIGATION
 # ----------------------
 with st.sidebar:
     st.header("Navigation")
-st.markdown("---")
+    st.markdown("---")
+
 pages = [
     "Command Center",
     "Overview",
@@ -8313,39 +5423,34 @@ pages = [
     "Settings",
     "Exports",
 ]
-# Ensure page exists
-if "page" not in st.session_state:
-    st.session_state.page = "command_center"
-# Build labeled options
-page_labels = [f"{NAV_ICONS.get(p, ' ')} {p}" for p in pages]
-# Normalize router aliases
-if st.session_state.page == "command_center":
+
+# Default page is Command Center
+if "page" not in st.session_state or st.session_state.page in ("command_center", "auth", ""):
     st.session_state.page = "Command Center"
 
-# Find current index safely
+if "ai_insights" not in st.session_state:
+    st.session_state.ai_insights = []
+
+page_labels = [f"{NAV_ICONS.get(p, '')} {p}" for p in pages]
 current_index = pages.index(st.session_state.page) if st.session_state.page in pages else 0
-selected_label = st.radio(
+
+selected_label = st.sidebar.radio(
     "Navigate",
     page_labels,
     index=current_index,
+    label_visibility="collapsed",
 )
-selected_page = selected_label.split(" ", 1)[1]
-# WRITE BACK TO SESSION STATE
+selected_page = selected_label.split(" ", 1)[-1].strip()
+
 if selected_page != st.session_state.page:
     st.session_state.page = selected_page
     st.rerun()
-# =========================================================
-# SESSION DEFAULTS (AFTER AUTH)
-# =========================================================
-if "page" not in st.session_state:
-    st.session_state.page = "command_center"
-#-----------------Persit AI-----------------------
-if "ai_insights" not in st.session_state:
-    st.session_state.ai_insights = []
+
 # ----------------------
-# ROUTER (STABLE)
+# ROUTER
 # ----------------------
-page = st.session_state.page # <-- ensure router reads session_state
+page = st.session_state.page
+
 if page == "Command Center":
     page_command_center()
 elif page == "Overview":
@@ -8370,27 +5475,13 @@ elif page == "Request Review":
     page_request_review()
 elif page == "review_redirect":
     page_review_redirect()
-#-------------------------------
 elif page == "Request Review Settings":
     page_request_review_settings()
-elif page == "Request Google Review":
-    page_request_review()
 elif page == "Exports":
     page_exports()
 else:
     st.info("Page not implemented yet.")
-#----------------------------------SUPABASE TEST-----------------------
-st.markdown("---")
-st.header("Supabase Connection Test")
-org_name = st.text_input("Test Organization Name")
-if st.button("Create Test Organization"):
-    result = create_organization(org_name)
-st.success("Created!")
-st.write(result)
-if st.button("Load All Organizations"):
-    orgs = get_organizations()
-st.write(orgs)
-#------------------------------Ends Here--------------------------------
+
 # Footer
 st.markdown("---")
-st.markdown("<div class='small-muted'>ReCapture Pro. Sales Intelligence andConversion.</div>", unsafe_allow_html=True)
+st.markdown("<div style='font-size:0.8rem;color:#999;'>ReCapture Pro. Sales Intelligence and Conversion.</div>", unsafe_allow_html=True)
