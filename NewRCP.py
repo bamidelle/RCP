@@ -3531,6 +3531,34 @@ def set_auth_session(user_obj):
     st.session_state["user_email"] = user_obj.email
     st.session_state["page"] = "command_center"
 
+    profile_payload = {
+        "id": user_obj.id,
+        "email": user_obj.email,
+        "full_name": "",
+        "role": "Technician",
+        "company_id": None,
+    }
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("id,email,full_name,role,company_id")
+            .eq("id", user_obj.id)
+            .limit(1)
+            .execute()
+        )
+        if profile_res.data:
+            profile_payload.update(profile_res.data[0])
+    except Exception:
+        pass
+
+    st.session_state["user"] = {
+        "id": profile_payload.get("id") or user_obj.id,
+        "email": profile_payload.get("email") or user_obj.email,
+        "full_name": profile_payload.get("full_name") or "",
+        "role": profile_payload.get("role") or "Technician",
+        "company_id": profile_payload.get("company_id"),
+    }
+
 
 def page_auth():
     st.title("Welcome to ReCapture Pro")
@@ -4166,116 +4194,152 @@ def get_users_df():
 
 def page_settings():
     require_role_access("settings")
-st.markdown(
-    "<div class='header'> Settings & User Management</div>",
-    unsafe_allow_html=True
-)
-st.markdown(
-    "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
-    unsafe_allow_html=True
-)
-# ======================================================
-# INVITE USER
-# ======================================================
-st.markdown("### Invite User")
-with st.form("invite_user_form"):
-    invite_email = st.text_input("Email (required)")
-    invite_role = st.selectbox("Role", ["Admin", "Manager", "Staff"], key="invite_role")
-    submitted_invite = st.form_submit_button("Send Invite")
-
-    if submitted_invite:
-        # ORG SEAT LIMIT ENFORCEMENT
-        current_user = get_current_user()
-        enforce_org_seat_limit(current_user)
-
-        if not invite_email:
-            st.error("Email is required")
-            st.stop()
-        if not is_valid_email(invite_email):
-            st.error("Enter a valid email address")
-            st.stop()
-
-        with SessionLocal() as s:
-            exists = s.query(User).filter(User.email == invite_email.lower()).first()
-            if exists:
-                st.error("User already exists")
-                st.stop()
-
-            token = generate_activation_token()
-            user = User(
-                username=invite_email,
-                email=invite_email.lower(),
-                role=invite_role,
-                organization_id=current_user.organization_id,
-                plan=current_user.plan,
-                subscription_status="trial",
-                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                activation_token=token,
-                activation_expires_at=pd.Timestamp.utcnow() + timedelta(hours=48),
-                is_active=False,
-            )
-            s.add(user)
-            s.commit()
-
-        invite_link = f"{FRONTEND_URL.rstrip('/')}/activate?token={token}"
-        st.write("Invite link:", invite_link)
-        try:
-            send_invite_email(invite_email, invite_link)
-            st.success("Invitation email sent successfully")
-        except Exception as e:
-            if DEV_MODE:
-                st.warning(f"Invite created, email skipped (dev): {e}")
-            else:
-                st.warning("Invite created, but email failed to send")
+    if st.session_state.get("user") is None:
+        st.session_state.page = "auth"
+        st.warning("Please log in to access Settings.")
         st.rerun()
 
-st.markdown("---")
-# ======================================================
-# ADD USER (ADMIN)
-# ======================================================
-st.markdown("### Add User")
-with st.form("create_user_form"):
-    email = st.text_input("Email (required)")
-    username = st.text_input("Username (optional)")
-    full_name = st.text_input("Full Name")
-    role = st.selectbox(
-    "Role",
-    ["Admin", "Manager", "Staff"],
-    key="create_role"
+    session_user = st.session_state.get("user", {})
+    user_role = session_user.get("role")
+    company_id = session_user.get("company_id")
+
+    st.markdown(
+        "<div class='header'> Settings & User Management</div>",
+        unsafe_allow_html=True,
     )
-    submitted_create = st.form_submit_button("Create User")
-    if submitted_create:
-        # ORG SEAT LIMIT ENFORCEMENT
-        current_user = get_current_user()
-        enforce_org_seat_limit(current_user)
+    st.markdown(
+        "<em>Manage team members, invitations, and role permissions.</em>",
+        unsafe_allow_html=True,
+    )
 
-        if not email:
-            st.error("Email is required")
-            st.stop()
-        if not is_valid_email(email):
-            st.error("Invalid email")
-            st.stop()
+    tab_team, tab_invite, tab_roles = st.tabs(
+        ["👥 Team Members", "✉️ Invite", "🔐 Roles & Permissions"]
+    )
 
-        add_user(
-            email=email.lower(),
-            username=username.strip() if username else email.lower(),
-            full_name=full_name.strip(),
-            role=role,
-            is_active=True,
-            email_verified=True,
+    with tab_team:
+        if user_role != "Admin":
+            st.warning("Only Admin users can access Team Members.")
+        else:
+            response = (
+                supabase.table("profiles")
+                .select("id,full_name,email,role,is_active,last_login_at,company_id")
+                .eq("company_id", company_id)
+                .order("full_name")
+                .execute()
+            )
+            team_rows = response.data or []
+            if not team_rows:
+                st.info("No team members found for your company.")
+            else:
+                header = st.columns([2, 2, 1.4, 1.2, 1.5])
+                header[0].markdown("**Full Name**")
+                header[1].markdown("**Email**")
+                header[2].markdown("**Role**")
+                header[3].markdown("**Status**")
+                header[4].markdown("**Last Login**")
+
+                for member in team_rows:
+                    cols = st.columns([2, 2, 1.4, 1.2, 1.5])
+                    cols[0].write(member.get("full_name") or "—")
+                    cols[1].write(member.get("email") or "—")
+
+                    role_value = cols[2].selectbox(
+                        "Role",
+                        ["Admin", "Manager", "Technician"],
+                        index=["Admin", "Manager", "Technician"].index(
+                            member.get("role") if member.get("role") in ["Admin", "Manager", "Technician"] else "Technician"
+                        ),
+                        key=f"team_role_{member['id']}",
+                        label_visibility="collapsed",
+                    )
+
+                    active_value = cols[3].toggle(
+                        "Active",
+                        value=bool(member.get("is_active", True)),
+                        key=f"team_active_{member['id']}",
+                        label_visibility="collapsed",
+                    )
+
+                    last_login_raw = member.get("last_login_at")
+                    cols[4].write(last_login_raw or "—")
+
+                    if role_value != (member.get("role") or "Technician"):
+                        supabase.table("profiles").update({"role": role_value}).eq("id", member["id"]).execute()
+                        st.rerun()
+
+                    if active_value != bool(member.get("is_active", True)):
+                        supabase.table("profiles").update({"is_active": active_value}).eq("id", member["id"]).execute()
+                        st.rerun()
+
+    with tab_invite:
+        if user_role not in ["Admin", "Manager"]:
+            st.warning("Only Admin and Manager users can access Invite.")
+        else:
+            with st.form("settings_invite_form"):
+                invite_email = st.text_input("Email")
+                invite_role = st.selectbox("Role", ["Admin", "Manager", "Technician"])
+                send_invite = st.form_submit_button("Send Invite")
+
+            if send_invite:
+                if not invite_email or not is_valid_email(invite_email):
+                    st.error("A valid email is required.")
+                else:
+                    invite_token = secrets.token_urlsafe(32)
+                    expires_at = (datetime.utcnow() + timedelta(hours=48)).isoformat()
+                    supabase.table("invitations").insert(
+                        {
+                            "email": invite_email.strip().lower(),
+                            "role": invite_role,
+                            "company_id": company_id,
+                            "token": invite_token,
+                            "expires_at": expires_at,
+                            "used": False,
+                        }
+                    ).execute()
+                    supabase.auth.invite_user_by_email(invite_email.strip().lower())
+                    st.success("Invite sent successfully.")
+                    st.rerun()
+
+            st.markdown("### Pending Invites")
+            pending_res = (
+                supabase.table("invitations")
+                .select("id,email,role,expires_at")
+                .eq("company_id", company_id)
+                .eq("used", False)
+                .order("expires_at")
+                .execute()
+            )
+            pending_invites = pending_res.data or []
+
+            if not pending_invites:
+                st.info("No pending invites.")
+            else:
+                for inv in pending_invites:
+                    cols = st.columns([2, 1.2, 1.5, 1])
+                    cols[0].write(inv.get("email"))
+                    cols[1].write(inv.get("role"))
+                    cols[2].write(inv.get("expires_at"))
+                    if cols[3].button("Cancel", key=f"cancel_invite_{inv['id']}"):
+                        supabase.table("invitations").delete().eq("id", inv["id"]).execute()
+                        st.success("Invite cancelled.")
+                        st.rerun()
+
+    with tab_roles:
+        permissions_df = pd.DataFrame(
+            [
+                {"Feature": "View all jobs", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
+                {"Feature": "Manage team", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
+                {"Feature": "Assign jobs", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
+                {"Feature": "View own jobs", "Admin": "✅", "Manager": "✅", "Technician": "✅"},
+                {"Feature": "Update job status", "Admin": "✅", "Manager": "✅", "Technician": "✅"},
+                {"Feature": "Access billing", "Admin": "✅", "Manager": "❌", "Technician": "❌"},
+                {"Feature": "Access settings", "Admin": "✅", "Manager": "❌", "Technician": "❌"},
+            ]
         )
-        st.success("User created successfully")
-        st.rerun()
-# ======================================================
-# USERS TABLE
-# ======================================================
-st.markdown("### Existing Users")
-users_df = get_users_df()
-if users_df.empty:
-    st.info("No users yet.")
-else:
-    st.dataframe(users_df, use_container_width=True)
-st.markdown("---")
+        st.table(permissions_df)
+        st.caption("To request a role change, contact your account Admin.")
+
+    st.markdown("---")
 # ======================================================
 # ADMIN — TRIAL REMINDERS
 # ======================================================
@@ -6584,6 +6648,34 @@ def set_auth_session(user_obj):
     st.session_state["user_email"] = user_obj.email
     st.session_state["page"] = "command_center"
 
+    profile_payload = {
+        "id": user_obj.id,
+        "email": user_obj.email,
+        "full_name": "",
+        "role": "Technician",
+        "company_id": None,
+    }
+    try:
+        profile_res = (
+            supabase.table("profiles")
+            .select("id,email,full_name,role,company_id")
+            .eq("id", user_obj.id)
+            .limit(1)
+            .execute()
+        )
+        if profile_res.data:
+            profile_payload.update(profile_res.data[0])
+    except Exception:
+        pass
+
+    st.session_state["user"] = {
+        "id": profile_payload.get("id") or user_obj.id,
+        "email": profile_payload.get("email") or user_obj.email,
+        "full_name": profile_payload.get("full_name") or "",
+        "role": profile_payload.get("role") or "Technician",
+        "company_id": profile_payload.get("company_id"),
+    }
+
 
 def page_auth():
     st.title("Welcome to ReCapture Pro")
@@ -7219,196 +7311,225 @@ def get_users_df():
 
 def page_settings():
     require_role_access("settings")
-st.markdown(
-    "<div class='header'> Settings & User Management</div>",
-    unsafe_allow_html=True
-)
-st.markdown(
-    "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
-    unsafe_allow_html=True
-)
-# ======================================================
-# INVITE USER
-# ======================================================
-st.markdown("### Invite User")
-with st.form("invite_user_form"):
-    invite_email = st.text_input("Email (required)")
-    invite_role = st.selectbox("Role", ["Admin", "Manager", "Staff"], key="invite_role")
-    submitted_invite = st.form_submit_button("Send Invite")
-
-    if submitted_invite:
-        # ORG SEAT LIMIT ENFORCEMENT
-        current_user = get_current_user()
-        enforce_org_seat_limit(current_user)
-
-        if not invite_email:
-            st.error("Email is required")
-            st.stop()
-        if not is_valid_email(invite_email):
-            st.error("Enter a valid email address")
-            st.stop()
-
-        with SessionLocal() as s:
-            exists = s.query(User).filter(User.email == invite_email.lower()).first()
-            if exists:
-                st.error("User already exists")
-                st.stop()
-
-            token = generate_activation_token()
-            user = User(
-                username=invite_email,
-                email=invite_email.lower(),
-                role=invite_role,
-                organization_id=current_user.organization_id,
-                plan=current_user.plan,
-                subscription_status="trial",
-                trial_ends_at=pd.Timestamp.utcnow() + timedelta(days=14),
-                activation_token=token,
-                activation_expires_at=pd.Timestamp.utcnow() + timedelta(hours=48),
-                is_active=False,
-            )
-            s.add(user)
-            s.commit()
-
-        invite_link = f"{FRONTEND_URL.rstrip('/')}/activate?token={token}"
-        st.write("Invite link:", invite_link)
-        try:
-            send_invite_email(invite_email, invite_link)
-            st.success("Invitation email sent successfully")
-        except Exception as e:
-            if DEV_MODE:
-                st.warning(f"Invite created, email skipped (dev): {e}")
-            else:
-                st.warning("Invite created, but email failed to send")
+    if st.session_state.get("user") is None:
+        st.session_state["page"] = "auth"
+        st.warning("Please log in to access Settings.")
         st.rerun()
 
-st.markdown("---")
-# ======================================================
-# ADD USER (ADMIN)
-# ======================================================
-st.markdown("### Add User")
-with st.form("create_user_form"):
-    email = st.text_input("Email (required)")
-    username = st.text_input("Username (optional)")
-    full_name = st.text_input("Full Name")
-    role = st.selectbox(
-    "Role",
-    ["Admin", "Manager", "Staff"],
-    key="create_role"
+    session_user = st.session_state.get("user", {})
+    user_role = session_user.get("role")
+    company_id = session_user.get("company_id")
+
+    st.markdown(
+        "<div class='header'> Settings & User Management</div>",
+        unsafe_allow_html=True,
     )
-    submitted_create = st.form_submit_button("Create User")
-    if submitted_create:
-        # ORG SEAT LIMIT ENFORCEMENT
-        current_user = get_current_user()
-        enforce_org_seat_limit(current_user)
+    st.markdown(
+        "<em>Add team users, invite users, manage roles, billing and technicians.</em>",
+        unsafe_allow_html=True,
+    )
 
-        if not email:
-            st.error("Email is required")
-            st.stop()
-        if not is_valid_email(email):
-            st.error("Invalid email")
-            st.stop()
+    tab_team, tab_invite, tab_roles = st.tabs(
+        ["👥 Team Members", "✉️ Invite", "🔐 Roles & Permissions"]
+    )
 
-        add_user(
-            email=email.lower(),
-            username=username.strip() if username else email.lower(),
-            full_name=full_name.strip(),
-            role=role,
-            is_active=True,
-            email_verified=True,
-        )
-        st.success("User created successfully")
-        st.rerun()
-# ======================================================
-# USERS TABLE
-# ======================================================
-st.markdown("### Existing Users")
-users_df = get_users_df()
-if users_df.empty:
-    st.info("No users yet.")
-else:
-    st.dataframe(users_df, use_container_width=True)
-st.markdown("---")
-# ======================================================
-# ADMIN — TRIAL REMINDERS
-# ======================================================
-user = get_current_user()
-if user.role == "Admin":
-    st.markdown("### Trial Management")
-    if st.button(" Send Trial Reminder Emails (Admin)"):
-        try:
-            send_trial_expiry_reminders()
-            st.success("Trial reminders sent")
-        except Exception as e:
-            if DEV_MODE:
-                st.warning(f"Trial reminder skipped (dev): {e}")
+    with tab_team:
+        if user_role != "Admin":
+            st.warning("Only Admin users can access this tab.")
         else:
-            raise
-st.markdown("---")
-# ======================================================
-# TECHNICIAN MANAGEMENT
-# ======================================================
-st.markdown("## Technician Management")
-with st.expander(" Add Technician"):
-    tech_username = st.text_input("Username")
-    tech_name = st.text_input("Full Name")
-    tech_phone = st.text_input("Phone Number")
-    tech_role = st.selectbox(
-    "Specialization",
-    ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
-    )
-    tech_active = st.checkbox("Active", True)
-    if st.button("Save Technician"):
-        add_technician(
-        tech_username.strip(),
-        full_name=tech_name.strip(),
-        phone=tech_phone.strip(),
-        specialization=tech_role,
-        active=tech_active,
-    )
-    st.success("Technician saved")
-    st.rerun()
-tech_df = get_technicians_df(active_only=False)
-if not tech_df.empty:
-    for _, row in tech_df.iterrows():
-        cols = st.columns([3, 2, 2])
-    cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
-    new_status = cols[1].selectbox(
-        "Status",
-        ["available", "assigned", "enroute", "onsite", "completed"],
-        index=["available","assigned","enroute","onsite","completed"].index(
-        row.get("status", "available")
-        ),
-        key=f"status_{row['username']}",
-    )
-    if cols[2].button("Update", key=f"upd_{row['username']}"):
-        update_technician_status(row["username"], new_status)
-        st.success("Status updated")
-        st.rerun()
-st.markdown("---")
-# ======================================================
-# CHANGE PASSWORD
-# ======================================================
-st.markdown("## Change Password")
-with st.form("change_password_form"):
-    current_password = st.text_input("Current Password", type="password")
-    new_password = st.text_input("New Password", type="password")
-    confirm_password = st.text_input("Confirm New Password", type="password")
-    if st.form_submit_button("Update Password"):
-        if new_password != confirm_password:
-            st.error("Passwords do not match")
-        st.stop()
+            response = (
+                supabase.table("profiles")
+                .select("id,full_name,email,role,is_active,company_id")
+                .eq("company_id", company_id)
+                .order("full_name")
+                .execute()
+            )
+            members = response.data or []
+            if not members:
+                st.info("No team members found for your company.")
+            else:
+                headers = st.columns([2, 2, 1.4, 1.2])
+                headers[0].markdown("**Full Name**")
+                headers[1].markdown("**Email**")
+                headers[2].markdown("**Role**")
+                headers[3].markdown("**Status (Active/Inactive)**")
+
+                role_options = ["Admin", "Manager", "Technician"]
+                for member in members:
+                    cols = st.columns([2, 2, 1.4, 1.2])
+                    cols[0].write(member.get("full_name") or "—")
+                    cols[1].write(member.get("email") or "—")
+                    current_role = member.get("role") if member.get("role") in role_options else "Technician"
+
+                    new_role = cols[2].selectbox(
+                        "Role",
+                        role_options,
+                        index=role_options.index(current_role),
+                        key=f"settings_role_{member['id']}",
+                        label_visibility="collapsed",
+                    )
+                    is_active = cols[3].toggle(
+                        "Active",
+                        value=bool(member.get("is_active", True)),
+                        key=f"settings_active_{member['id']}",
+                        label_visibility="collapsed",
+                    )
+
+                    updates = {}
+                    if new_role != current_role:
+                        updates["role"] = new_role
+                    if is_active != bool(member.get("is_active", True)):
+                        updates["is_active"] = is_active
+                    if updates:
+                        supabase.table("profiles").update(updates).eq("id", member["id"]).execute()
+                        st.rerun()
+
+    with tab_invite:
+        if user_role not in ["Admin", "Manager"]:
+            st.warning("Only Admin and Manager users can access this tab.")
+        else:
+            with st.form("settings_invite_form"):
+                invite_email = st.text_input("Email (required)")
+                invite_role = st.selectbox("Role", ["Admin", "Manager", "Technician"])
+                submit_invite = st.form_submit_button("Send Invite")
+
+            if submit_invite:
+                if not invite_email or not is_valid_email(invite_email):
+                    st.error("Please enter a valid email address.")
+                else:
+                    token = secrets.token_urlsafe(32)
+                    expires_at = (datetime.utcnow() + timedelta(hours=48)).isoformat()
+                    supabase.table("invitations").insert(
+                        {
+                            "email": invite_email.strip().lower(),
+                            "role": invite_role,
+                            "company_id": company_id,
+                            "token": token,
+                            "expires_at": expires_at,
+                            "used": False,
+                        }
+                    ).execute()
+                    supabase.auth.invite_user_by_email(invite_email.strip().lower())
+                    st.success("Invitation sent.")
+                    st.rerun()
+
+            st.markdown("### Pending Invites")
+            pending = (
+                supabase.table("invitations")
+                .select("id,email,role,expires_at")
+                .eq("company_id", company_id)
+                .eq("used", False)
+                .order("expires_at")
+                .execute()
+            )
+            pending_rows = pending.data or []
+            if not pending_rows:
+                st.info("No pending invites.")
+            else:
+                for invite in pending_rows:
+                    row = st.columns([2, 1.4, 1.8, 1])
+                    row[0].write(invite.get("email") or "—")
+                    row[1].write(invite.get("role") or "—")
+                    row[2].write(invite.get("expires_at") or "—")
+                    if row[3].button("Cancel", key=f"cancel_inv_{invite['id']}"):
+                        supabase.table("invitations").delete().eq("id", invite["id"]).execute()
+                        st.rerun()
+
+    with tab_roles:
+        permissions_df = pd.DataFrame(
+            [
+                {"Feature": "View all jobs", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
+                {"Feature": "Manage team", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
+                {"Feature": "Assign jobs", "Admin": "✅", "Manager": "✅", "Technician": "❌"},
+                {"Feature": "View own jobs", "Admin": "✅", "Manager": "✅", "Technician": "✅"},
+                {"Feature": "Update job status", "Admin": "✅", "Manager": "✅", "Technician": "✅"},
+                {"Feature": "Access billing", "Admin": "✅", "Manager": "❌", "Technician": "❌"},
+                {"Feature": "Access settings", "Admin": "✅", "Manager": "❌", "Technician": "❌"},
+            ]
+        )
+        st.table(permissions_df)
+
+    st.markdown("---")
+    # ======================================================
+    # ADMIN — TRIAL REMINDERS
+    # ======================================================
     user = get_current_user()
-    with SessionLocal() as s:
-        db_user = s.query(User).filter(User.id == user.id).first()
-        if not pwd_context.verify(current_password, db_user.password_hash):
-            st.error("Current password incorrect")
-        st.stop()
-        db_user.password_hash = pwd_context.hash(new_password)
-        s.commit()
-    st.success("Password updated")
-    st.rerun()
-st.markdown("---")
+    if user.role == "Admin":
+        st.markdown("### Trial Management")
+        if st.button(" Send Trial Reminder Emails (Admin)"):
+            try:
+                send_trial_expiry_reminders()
+                st.success("Trial reminders sent")
+            except Exception as e:
+                if DEV_MODE:
+                    st.warning(f"Trial reminder skipped (dev): {e}")
+            else:
+                raise
+    st.markdown("---")
+    # ======================================================
+    # TECHNICIAN MANAGEMENT
+    # ======================================================
+    st.markdown("## Technician Management")
+    with st.expander(" Add Technician"):
+        tech_username = st.text_input("Username")
+        tech_name = st.text_input("Full Name")
+        tech_phone = st.text_input("Phone Number")
+        tech_role = st.selectbox(
+            "Specialization",
+            ["Estimator", "Technician", "Inspector", "Adjuster", "Other"]
+        )
+        tech_active = st.checkbox("Active", True)
+        if st.button("Save Technician"):
+            add_technician(
+                tech_username.strip(),
+                full_name=tech_name.strip(),
+                phone=tech_phone.strip(),
+                specialization=tech_role,
+                active=tech_active,
+            )
+            st.success("Technician saved")
+            st.rerun()
+    tech_df = get_technicians_df(active_only=False)
+    if not tech_df.empty:
+        for _, row in tech_df.iterrows():
+            cols = st.columns([3, 2, 2])
+            cols[0].write(f" **{row['full_name']}** (`{row['username']}`)")
+            new_status = cols[1].selectbox(
+                "Status",
+                ["available", "assigned", "enroute", "onsite", "completed"],
+                index=["available", "assigned", "enroute", "onsite", "completed"].index(
+                    row.get("status", "available")
+                ),
+                key=f"status_{row['username']}",
+            )
+            if cols[2].button("Update", key=f"upd_{row['username']}"):
+                update_technician_status(row["username"], new_status)
+                st.success("Status updated")
+                st.rerun()
+    st.markdown("---")
+    # ======================================================
+    # CHANGE PASSWORD
+    # ======================================================
+    st.markdown("## Change Password")
+    with st.form("change_password_form"):
+        current_password = st.text_input("Current Password", type="password")
+        new_password = st.text_input("New Password", type="password")
+        confirm_password = st.text_input("Confirm New Password", type="password")
+        if st.form_submit_button("Update Password"):
+            if new_password != confirm_password:
+                st.error("Passwords do not match")
+                st.stop()
+            user = get_current_user()
+            with SessionLocal() as s:
+                db_user = s.query(User).filter(User.id == user.id).first()
+                if not pwd_context.verify(current_password, db_user.password_hash):
+                    st.error("Current password incorrect")
+                    st.stop()
+                db_user.password_hash = pwd_context.hash(new_password)
+                s.commit()
+            st.success("Password updated")
+            st.rerun()
+    st.markdown("---")
 def page_technician_mobile():
     st.markdown("## Technician Mobile")
     techs = get_technicians_df(active_only=True)
