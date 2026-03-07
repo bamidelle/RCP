@@ -5002,24 +5002,22 @@ def page_google_reviews():
         st.success("Review request sent")
 
 def send_google_review_request(
-to_email: str,
-customer_name: str,
-review_link: str,
-job_name: str = ""
+    to_email: str,
+    customer_name: str,
+    review_link: str,
+    job_name: str = ""
 ):
-    subject = "We’d love your Google review "
-job_line = f" regarding your recent {job_name}" if job_name else ""
-body = f"""
-Hi {customer_name},
-Thank you for choosing us{job_line}.
-If you have a moment, we’d truly appreciate a quick Google review.
-Your feedback helps us improve and helps others find our services.
-Leave a review here:
-{review_link}
-Thank you again for your trust.
-Best regards,
-The Team
-"""
+    subject = "We'd love your Google review"
+    job_line = f" regarding your recent {job_name}" if job_name else ""
+    html_body = (
+        f"<p>Hi {customer_name},</p>"
+        f"<p>Thank you for choosing us{job_line}.</p>"
+        f"<p>We'd appreciate a quick Google review: "
+        f"<a href='{review_link}'>Leave a Review</a></p>"
+        f"<p>Thank you,<br>The Team</p>"
+    )
+    send_email(to_email=to_email, subject=subject, html_body=html_body)
+
 # ---------- END SETTINGS AND EMAIL INVITES ----------
 def page_request_review_settings():
     require_role_access("settings")
